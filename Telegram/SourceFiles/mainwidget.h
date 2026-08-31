@@ -181,6 +181,7 @@ public:
 		const QString &query,
 		Dialogs::Key inChat,
 		PeerData *searchFrom = nullptr);
+	[[nodiscard]] bool focusDialogsSearch();
 
 	void setChatBackground(
 		const Data::WallPaper &background,

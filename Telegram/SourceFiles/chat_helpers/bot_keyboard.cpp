@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "api/api_bot.h"
 #include "core/click_handler_types.h"
+#include "core/vim_keymap.h"
 #include "data/data_session.h"
 #include "data/data_user.h"
 #include "history/history.h"
@@ -22,6 +23,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_session_controller.h"
 #include "styles/style_chat.h"
 #include "styles/style_widgets.h"
+
+#include <QtGui/QKeyEvent>
+
+#include <algorithm>
 
 namespace {
 
@@ -214,6 +219,7 @@ void BotKeyboard::paintEvent(QPaintEvent *e) {
 			width(),
 			clip.translated(-x, -st::botKbScroll.deltat),
 			_controller->isGifPausedAtLeastFor(Window::GifPauseReason::Any));
+		vimKeymapPaintHints(p);
 	}
 }
 
@@ -325,6 +331,7 @@ void BotKeyboard::clickHandlerPressedChanged(const ClickHandlerPtr &p, bool pres
 bool BotKeyboard::updateMarkup(HistoryItem *to, bool force) {
 	if (!to || !to->definesReplyKeyboard()) {
 		if (_wasForMsgId.msg) {
+			vimKeymapClearHints();
 			_maximizeSize = _singleUse = _forceReply = _persistent = false;
 			_wasForMsgId = FullMsgId();
 			_placeholder = QString();
@@ -340,6 +347,7 @@ bool BotKeyboard::updateMarkup(HistoryItem *to, bool force) {
 	}
 
 	_wasForMsgId = FullMsgId(peerId, to->id);
+	vimKeymapClearHints();
 
 	auto markupFlags = to->replyKeyboardFlags();
 	const auto markup = to->Get<HistoryMessageReplyMarkup>();
@@ -372,6 +380,145 @@ bool BotKeyboard::hasMarkup() const {
 
 bool BotKeyboard::forceReply() const {
 	return _forceReply;
+}
+
+bool BotKeyboard::vimKeymapBeginHints() {
+	vimKeymapClearHints();
+	if (!_impl || isHidden() || !isVisible()) {
+		return false;
+	}
+	for (const auto &entry : _impl->linkRects()) {
+		_vimKeymapHints.push_back({
+			.badge = QRect(entry.rect.topLeft() + QPoint(6, 6), QSize()),
+			.link = entry.link,
+		});
+	}
+	if (_vimKeymapHints.empty()) {
+		return false;
+	}
+	vimKeymapAssignHintLabels();
+	update();
+	return true;
+}
+
+bool BotKeyboard::vimKeymapHandleHintKey(not_null<QKeyEvent*> e) {
+	if (_vimKeymapHints.empty()) {
+		return false;
+	} else if (e->key() == Qt::Key_Escape) {
+		vimKeymapClearHints();
+		return true;
+	} else if (e->key() == Qt::Key_Backspace) {
+		if (!_vimKeymapHintPrefix.isEmpty()) {
+			_vimKeymapHintPrefix.chop(1);
+			update();
+		}
+		return true;
+	}
+	const auto modifiers = e->modifiers()
+		& ~(Qt::KeypadModifier | Qt::GroupSwitchModifier);
+	if (modifiers != Qt::NoModifier && modifiers != Qt::ShiftModifier) {
+		return true;
+	}
+	const auto text = Core::VimKeymap::HintInput(e);
+	if (text.isEmpty()) {
+		return true;
+	}
+	_vimKeymapHintPrefix += text.front();
+	auto exact = (const VimKeymapHint*)nullptr;
+	auto hasPrefix = false;
+	for (const auto &hint : _vimKeymapHints) {
+		if (hint.label == _vimKeymapHintPrefix) {
+			exact = &hint;
+			break;
+		} else if (hint.label.startsWith(_vimKeymapHintPrefix)) {
+			hasPrefix = true;
+		}
+	}
+	if (exact) {
+		const auto chosen = *exact;
+		return vimKeymapTriggerHint(chosen);
+	} else if (!hasPrefix) {
+		_vimKeymapHintPrefix.clear();
+	}
+	update();
+	return true;
+}
+
+void BotKeyboard::vimKeymapClearHints() {
+	if (_vimKeymapHints.empty() && _vimKeymapHintPrefix.isEmpty()) {
+		return;
+	}
+	_vimKeymapHints.clear();
+	_vimKeymapHintPrefix.clear();
+	update();
+}
+
+void BotKeyboard::vimKeymapAssignHintLabels() {
+	for (auto i = 0, count = int(_vimKeymapHints.size()); i != count; ++i) {
+		_vimKeymapHints[i].label = Core::VimKeymap::HintLabel(i, count);
+	}
+}
+
+bool BotKeyboard::vimKeymapTriggerHint(const VimKeymapHint &hint) {
+	const auto link = hint.link;
+	vimKeymapClearHints();
+	if (!link) {
+		return false;
+	}
+	ActivateClickHandler(window(), link, {
+		Qt::LeftButton,
+		QVariant::fromValue(ClickHandlerContext{
+			.sessionWindow = base::make_weak(_controller),
+		}),
+	});
+	return true;
+}
+
+void BotKeyboard::vimKeymapPaintHints(Painter &p) const {
+	if (_vimKeymapHints.empty()) {
+		return;
+	}
+	p.save();
+	const auto hintSize = Core::VimKeymap::HintSize();
+	const auto font = QFont(u"Menlo"_q, hintSize, QFont::DemiBold);
+	const auto metrics = QFontMetrics(font);
+	const auto horizontalPadding = std::max(7, hintSize / 2);
+	const auto verticalPadding = std::max(3, hintSize / 4);
+	const auto implWidth = std::max(
+		1,
+		width() - _st->margin - st::botKbScroll.width);
+	const auto implHeight = std::max(
+		1,
+		height() - st::botKbScroll.deltat - st::botKbScroll.deltab);
+	p.setFont(font);
+	p.setRenderHint(QPainter::Antialiasing, true);
+	for (const auto &hint : _vimKeymapHints) {
+		const auto remaining = hint.label.mid(_vimKeymapHintPrefix.size());
+		const auto label = _vimKeymapHintPrefix.isEmpty()
+			? hint.label
+			: remaining.isEmpty()
+			? hint.label
+			: remaining;
+		const auto textWidth = metrics.horizontalAdvance(label);
+		auto rect = QRect(
+			hint.badge.topLeft(),
+			QSize(
+				textWidth + 2 * horizontalPadding,
+				metrics.height() + 2 * verticalPadding));
+		const auto minLeft = 4;
+		const auto maxLeft = std::max(minLeft, implWidth - rect.width() - 4);
+		const auto minTop = 4;
+		const auto maxTop = std::max(minTop, implHeight - rect.height() - 4);
+		rect.moveLeft(std::clamp(rect.left(), minLeft, maxLeft));
+		rect.moveTop(std::clamp(rect.top(), minTop, maxTop));
+		const auto radius = rect.height() / 2;
+		p.setPen(QColor(102, 78, 0, 105));
+		p.setBrush(QColor(255, 218, 72, 246));
+		p.drawRoundedRect(rect, radius, radius);
+		p.setPen(QColor(28, 24, 14));
+		p.drawText(rect, Qt::AlignCenter, label);
+	}
+	p.restore();
 }
 
 int BotKeyboard::resizeGetHeight(int newWidth) {

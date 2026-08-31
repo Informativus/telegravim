@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/peer_lists_box.h"
 
+#include "core/vim_keymap.h"
 #include "lang/lang_keys.h"
 #include "ui/wrap/slide_wrap.h"
 #include "ui/wrap/vertical_layout.h"
@@ -26,6 +27,25 @@ PeerListsBox::PeerListsBox(
 : _lists(makeLists(std::move(controllers)))
 , _init(std::move(init)) {
 	Expects(!_lists.empty());
+	Core::VimKeymap::RegisterKeyHandler(this, [=](
+			not_null<QKeyEvent*> e) {
+		if (!_rows || !isVisible()) {
+			return false;
+		}
+		const auto top = window();
+		if (!top || !top->isActiveWindow() || !isVisibleTo(top)) {
+			return false;
+		}
+		const auto focused = focusWidget();
+		if (focused && focused != this && !isAncestorOf(focused)) {
+			return false;
+		}
+		return handleVimKeyNavigation(e);
+	});
+}
+
+PeerListsBox::~PeerListsBox() {
+	Core::VimKeymap::UnregisterKeyHandler(this);
 }
 
 auto PeerListsBox::collectSelectedRows()
@@ -197,58 +217,80 @@ void PeerListsBox::prepare() {
 	}
 }
 
-void PeerListsBox::keyPressEvent(QKeyEvent *e) {
-	const auto skipRows = [&](int rows) {
-		if (rows == 0) {
+void PeerListsBox::skipRows(int rows) {
+	if (rows == 0) {
+		return;
+	}
+	for (const auto &list : _lists) {
+		if (list.content->hasPressed()) {
 			return;
 		}
-		for (const auto &list : _lists) {
-			if (list.content->hasPressed()) {
-				return;
-			}
+	}
+	const auto from = begin(_lists), till = end(_lists);
+	auto i = from;
+	for (; i != till; ++i) {
+		if (i->content->hasSelection()) {
+			break;
 		}
-		const auto from = begin(_lists), till = end(_lists);
-		auto i = from;
+	}
+	if (i == till && rows < 0) {
+		_lists.back().content->selectLast();
+		return;
+	}
+	if (rows > 0) {
+		if (i == till) {
+			i = from;
+		}
 		for (; i != till; ++i) {
-			if (i->content->hasSelection()) {
-				break;
+			const auto result = i->content->selectSkip(rows);
+			if (result.shouldMoveTo - result.reallyMovedTo >= rows) {
+				continue;
+			} else if (result.reallyMovedTo >= result.shouldMoveTo) {
+				return;
+			} else {
+				rows = result.shouldMoveTo - result.reallyMovedTo;
 			}
 		}
-		if (i == till && rows < 0) {
-			return;
-		}
-		if (rows > 0) {
-			if (i == till) {
-				i = from;
-			}
-			for (; i != till; ++i) {
-				const auto result = i->content->selectSkip(rows);
-				if (result.shouldMoveTo - result.reallyMovedTo >= rows) {
-					continue;
-				} else if (result.reallyMovedTo >= result.shouldMoveTo) {
-					return;
-				} else {
-					rows = result.shouldMoveTo - result.reallyMovedTo;
-				}
-			}
-		} else {
-			for (++i; i != from;) {
-				const auto result = (--i)->content->selectSkip(rows);
-				if (result.shouldMoveTo - result.reallyMovedTo <= rows) {
-					continue;
-				} else if (result.reallyMovedTo <= result.shouldMoveTo) {
-					return;
-				} else {
-					rows = result.shouldMoveTo - result.reallyMovedTo;
-				}
+	} else {
+		for (++i; i != from;) {
+			const auto result = (--i)->content->selectSkip(rows);
+			if (result.shouldMoveTo - result.reallyMovedTo <= rows) {
+				continue;
+			} else if (result.reallyMovedTo <= result.shouldMoveTo) {
+				return;
+			} else {
+				rows = result.shouldMoveTo - result.reallyMovedTo;
 			}
 		}
-	};
+	}
+}
+
+bool PeerListsBox::handleVimKeyNavigation(not_null<QKeyEvent*> e) {
+	if (!Core::VimKeymap::Enabled()) {
+		return false;
+	}
+	const auto modifiers = e->modifiers()
+		& ~(Qt::KeypadModifier | Qt::GroupSwitchModifier);
+	const auto tabForward = (e->key() == Qt::Key_Tab)
+		&& (modifiers == Qt::NoModifier);
+	const auto tabBackward = (e->key() == Qt::Key_Backtab)
+		|| ((e->key() == Qt::Key_Tab) && (modifiers == Qt::ShiftModifier));
+	if (!tabForward && !tabBackward) {
+		return false;
+	}
+	skipRows(tabBackward ? -1 : 1);
+	e->accept();
+	return true;
+}
+
+void PeerListsBox::keyPressEvent(QKeyEvent *e) {
 	const auto rowsInPage = [&] {
 		const auto rowHeight = firstController()->computeListSt().item.height;
 		return height() / rowHeight;
 	};
-	if (e->key() == Qt::Key_Down) {
+	if (handleVimKeyNavigation(not_null{ e })) {
+		return;
+	} else if (e->key() == Qt::Key_Down) {
 		skipRows(1);
 	} else if (e->key() == Qt::Key_Up) {
 		skipRows(-1);

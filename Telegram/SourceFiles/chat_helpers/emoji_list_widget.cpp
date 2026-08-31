@@ -56,12 +56,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mainwidget.h"
 #include "core/core_settings.h"
 #include "core/application.h"
+#include "core/vim_keymap.h"
 #include "settings/sections/settings_premium.h"
 #include "window/window_session_controller.h"
 #include "styles/style_chat_helpers.h"
+#include "styles/style_window.h"
 #include "styles/style_menu_icons.h"
 
+#include <QtGui/QPen>
 #include <QtWidgets/QApplication>
+
+#include <algorithm>
 
 namespace ChatHelpers {
 namespace {
@@ -76,6 +81,27 @@ constexpr auto kPreloadSearchPages = 4;
 
 using Core::RecentEmojiId;
 using Core::RecentEmojiDocument;
+
+void PaintVimKeymapSelectionFrame(Painter &p, QRect rect) {
+	constexpr auto kInset = 3;
+	constexpr auto kStroke = 2;
+
+	rect = rect.marginsRemoved(QMargins(kInset, kInset, kInset, kInset));
+	if (rect.isEmpty()) {
+		return;
+	}
+
+	p.save();
+	auto pen = QPen(st::activeButtonBg->c, kStroke);
+	pen.setJoinStyle(Qt::RoundJoin);
+	p.setPen(pen);
+	p.setBrush(Qt::NoBrush);
+	p.drawRoundedRect(
+		QRectF(rect).adjusted(0.5, 0.5, -0.5, -0.5),
+		st::roundRadiusSmall,
+		st::roundRadiusSmall);
+	p.restore();
+}
 
 } // namespace
 
@@ -1700,6 +1726,7 @@ void EmojiListWidget::afterShown() {
 }
 
 void EmojiListWidget::beforeHiding() {
+	_vimKeymapSelection = false;
 	if (_search) {
 		_search->returnFocus();
 	}
@@ -2524,7 +2551,9 @@ void EmojiListWidget::paint(
 					};
 					const auto selected = (state == _selected)
 						|| (!_picker->isHidden()
-							&& state == _pickerSelected);
+							&& state == _pickerSelected)
+						|| (_vimKeymapSelection
+							&& state == _vimKeymapSelected);
 					const auto marked = customMarked(info.section, index);
 					const auto position = QPoint(
 						_rowsLeft + j * _singleSize.width(),
@@ -2577,6 +2606,13 @@ void EmojiListWidget::paint(
 					} else {
 						const auto set = info.section - _staticCount;
 						drawCustom(p, context, w, set, index);
+					}
+					if (selected) {
+						auto frame = QRect(w, st::emojiPanArea);
+						if (rtl()) {
+							frame.moveLeft(width() - frame.x() - frame.width());
+						}
+						PaintVimKeymapSelectionFrame(p, frame);
 					}
 				}
 			}
@@ -2863,6 +2899,7 @@ FileChosen EmojiListWidget::lookupChosen(
 }
 
 void EmojiListWidget::mousePressEvent(QMouseEvent *e) {
+	_vimKeymapSelection = false;
 	_lastMousePos = e->globalPos();
 	updateSelected();
 	if (checkPickerHide() || e->button() != Qt::LeftButton) {
@@ -3379,6 +3416,10 @@ void EmojiListWidget::wheelEvent(QWheelEvent *e) {
 }
 
 void EmojiListWidget::mouseMoveEvent(QMouseEvent *e) {
+	if (_vimKeymapSelection && e->globalPos() == _lastMousePos) {
+		return;
+	}
+	_vimKeymapSelection = false;
 	_lastMousePos = e->globalPos();
 	if (std::get_if<OverSearchShortcut>(&_pressed)
 		&& _searchShortcutsScrollMax > 0) {
@@ -4076,6 +4117,165 @@ void EmojiListWidget::setSelected(OverState newSelected) {
 			}
 		}
 	}
+}
+
+bool EmojiListWidget::vimKeymapMoveSelection(int dx, int dy) {
+	if (_columnCount <= 0) {
+		return false;
+	}
+	const auto findFirstVisible = [&](
+			OverEmoji &result,
+			bool visibleOnly) {
+		for (auto section = 0, count = sectionsCount();
+				section != count;
+				++section) {
+			const auto info = sectionInfo(section);
+			for (auto index = 0; index != info.count; ++index) {
+				const auto rect = emojiRect(section, index);
+				if (!visibleOnly
+					|| (rect.bottom() >= getVisibleTop()
+						&& rect.top() <= getVisibleBottom())) {
+					result = { section, index };
+					return true;
+				}
+			}
+		}
+		return false;
+	};
+	const auto totalBefore = [&](OverEmoji item) {
+		auto result = 0;
+		for (auto section = 0; section != item.section; ++section) {
+			result += sectionInfo(section).count;
+		}
+		return result + item.index;
+	};
+	const auto valid = [&](OverEmoji item) {
+		if (item.section < 0 || item.section >= sectionsCount()) {
+			return false;
+		}
+		const auto info = sectionInfo(item.section);
+		return item.index >= 0 && item.index < info.count;
+	};
+	const auto fromTotal = [&](int position, OverEmoji &result) {
+		auto offset = position;
+		for (auto section = 0, count = sectionsCount();
+				section != count;
+				++section) {
+			const auto sectionCount = sectionInfo(section).count;
+			if (offset < sectionCount) {
+				result = { section, offset };
+				return true;
+			}
+			offset -= sectionCount;
+		}
+		return false;
+	};
+	const auto totalCount = [&] {
+		auto result = 0;
+		for (auto section = 0, count = sectionsCount();
+				section != count;
+				++section) {
+			result += sectionInfo(section).count;
+		}
+		return result;
+	}();
+	if (!totalCount) {
+		return false;
+	}
+
+	auto target = OverEmoji();
+	if (_vimKeymapSelection && valid(_vimKeymapSelected)) {
+		const auto step = (dy != 0) ? (dy * _columnCount) : dx;
+		const auto next = std::clamp(
+			totalBefore(_vimKeymapSelected) + step,
+			0,
+			totalCount - 1);
+		if (!fromTotal(next, target)) {
+			return false;
+		}
+	} else if (const auto selected = std::get_if<OverEmoji>(&_selected)) {
+		const auto step = (dy != 0) ? (dy * _columnCount) : dx;
+		const auto next = std::clamp(
+			totalBefore(*selected) + step,
+			0,
+			totalCount - 1);
+		if (!fromTotal(next, target)) {
+			return false;
+		}
+	} else if (!findFirstVisible(target, true)
+		&& !findFirstVisible(target, false)) {
+		return false;
+	}
+
+	const auto rect = emojiRect(target.section, target.index);
+	_vimKeymapSelected = target;
+	_vimKeymapSelection = true;
+	_lastMousePos = QCursor::pos();
+	setSelected(OverState{ target });
+	const auto margin = _singleSize.height() / 2;
+	if (rect.top() < getVisibleTop()) {
+		scrollTo(std::max(0, rect.top() - margin));
+	} else if (rect.bottom() > getVisibleBottom()) {
+		scrollTo(std::max(0, rect.bottom() - (getVisibleBottom()
+			- getVisibleTop()) + margin));
+	}
+	update();
+	return true;
+}
+
+bool EmojiListWidget::vimKeymapActivateSelection() {
+	const auto selected = _vimKeymapSelection
+		? OverState(_vimKeymapSelected)
+		: _selected;
+	if (std::get_if<OverSearchBack>(&selected)) {
+		backToSearchResults();
+		return true;
+	} else if (const auto shortcut = std::get_if<OverSearchShortcut>(
+			&selected)) {
+		toggleSearchShortcut(shortcut->index);
+		return true;
+	} else if (const auto over = std::get_if<OverEmoji>(&selected)) {
+		const auto section = over->section;
+		const auto index = over->index;
+		if (sectionInfo(section).collapsed
+			&& index + 1 == _columnCount * kCollapsedRows) {
+			if (_searchMode && section > 0) {
+				searchSetBySection(section).expanded = true;
+			} else if (section >= _staticCount) {
+				_custom[section - _staticCount].expanded = true;
+			}
+			resizeToWidth(width());
+			update();
+			return true;
+		} else if (const auto emoji = lookupOverEmoji(over)) {
+			selectEmoji(lookupChosen(emoji, over));
+			return true;
+		} else if (const auto custom = lookupCustomEmoji(over)) {
+			selectCustom(lookupChosen(custom, over));
+			return true;
+		}
+	} else if (const auto set = std::get_if<OverSet>(&selected)) {
+		const auto setId = (_searchMode && set->section > 0)
+			? searchSetBySection(set->section).id
+			: (set->section >= _staticCount)
+			? _custom[set->section - _staticCount].id
+			: uint64(0);
+		if (setId) {
+			displaySet(setId);
+			return true;
+		}
+	}
+	return false;
+}
+
+bool EmojiListWidget::vimKeymapFocusSearch() {
+	if (!_search) {
+		return false;
+	}
+	_vimKeymapSelection = false;
+	_search->stealFocus();
+	update();
+	return true;
 }
 
 void EmojiListWidget::setPressed(OverState newPressed) {

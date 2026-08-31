@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings/settings_common.h"
 
 #include "base/timer.h"
+#include "core/vim_keymap.h"
 #include "lottie/lottie_icon.h"
 #include "menu/menu_send_details.h"
 #include "settings/settings_key_navigation.h"
@@ -33,6 +34,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_widgets.h"
 
 #include <QAction>
+#include <QtWidgets/QApplication>
+#include <QtWidgets/QLineEdit>
+#include <QtWidgets/QTextEdit>
 
 namespace Settings {
 namespace {
@@ -333,9 +337,28 @@ AbstractSection::AbstractSection(
 	QWidget *parent,
 	not_null<Window::SessionController*> controller)
 : _controller(controller) {
+	Core::VimKeymap::RegisterKeyHandler(this, [=](not_null<QKeyEvent*> e) {
+		const auto top = window();
+		if (!top || !top->isActiveWindow() || !isVisibleTo(top)) {
+			return false;
+		}
+		if (const auto focus = QApplication::focusWidget()) {
+			if (qobject_cast<QLineEdit*>(focus)
+				|| qobject_cast<QTextEdit*>(focus)
+				|| dynamic_cast<Ui::InputField*>(focus)) {
+				return false;
+			}
+		}
+		if (!_keyNavigation) {
+			_keyNavigation = std::make_unique<KeyNavigation>(this);
+		}
+		return _keyNavigation->handle(e);
+	});
 }
 
-AbstractSection::~AbstractSection() = default;
+AbstractSection::~AbstractSection() {
+	Core::VimKeymap::UnregisterKeyHandler(this);
+}
 
 SendMenu::Details AbstractSection::sendMenuDetails() const {
 	return {};

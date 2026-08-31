@@ -1,0 +1,2340 @@
+/*
+This file is part of Telegram Desktop,
+the official desktop application for the Telegram messaging service.
+
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
+*/
+#include "core/vim_keymap.h"
+
+#include "base/options.h"
+#include "core/application.h"
+#include "core/shortcuts.h"
+#include "core/version.h"
+#include "lang/lang_keys.h"
+#include "mainwidget.h"
+#include "ui/boxes/confirm_box.h"
+#include "ui/effects/animations.h"
+#include "ui/layers/generic_box.h"
+#include "ui/widgets/elastic_scroll.h"
+#include "ui/widgets/discrete_sliders.h"
+#include "ui/widgets/fields/input_field.h"
+#include "ui/widgets/labels.h"
+#include "ui/widgets/scroll_area.h"
+#include "window/window_controller.h"
+#include "window/window_session_controller.h"
+#include "styles/style_layers.h"
+#include "styles/style_settings.h"
+
+#include <QtCore/QPointer>
+#include <QtCore/QStringList>
+#include <QtWidgets/QApplication>
+#include <QtWidgets/QAbstractScrollArea>
+#include <QtWidgets/QLineEdit>
+#include <QtWidgets/QScrollBar>
+#include <QtWidgets/QTextEdit>
+#include <QtWidgets/QWidget>
+#include <QtGui/QKeyEvent>
+
+#include <algorithm>
+#include <memory>
+#include <vector>
+
+namespace Core::VimKeymap {
+namespace {
+
+constexpr auto kScrollStepMin = 80;
+constexpr auto kScrollStepMax = 1800;
+constexpr auto kLegacyScrollStepDefault = 360;
+constexpr auto kScrollStepDefault = 180;
+constexpr auto kHoldScrollSpeedMin = 600;
+constexpr auto kHoldScrollSpeedMax = 16000;
+constexpr auto kHoldScrollSpeedDefault = 3200;
+constexpr auto kHintSizeMin = 10;
+constexpr auto kHintSizeMax = 24;
+constexpr auto kHintSizeDefault = 13;
+constexpr auto kComposeCursorWidthMin = 1;
+constexpr auto kComposeCursorWidthMax = 30;
+constexpr auto kComposeCursorWidthDefault = 5;
+constexpr auto kComposeCursorHeightMin = 20;
+constexpr auto kComposeCursorHeightMax = 100;
+constexpr auto kComposeCursorHeightDefault = 100;
+constexpr auto kComposeCursorBlinkMin = 0;
+constexpr auto kComposeCursorBlinkMax = 2000;
+constexpr auto kComposeCursorBlinkDefault = 0;
+constexpr auto kHintAlphabetRussian = "russian";
+constexpr auto kHintAlphabetEnglish = "english";
+constexpr auto kComposeCursorStyleBlock = "block";
+constexpr auto kComposeCursorStyleBar = "bar";
+constexpr auto kComposeCursorStyleUnderline = "underline";
+constexpr auto kHoldScrollTickMs = 16;
+constexpr auto kHoldScrollStartDelayMs = 90;
+constexpr auto kSingleScrollDurationMs = 190;
+constexpr auto kTelegraVimBuild = "2026.08.31-60";
+constexpr auto kKeyLogLimit = 200;
+
+base::options::toggle VimKeymapOption({
+	.id = kOptionVimKeymap,
+	.name = "Vim keymap",
+	.description = "Enable Vim-style navigation outside text fields.",
+	.defaultValue = true,
+});
+
+base::options::option<int> VimKeymapScrollStepOption({
+	.id = kOptionVimKeymapScrollStep,
+	.name = "Vim scroll step",
+	.description = "Pixels moved by one j/k press in navigation mode.",
+	.defaultValue = kScrollStepDefault,
+});
+
+base::options::option<int> VimKeymapHoldScrollSpeedOption({
+	.id = kOptionVimKeymapHoldScrollSpeed,
+	.name = "Vim hold scroll speed",
+	.description = "Pixels per second while holding j/k in navigation mode.",
+	.defaultValue = kHoldScrollSpeedDefault,
+});
+
+base::options::option<int> VimKeymapHintSizeOption({
+	.id = kOptionVimKeymapHintSize,
+	.name = "Vim hint letter size",
+	.description = "Font size for Vim-style hint badges.",
+	.defaultValue = kHintSizeDefault,
+});
+
+base::options::option<QString> VimKeymapHintAlphabetOption({
+	.id = kOptionVimKeymapHintAlphabet,
+	.name = "Vim hint buttons language",
+	.description = "Language used for Vim-style hint badges.",
+	.defaultValue = QString::fromLatin1(kHintAlphabetRussian),
+});
+
+base::options::option<QString> VimKeymapComposeCursorStyleOption({
+	.id = kOptionVimKeymapComposeCursorStyle,
+	.name = "Vim compose cursor style",
+	.description = "Cursor shape in compose normal mode: block, bar or underline.",
+	.defaultValue = QString::fromLatin1(kComposeCursorStyleBlock),
+});
+
+base::options::option<int> VimKeymapComposeCursorWidthOption({
+	.id = kOptionVimKeymapComposeCursorWidth,
+	.name = "Vim compose cursor width",
+	.description = "Cursor width in pixels in compose normal mode.",
+	.defaultValue = kComposeCursorWidthDefault,
+});
+
+base::options::option<int> VimKeymapComposeCursorHeightOption({
+	.id = kOptionVimKeymapComposeCursorHeight,
+	.name = "Vim compose cursor height",
+	.description = "Cursor height percent in compose normal mode.",
+	.defaultValue = kComposeCursorHeightDefault,
+});
+
+base::options::option<int> VimKeymapComposeCursorBlinkOption({
+	.id = kOptionVimKeymapComposeCursorBlink,
+	.name = "Vim compose cursor blink",
+	.description = "Blink interval in milliseconds. 0 keeps the cursor always visible.",
+	.defaultValue = kComposeCursorBlinkDefault,
+});
+
+constexpr auto kBindingDescription =
+	"Comma-separated bindings. Examples: j, Ctrl+J, Esc, ?, Tab, "
+	"Shift+Tab. Empty disables this binding.";
+
+base::options::option<QString> VimKeymapKeyToggleModeOption({
+	.id = kOptionVimKeymapKeyToggleMode,
+	.name = "Vim key: toggle mode",
+	.description = kBindingDescription,
+	.defaultValue = u"Esc"_q,
+});
+
+base::options::option<QString> VimKeymapKeyCancelReplyOption({
+	.id = kOptionVimKeymapKeyCancelReply,
+	.name = "Vim key: cancel reply",
+	.description = kBindingDescription,
+	.defaultValue = u"Esc"_q,
+});
+
+base::options::option<QString> VimKeymapKeyCancelEditOption({
+	.id = kOptionVimKeymapKeyCancelEdit,
+	.name = "Vim key: cancel edit",
+	.description = kBindingDescription,
+	.defaultValue = QString(),
+});
+
+base::options::option<QString> VimKeymapKeyHelpOption({
+	.id = kOptionVimKeymapKeyHelp,
+	.name = "Vim key: help",
+	.description = kBindingDescription,
+	.defaultValue = u"?"_q,
+});
+
+base::options::option<QString> VimKeymapKeyScrollDownOption({
+	.id = kOptionVimKeymapKeyScrollDown,
+	.name = "Vim key: scroll down",
+	.description = kBindingDescription,
+	.defaultValue = u"j, \u043E"_q,
+});
+
+base::options::option<QString> VimKeymapKeyScrollUpOption({
+	.id = kOptionVimKeymapKeyScrollUp,
+	.name = "Vim key: scroll up",
+	.description = kBindingDescription,
+	.defaultValue = u"k, \u043B"_q,
+});
+
+base::options::option<QString> VimKeymapKeyJumpBottomOption({
+	.id = kOptionVimKeymapKeyJumpBottom,
+	.name = "Vim key: jump to bottom",
+	.description = kBindingDescription,
+	.defaultValue = u"Ctrl+G, Ctrl+\u043F"_q,
+});
+
+base::options::option<QString> VimKeymapKeyCopyMessageOption({
+	.id = kOptionVimKeymapKeyCopyMessage,
+	.name = "Vim key: copy message hints",
+	.description = kBindingDescription,
+	.defaultValue = u"y, \u043D"_q,
+});
+
+base::options::option<QString> VimKeymapKeyReplyToMessageOption({
+	.id = kOptionVimKeymapKeyReplyToMessage,
+	.name = "Vim key: reply hints",
+	.description = kBindingDescription,
+	.defaultValue = u"r, \u043A"_q,
+});
+
+base::options::option<QString> VimKeymapKeyEditMessageOption({
+	.id = kOptionVimKeymapKeyEditMessage,
+	.name = "Vim key: edit message hints",
+	.description = kBindingDescription,
+	.defaultValue = u"e, \u0443"_q,
+});
+
+base::options::option<QString> VimKeymapKeyDeleteMessageOption({
+	.id = kOptionVimKeymapKeyDeleteMessage,
+	.name = "Vim key: delete message hints",
+	.description = kBindingDescription,
+	.defaultValue = u"d, \u0432"_q,
+});
+
+base::options::option<QString> VimKeymapKeyFocusHintsOption({
+	.id = kOptionVimKeymapKeyFocusHints,
+	.name = "Vim key: focus/link hints",
+	.description = kBindingDescription,
+	.defaultValue = u"f, \u0430"_q,
+});
+
+base::options::option<QString> VimKeymapKeyOpenChatHintsOption({
+	.id = kOptionVimKeymapKeyOpenChatHints,
+	.name = "Vim key: open chat hints",
+	.description = kBindingDescription,
+	.defaultValue = u"o, \u0449"_q,
+});
+
+base::options::option<QString> VimKeymapKeyChatPreviewOption({
+	.id = kOptionVimKeymapKeyChatPreview,
+	.name = "Vim key: chat preview hints",
+	.description = kBindingDescription,
+	.defaultValue = u"Ctrl+V, Ctrl+\u043C"_q,
+});
+
+base::options::option<QString> VimKeymapKeySearchOption({
+	.id = kOptionVimKeymapKeySearch,
+	.name = "Vim key: search in navigation mode",
+	.description = kBindingDescription,
+	.defaultValue = u"/"_q,
+});
+
+base::options::option<QString> VimKeymapKeyGlobalSearchOption({
+	.id = kOptionVimKeymapKeyGlobalSearch,
+	.name = "Vim key: global search",
+	.description = kBindingDescription,
+	.defaultValue = u"Ctrl+F, Ctrl+\u0430, Cmd+Shift+F, "
+		u"Cmd+Shift+\u0430, Ctrl+Shift+F, Ctrl+Shift+\u0430"_q,
+});
+
+base::options::option<QString> VimKeymapKeyUndoOption({
+	.id = kOptionVimKeymapKeyUndo,
+	.name = "Vim key: undo compose text",
+	.description = kBindingDescription,
+	.defaultValue = u"u, \u0433"_q,
+});
+
+base::options::option<QString> VimKeymapKeyRedoOption({
+	.id = kOptionVimKeymapKeyRedo,
+	.name = "Vim key: redo compose text",
+	.description = kBindingDescription,
+	.defaultValue = u"Ctrl+R, Ctrl+\u043A"_q,
+});
+
+base::options::option<QString> VimKeymapKeyNextChatOption({
+	.id = kOptionVimKeymapKeyNextChat,
+	.name = "Vim key: next chat",
+	.description = kBindingDescription,
+	.defaultValue = u"Ctrl+J, Ctrl+\u043E"_q,
+});
+
+base::options::option<QString> VimKeymapKeyPreviousChatOption({
+	.id = kOptionVimKeymapKeyPreviousChat,
+	.name = "Vim key: previous chat",
+	.description = kBindingDescription,
+	.defaultValue = u"Ctrl+K, Ctrl+\u043B"_q,
+});
+
+base::options::option<QString> VimKeymapKeyNextFolderOption({
+	.id = kOptionVimKeymapKeyNextFolder,
+	.name = "Vim key: next folder",
+	.description = kBindingDescription,
+	.defaultValue = u"Tab"_q,
+});
+
+base::options::option<QString> VimKeymapKeyPreviousFolderOption({
+	.id = kOptionVimKeymapKeyPreviousFolder,
+	.name = "Vim key: previous folder",
+	.description = kBindingDescription,
+	.defaultValue = u"Shift+Tab"_q,
+});
+
+base::options::option<QString> VimKeymapKeyEmojiPanelOption({
+	.id = kOptionVimKeymapKeyEmojiPanel,
+	.name = "Vim key: emoji panel",
+	.description = kBindingDescription,
+	.defaultValue = QString(),
+});
+
+base::options::option<QString> VimKeymapKeyFocusChatOption({
+	.id = kOptionVimKeymapKeyFocusChat,
+	.name = "Vim key: focus chat",
+	.description = kBindingDescription,
+	.defaultValue = u"Ctrl+H, Ctrl+\u0440"_q,
+});
+
+base::options::option<QString> VimKeymapKeyFocusEmojiOption({
+	.id = kOptionVimKeymapKeyFocusEmoji,
+	.name = "Vim key: focus emoji",
+	.description = kBindingDescription,
+	.defaultValue = u"Ctrl+L, Ctrl+\u0434"_q,
+});
+
+base::options::option<QString> VimKeymapKeyCallOption({
+	.id = kOptionVimKeymapKeyCall,
+	.name = "Vim key: call",
+	.description = kBindingDescription,
+	.defaultValue = u"Ctrl+T, Ctrl+\u0435"_q,
+});
+
+bool NormalModeEnabled = false;
+bool LegacyDefaultsMigrated = false;
+
+struct KeyLogEntry {
+	QString text;
+};
+
+std::vector<KeyLogEntry> KeyLog;
+int KeyLogGeneration = 0;
+int KeyLogSequence = 0;
+
+struct ActionHandler {
+	QPointer<QObject> owner;
+	Fn<bool(Action)> handler;
+};
+
+std::vector<ActionHandler> ActionHandlers;
+
+struct KeyHandler {
+	QPointer<QObject> owner;
+	Fn<bool(not_null<QKeyEvent*>)> handler;
+};
+
+std::vector<KeyHandler> KeyHandlers;
+
+struct TextInputPassthroughHandler {
+	QPointer<QObject> owner;
+	Fn<bool(not_null<QKeyEvent*>)> handler;
+};
+
+std::vector<TextInputPassthroughHandler> TextInputPassthroughHandlers;
+
+struct ForcedNormalModeHandler {
+	QPointer<QObject> owner;
+	Fn<bool()> handler;
+};
+
+std::vector<ForcedNormalModeHandler> ForcedNormalModeHandlers;
+std::vector<QPointer<QWidget>> ModeIndicatorWidgets;
+
+[[nodiscard]] Qt::KeyboardModifiers CleanModifiers(not_null<QKeyEvent*> e) {
+	return e->modifiers()
+		& ~(Qt::KeypadModifier | Qt::GroupSwitchModifier);
+}
+
+[[nodiscard]] QString PlainText(not_null<QKeyEvent*> e) {
+	return e->text().toCaseFolded();
+}
+
+[[nodiscard]] bool TextIs(not_null<QKeyEvent*> e, const QString &latin) {
+	return PlainText(e) == latin;
+}
+
+[[nodiscard]] bool TextIs(
+		not_null<QKeyEvent*> e,
+		const QString &latin,
+		const QString &cyrillic) {
+	const auto text = PlainText(e);
+	return text == latin || text == cyrillic;
+}
+
+[[nodiscard]] bool MacVirtualKeyIs(not_null<QKeyEvent*> e, Qt::Key key) {
+#ifdef Q_OS_MAC
+	switch (key) {
+	case Qt::Key_A: return e->nativeVirtualKey() == 0;
+	case Qt::Key_B: return e->nativeVirtualKey() == 11;
+	case Qt::Key_C: return e->nativeVirtualKey() == 8;
+	case Qt::Key_D: return e->nativeVirtualKey() == 2;
+	case Qt::Key_E: return e->nativeVirtualKey() == 14;
+	case Qt::Key_F: return e->nativeVirtualKey() == 3;
+	case Qt::Key_G: return e->nativeVirtualKey() == 5;
+	case Qt::Key_H: return e->nativeVirtualKey() == 4;
+	case Qt::Key_I: return e->nativeVirtualKey() == 34;
+	case Qt::Key_J: return e->nativeVirtualKey() == 38;
+	case Qt::Key_K: return e->nativeVirtualKey() == 40;
+	case Qt::Key_L: return e->nativeVirtualKey() == 37;
+	case Qt::Key_M: return e->nativeVirtualKey() == 46;
+	case Qt::Key_N: return e->nativeVirtualKey() == 45;
+	case Qt::Key_O: return e->nativeVirtualKey() == 31;
+	case Qt::Key_P: return e->nativeVirtualKey() == 35;
+	case Qt::Key_Q: return e->nativeVirtualKey() == 12;
+	case Qt::Key_R: return e->nativeVirtualKey() == 15;
+	case Qt::Key_S: return e->nativeVirtualKey() == 1;
+	case Qt::Key_T: return e->nativeVirtualKey() == 17;
+	case Qt::Key_U: return e->nativeVirtualKey() == 32;
+	case Qt::Key_V: return e->nativeVirtualKey() == 9;
+	case Qt::Key_W: return e->nativeVirtualKey() == 13;
+	case Qt::Key_X: return e->nativeVirtualKey() == 7;
+	case Qt::Key_Y: return e->nativeVirtualKey() == 16;
+	case Qt::Key_Z: return e->nativeVirtualKey() == 6;
+	default: return false;
+	}
+#else // Q_OS_MAC
+	return false;
+#endif // Q_OS_MAC
+}
+
+[[nodiscard]] QString MacPhysicalLatinKey(not_null<QKeyEvent*> e) {
+#ifdef Q_OS_MAC
+	switch (e->nativeVirtualKey()) {
+	case 0: return u"A"_q;
+	case 11: return u"B"_q;
+	case 8: return u"C"_q;
+	case 2: return u"D"_q;
+	case 14: return u"E"_q;
+	case 3: return u"F"_q;
+	case 5: return u"G"_q;
+	case 4: return u"H"_q;
+	case 34: return u"I"_q;
+	case 38: return u"J"_q;
+	case 40: return u"K"_q;
+	case 37: return u"L"_q;
+	case 46: return u"M"_q;
+	case 45: return u"N"_q;
+	case 31: return u"O"_q;
+	case 35: return u"P"_q;
+	case 12: return u"Q"_q;
+	case 15: return u"R"_q;
+	case 1: return u"S"_q;
+	case 17: return u"T"_q;
+	case 32: return u"U"_q;
+	case 9: return u"V"_q;
+	case 13: return u"W"_q;
+	case 7: return u"X"_q;
+	case 16: return u"Y"_q;
+	case 6: return u"Z"_q;
+	default: return QString();
+	}
+#else // Q_OS_MAC
+	return QString();
+#endif // Q_OS_MAC
+}
+
+[[nodiscard]] QString SpecialKeyName(not_null<QKeyEvent*> e) {
+	switch (e->key()) {
+	case Qt::Key_Control: return u"Ctrl"_q;
+	case Qt::Key_Shift: return u"Shift"_q;
+	case Qt::Key_Meta: return u"Cmd"_q;
+	case Qt::Key_Alt: return u"Alt"_q;
+	case Qt::Key_AltGr: return u"AltGr"_q;
+	case Qt::Key_Escape: return u"Esc"_q;
+	case Qt::Key_Tab: return u"Tab"_q;
+	case Qt::Key_Backtab: return u"Shift+Tab"_q;
+	case Qt::Key_Return: return u"Return"_q;
+	case Qt::Key_Enter: return u"Enter"_q;
+	case Qt::Key_Space: return u"Space"_q;
+	case Qt::Key_Backspace: return u"Backspace"_q;
+	case Qt::Key_Delete: return u"Delete"_q;
+	case Qt::Key_Up: return u"Up"_q;
+	case Qt::Key_Down: return u"Down"_q;
+	case Qt::Key_Left: return u"Left"_q;
+	case Qt::Key_Right: return u"Right"_q;
+	default: return QString();
+	}
+}
+
+[[nodiscard]] QString KeyNameForLog(not_null<QKeyEvent*> e) {
+	auto key = MacPhysicalLatinKey(e);
+	if (key.isEmpty()) {
+		if (e->key() >= Qt::Key_A && e->key() <= Qt::Key_Z) {
+			key = QString(QChar('A' + e->key() - Qt::Key_A));
+		} else if (e->key() >= Qt::Key_0 && e->key() <= Qt::Key_9) {
+			key = QString(QChar('0' + e->key() - Qt::Key_0));
+		} else {
+			key = SpecialKeyName(e);
+		}
+	}
+	const auto text = PlainText(e);
+	if (key.isEmpty()) {
+		key = text.isEmpty() ? u"key:%1"_q.arg(e->key()) : text;
+	} else if (!text.isEmpty()
+		&& text != key.toCaseFolded()
+		&& text != u" "_q) {
+		key += u"/"_q + text;
+	}
+	return key;
+}
+
+[[nodiscard]] QString KeyEventForLog(not_null<QKeyEvent*> e) {
+	auto parts = QStringList();
+	const auto modifiers = CleanModifiers(e);
+	if (modifiers & Qt::ControlModifier) {
+		parts.push_back(u"Ctrl"_q);
+	}
+	if (modifiers & Qt::MetaModifier) {
+		parts.push_back(u"Cmd"_q);
+	}
+	if (modifiers & Qt::AltModifier) {
+		parts.push_back(u"Alt"_q);
+	}
+	if ((modifiers & Qt::ShiftModifier) && e->key() != Qt::Key_Backtab) {
+		parts.push_back(u"Shift"_q);
+	}
+	parts.push_back(KeyNameForLog(e));
+	auto result = parts.join(u"+"_q);
+	if (e->isAutoRepeat()) {
+		result += u" repeat"_q;
+	}
+	return result;
+}
+
+[[nodiscard]] bool ShouldLogIgnoredKey(not_null<QKeyEvent*> e) {
+	const auto modifiers = CleanModifiers(e);
+	if (modifiers != Qt::NoModifier
+		|| e->key() == Qt::Key_Escape
+		|| e->key() == Qt::Key_Tab
+		|| e->key() == Qt::Key_Backtab
+		|| e->key() == Qt::Key_Return
+		|| e->key() == Qt::Key_Enter
+		|| NormalMode()) {
+		return true;
+	}
+	const auto text = PlainText(e);
+	return text.size() == 1
+		&& u"hjklfyro?/\u0440\u043E\u043B\u0434\u0430\u043D\u043A\u0449"_q
+			.contains(text.front());
+}
+
+[[nodiscard]] bool IsModifierOnlyKey(not_null<QKeyEvent*> e) {
+	switch (e->key()) {
+	case Qt::Key_Control:
+	case Qt::Key_Shift:
+	case Qt::Key_Meta:
+	case Qt::Key_Alt:
+	case Qt::Key_AltGr:
+		return true;
+	default:
+		return false;
+	}
+}
+
+void RefreshModeIndicator();
+
+void RecordKeyEvent(
+		not_null<QKeyEvent*> e,
+		const QString &status,
+		bool force) {
+	if (IsModifierOnlyKey(e)) {
+		return;
+	}
+	if (!force && !ShouldLogIgnoredKey(e)) {
+		return;
+	}
+	const auto entry = QString::number(++KeyLogSequence).rightJustified(
+		2,
+		QChar('0')) + u". "_q + KeyEventForLog(e) + u" -> "_q + status;
+	KeyLog.insert(KeyLog.begin(), { entry });
+	if (KeyLog.size() > kKeyLogLimit) {
+		KeyLog.pop_back();
+	}
+	++KeyLogGeneration;
+}
+
+[[nodiscard]] bool KeyIs(
+		not_null<QKeyEvent*> e,
+		Qt::Key key,
+		const QString &latin,
+		const QString &cyrillic) {
+	return (e->key() == key)
+		|| MacVirtualKeyIs(e, key)
+		|| (!cyrillic.isEmpty()
+			&& (e->key() == cyrillic.front().unicode()
+				|| e->key() == cyrillic.front().toUpper().unicode()))
+		|| TextIs(e, latin, cyrillic);
+}
+
+[[nodiscard]] bool IsPlainKey(not_null<QKeyEvent*> e) {
+	return CleanModifiers(e) == Qt::NoModifier;
+}
+
+[[nodiscard]] bool IsPlainOrShiftKey(not_null<QKeyEvent*> e) {
+	const auto modifiers = CleanModifiers(e);
+	return modifiers == Qt::NoModifier || modifiers == Qt::ShiftModifier;
+}
+
+[[nodiscard]] Qt::KeyboardModifier PhysicalControlModifier() {
+#ifdef Q_OS_MAC
+	return Qt::MetaModifier;
+#else // Q_OS_MAC
+	return Qt::ControlModifier;
+#endif // Q_OS_MAC
+}
+
+[[nodiscard]] bool HasOnlyPhysicalControl(not_null<QKeyEvent*> e) {
+	return CleanModifiers(e) == PhysicalControlModifier();
+}
+
+[[nodiscard]] bool HasPhysicalControlWithOptionalShift(
+		not_null<QKeyEvent*> e) {
+	const auto control = Qt::KeyboardModifiers(PhysicalControlModifier());
+	const auto modifiers = CleanModifiers(e);
+	return modifiers == control || modifiers == (control | Qt::ShiftModifier);
+}
+
+struct KeyBinding {
+	Qt::KeyboardModifiers modifiers = Qt::NoModifier;
+	Qt::Key key = Qt::Key_unknown;
+	QString text;
+};
+
+[[nodiscard]] std::optional<Qt::KeyboardModifier> ModifierFromToken(
+		const QString &token,
+		bool realMacModifiers = false) {
+	if (token == u"ctrl"_q || token == u"control"_q) {
+#ifdef Q_OS_MAC
+		return realMacModifiers ? Qt::ControlModifier : PhysicalControlModifier();
+#else // Q_OS_MAC
+		return Qt::ControlModifier;
+#endif // Q_OS_MAC
+	} else if (token == u"cmd"_q
+		|| token == u"command"_q
+		|| token == u"meta"_q) {
+#ifdef Q_OS_MAC
+		return realMacModifiers ? Qt::MetaModifier : PhysicalControlModifier();
+#else // Q_OS_MAC
+		return PhysicalControlModifier();
+#endif // Q_OS_MAC
+	} else if (token == u"shift"_q) {
+		return Qt::ShiftModifier;
+	} else if (token == u"alt"_q || token == u"option"_q) {
+		return Qt::AltModifier;
+	}
+	return std::nullopt;
+}
+
+[[nodiscard]] std::optional<Qt::Key> SpecialKeyFromToken(
+		const QString &token) {
+	if (token == u"esc"_q || token == u"escape"_q) {
+		return Qt::Key_Escape;
+	} else if (token == u"tab"_q) {
+		return Qt::Key_Tab;
+	} else if (token == u"backtab"_q) {
+		return Qt::Key_Backtab;
+	} else if (token == u"enter"_q || token == u"return"_q) {
+		return Qt::Key_Return;
+	} else if (token == u"space"_q) {
+		return Qt::Key_Space;
+	} else if (token == u"backspace"_q) {
+		return Qt::Key_Backspace;
+	} else if (token == u"delete"_q) {
+		return Qt::Key_Delete;
+	} else if (token == u"up"_q) {
+		return Qt::Key_Up;
+	} else if (token == u"down"_q) {
+		return Qt::Key_Down;
+	} else if (token == u"left"_q) {
+		return Qt::Key_Left;
+	} else if (token == u"right"_q) {
+		return Qt::Key_Right;
+	} else if (token == u"home"_q) {
+		return Qt::Key_Home;
+	} else if (token == u"end"_q) {
+		return Qt::Key_End;
+	} else if (token == u"pageup"_q) {
+		return Qt::Key_PageUp;
+	} else if (token == u"pagedown"_q) {
+		return Qt::Key_PageDown;
+	}
+	return std::nullopt;
+}
+
+[[nodiscard]] Qt::Key KeyFromCharacter(QChar ch) {
+	const auto lower = ch.toCaseFolded();
+	const auto unicode = lower.unicode();
+	if (unicode >= 'a' && unicode <= 'z') {
+		return Qt::Key(Qt::Key_A + unicode - 'a');
+	} else if (unicode >= '0' && unicode <= '9') {
+		return Qt::Key(Qt::Key_0 + unicode - '0');
+	}
+	switch (unicode) {
+	case '/': return Qt::Key_Slash;
+	case '?': return Qt::Key_Question;
+	case '.': return Qt::Key_Period;
+	case ',': return Qt::Key_Comma;
+	case ';': return Qt::Key_Semicolon;
+	case ':': return Qt::Key_Colon;
+	case '-': return Qt::Key_Minus;
+	case '_': return Qt::Key_Underscore;
+	case '=': return Qt::Key_Equal;
+	default: return Qt::Key(unicode);
+	}
+}
+
+[[nodiscard]] std::optional<KeyBinding> ParseBinding(
+		QString token,
+		bool realMacModifiers = false) {
+	token = token.trimmed().toCaseFolded();
+	token.remove(QChar(' '));
+	if (token.isEmpty()) {
+		return std::nullopt;
+	}
+	const auto parts = token.split('+', Qt::SkipEmptyParts);
+	if (parts.isEmpty()) {
+		return std::nullopt;
+	}
+	auto binding = KeyBinding();
+	for (auto i = qsizetype(0), count = parts.size() - 1; i != count; ++i) {
+		if (const auto modifier = ModifierFromToken(
+				parts[i],
+				realMacModifiers)) {
+			binding.modifiers |= *modifier;
+		} else {
+			return std::nullopt;
+		}
+	}
+	const auto key = parts.back();
+	if (ModifierFromToken(key, realMacModifiers)) {
+		return std::nullopt;
+	} else if (const auto special = SpecialKeyFromToken(key)) {
+		binding.key = *special;
+		if (*special == Qt::Key_Space) {
+			binding.text = u" "_q;
+		}
+		return binding;
+	} else if (key.size() == 1) {
+		binding.key = KeyFromCharacter(key.front());
+		binding.text = key;
+		return binding;
+	}
+	return std::nullopt;
+}
+
+[[nodiscard]] bool KeyMatches(
+		const KeyBinding &binding,
+		not_null<QKeyEvent*> e) {
+	if (binding.key != Qt::Key_unknown) {
+		if (e->key() == binding.key || MacVirtualKeyIs(e, binding.key)) {
+			return true;
+		} else if (binding.key == Qt::Key_Tab
+			&& e->key() == Qt::Key_Backtab) {
+			return true;
+		} else if (binding.key == Qt::Key_Backtab
+			&& e->key() == Qt::Key_Tab) {
+			return true;
+		}
+	}
+	return !binding.text.isEmpty() && PlainText(e) == binding.text;
+}
+
+[[nodiscard]] bool ModifiersMatch(
+		const KeyBinding &binding,
+		not_null<QKeyEvent*> e,
+		bool allowExtraShift,
+		bool allowMacControlCommandEquivalent = true) {
+	const auto modifiers = CleanModifiers(e);
+	const auto matches = [](Qt::KeyboardModifiers expected, auto actual) {
+		if (actual == expected) {
+			return true;
+		}
+#ifdef Q_OS_MAC
+		const auto controlOrCommand
+			= Qt::KeyboardModifiers(Qt::ControlModifier | Qt::MetaModifier);
+		const auto expectedControl = expected & controlOrCommand;
+		const auto actualControl = actual & controlOrCommand;
+		const auto expectedControlValue = int(expectedControl);
+		const auto actualControlValue = int(actualControl);
+		if ((expected & ~controlOrCommand) == (actual & ~controlOrCommand)
+			&& expectedControlValue
+			&& actualControlValue
+			&& !(expectedControlValue & (expectedControlValue - 1))
+			&& !(actualControlValue & (actualControlValue - 1))) {
+			return true;
+		}
+#endif // Q_OS_MAC
+		return false;
+	};
+	const auto strictMatches = [&](Qt::KeyboardModifiers expected) {
+		return allowMacControlCommandEquivalent
+			? matches(expected, modifiers)
+			: (expected == modifiers);
+	};
+	if (strictMatches(binding.modifiers)) {
+		return true;
+	} else if (!allowExtraShift || (binding.modifiers & Qt::ShiftModifier)) {
+		return false;
+	}
+	return strictMatches(binding.modifiers | Qt::ShiftModifier);
+}
+
+[[nodiscard]] bool MatchesBindings(
+		base::options::option<QString> &option,
+		not_null<QKeyEvent*> e,
+		bool allowExtraShift = false,
+		bool realMacModifiers = false,
+		bool allowMacControlCommandEquivalent = true) {
+	for (const auto &part : option.value().split(',', Qt::SkipEmptyParts)) {
+		const auto binding = ParseBinding(part, realMacModifiers);
+		if (binding
+			&& ModifiersMatch(
+				*binding,
+				e,
+				allowExtraShift,
+				allowMacControlCommandEquivalent)
+			&& KeyMatches(*binding, e)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+[[nodiscard]] QString BindingLabel(base::options::option<QString> &option) {
+	MigrateLegacyDefaults();
+	const auto value = option.value().trimmed();
+	return value.isEmpty() ? u"-"_q : value;
+}
+
+[[nodiscard]] bool IsToggleModeKey(not_null<QKeyEvent*> e) {
+	MigrateLegacyDefaults();
+	return !e->isAutoRepeat()
+		&& MatchesBindings(VimKeymapKeyToggleModeOption, e);
+}
+
+[[nodiscard]] bool IsSearchKey(not_null<QKeyEvent*> e) {
+	return MatchesBindings(VimKeymapKeySearchOption, e, true);
+}
+
+[[nodiscard]] bool IsGlobalSearchKey(not_null<QKeyEvent*> e) {
+	return MatchesBindings(VimKeymapKeyGlobalSearchOption, e, true);
+}
+
+[[nodiscard]] bool IsHelpKey(not_null<QKeyEvent*> e) {
+	return NormalMode()
+		&& MatchesBindings(VimKeymapKeyHelpOption, e, true);
+}
+
+[[nodiscard]] bool IsTextInputObject(QObject *object) {
+	for (auto current = object; current; current = current->parent()) {
+		if (qobject_cast<QLineEdit*>(current)
+			|| qobject_cast<QTextEdit*>(current)
+			|| dynamic_cast<Ui::InputField*>(current)) {
+			return true;
+		}
+	}
+	if (const auto focus = QApplication::focusWidget()) {
+		return qobject_cast<QLineEdit*>(focus)
+			|| qobject_cast<QTextEdit*>(focus)
+			|| dynamic_cast<Ui::InputField*>(focus);
+	}
+	return false;
+}
+
+[[nodiscard]] QWidget *WidgetFromObject(QObject *object) {
+	return (object && object->isWidgetType())
+		? static_cast<QWidget*>(object)
+		: nullptr;
+}
+
+[[nodiscard]] bool InsideElasticScroll(QWidget *widget) {
+	for (auto current = widget; current; current = current->parentWidget()) {
+		if (dynamic_cast<Ui::ElasticScroll*>(current)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+[[nodiscard]] bool ScrollAreaAvailable(Ui::ScrollArea *area) {
+	return area
+		&& area->isVisible()
+		&& area->isEnabled()
+		&& !InsideElasticScroll(area)
+		&& area->scrollTopMax() > 0;
+}
+
+[[nodiscard]] Ui::ScrollArea *NearestScrollArea(QWidget *start) {
+	for (auto current = start; current; current = current->parentWidget()) {
+		if (dynamic_cast<Ui::ElasticScroll*>(current)) {
+			return nullptr;
+		} else if (const auto area = dynamic_cast<Ui::ScrollArea*>(current)) {
+			return ScrollAreaAvailable(area) ? area : nullptr;
+		}
+	}
+	return nullptr;
+}
+
+[[nodiscard]] Ui::ScrollArea *ContainedScrollArea(QWidget *root) {
+	if (!root || !root->isVisible() || InsideElasticScroll(root)) {
+		return nullptr;
+	}
+	auto result = (Ui::ScrollArea*)nullptr;
+	const auto inspect = [&](QWidget *widget) {
+		const auto area = dynamic_cast<Ui::ScrollArea*>(widget);
+		if (ScrollAreaAvailable(area) && !result) {
+			result = area;
+		}
+	};
+	inspect(root);
+	for (const auto widget : root->findChildren<QWidget*>()) {
+		inspect(widget);
+	}
+	return result;
+}
+
+[[nodiscard]] QAbstractScrollArea *NearestQtScrollArea(QWidget *start) {
+	for (auto current = start; current; current = current->parentWidget()) {
+		if (dynamic_cast<Ui::ElasticScroll*>(current)
+			|| dynamic_cast<Ui::ScrollArea*>(current)) {
+			return nullptr;
+		} else if (const auto area = dynamic_cast<QAbstractScrollArea*>(
+				current)) {
+			return area;
+		}
+	}
+	return nullptr;
+}
+
+struct ScrollAreaAnimation {
+	QPointer<Ui::ScrollArea> area;
+	Ui::Animations::Simple animation;
+	int target = 0;
+};
+
+struct ScrollBarAnimation {
+	QPointer<QScrollBar> bar;
+	Ui::Animations::Simple animation;
+	int target = 0;
+};
+
+std::vector<std::unique_ptr<ScrollAreaAnimation>> ScrollAreaAnimations;
+std::vector<std::unique_ptr<ScrollBarAnimation>> ScrollBarAnimations;
+
+void CleanupScrollAnimations() {
+	const auto removeArea = [](const auto &entry) {
+		return !entry->area;
+	};
+	ScrollAreaAnimations.erase(
+		std::remove_if(
+			begin(ScrollAreaAnimations),
+			end(ScrollAreaAnimations),
+			removeArea),
+		end(ScrollAreaAnimations));
+
+	const auto removeBar = [](const auto &entry) {
+		return !entry->bar;
+	};
+	ScrollBarAnimations.erase(
+		std::remove_if(
+			begin(ScrollBarAnimations),
+			end(ScrollBarAnimations),
+			removeBar),
+		end(ScrollBarAnimations));
+}
+
+[[nodiscard]] ScrollAreaAnimation *AnimationFor(Ui::ScrollArea *area) {
+	CleanupScrollAnimations();
+	for (const auto &entry : ScrollAreaAnimations) {
+		if (entry->area == area) {
+			return entry.get();
+		}
+	}
+	auto entry = std::make_unique<ScrollAreaAnimation>();
+	entry->area = area;
+	entry->target = area->scrollTop();
+	const auto result = entry.get();
+	ScrollAreaAnimations.push_back(std::move(entry));
+	return result;
+}
+
+[[nodiscard]] ScrollBarAnimation *AnimationFor(QScrollBar *bar) {
+	CleanupScrollAnimations();
+	for (const auto &entry : ScrollBarAnimations) {
+		if (entry->bar == bar) {
+			return entry.get();
+		}
+	}
+	auto entry = std::make_unique<ScrollBarAnimation>();
+	entry->bar = bar;
+	entry->target = bar->value();
+	const auto result = entry.get();
+	ScrollBarAnimations.push_back(std::move(entry));
+	return result;
+}
+
+[[nodiscard]] bool SmoothScrollBy(
+		Ui::ScrollArea *area,
+		int delta,
+		bool autoRepeat) {
+	if (!area) {
+		return false;
+	}
+	const auto current = area->scrollTop();
+	const auto entry = AnimationFor(area);
+	const auto base = (autoRepeat && entry->animation.animating())
+		? entry->target
+		: current;
+	const auto target = std::clamp(base + delta, 0, area->scrollTopMax());
+	if (target == current && target == base) {
+		return false;
+	}
+	entry->target = target;
+	entry->animation.stop();
+	const auto weak = QPointer<Ui::ScrollArea>(area);
+	entry->animation.start(
+		[weak, entry] {
+			if (weak) {
+				weak->scrollToY(qRound(entry->animation.value(
+					entry->target)));
+			}
+		},
+		current,
+		target,
+		SingleScrollDurationMs(),
+		anim::linear);
+	return true;
+}
+
+[[nodiscard]] bool SmoothScrollBy(
+		QScrollBar *bar,
+		int delta,
+		bool autoRepeat) {
+	if (!bar) {
+		return false;
+	}
+	const auto current = bar->value();
+	const auto entry = AnimationFor(bar);
+	const auto base = (autoRepeat && entry->animation.animating())
+		? entry->target
+		: current;
+	const auto target = std::clamp(
+		base + delta,
+		bar->minimum(),
+		bar->maximum());
+	if (target == current && target == base) {
+		return false;
+	}
+	entry->target = target;
+	entry->animation.stop();
+	const auto weak = QPointer<QScrollBar>(bar);
+	entry->animation.start(
+		[weak, entry] {
+			if (weak) {
+				weak->setValue(qRound(entry->animation.value(entry->target)));
+			}
+		},
+		current,
+		target,
+		SingleScrollDurationMs(),
+		anim::linear);
+	return true;
+}
+
+[[nodiscard]] bool ScrollGenericArea(
+		not_null<QObject*> object,
+		not_null<QKeyEvent*> e) {
+	const auto navigation = NavigationKey(e);
+	if (!navigation) {
+		return false;
+	}
+	const auto direction = (*navigation == Qt::Key_Down) ? 1 : -1;
+	const auto delta = ScrollStep();
+	const auto objectWidget = WidgetFromObject(object.get());
+	const auto focus = QApplication::focusWidget();
+	const auto active = QApplication::activeWindow();
+	auto candidates = std::vector<QWidget*> {
+		objectWidget,
+		focus,
+		active,
+	};
+	for (const auto candidate : candidates) {
+		if (const auto area = NearestScrollArea(candidate)) {
+			if (SmoothScrollBy(area, direction * delta, e->isAutoRepeat())) {
+				return true;
+			}
+		}
+	}
+	for (const auto candidate : { objectWidget, focus }) {
+		if (candidate == active) {
+			continue;
+		} else if (const auto area = ContainedScrollArea(candidate)) {
+			if (SmoothScrollBy(area, direction * delta, e->isAutoRepeat())) {
+				return true;
+			}
+		}
+	}
+	for (const auto candidate : candidates) {
+		if (const auto area = NearestQtScrollArea(candidate)) {
+			if (SmoothScrollBy(
+					area->verticalScrollBar(),
+					direction * delta,
+					e->isAutoRepeat())) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+[[nodiscard]] std::optional<Shortcuts::Command> LegacyCommand(
+		not_null<QKeyEvent*> e) {
+	if (const auto navigation = ChatNavigationKey(e)) {
+		if (*navigation == ChatNavigation::Next) {
+			return Shortcuts::Command::ChatNext;
+		} else {
+			return Shortcuts::Command::ChatPrevious;
+		}
+	} else if (MatchesBindings(VimKeymapKeyNextFolderOption, e)) {
+		return Shortcuts::Command::FolderNext;
+	} else if (MatchesBindings(VimKeymapKeyPreviousFolderOption, e)) {
+		return Shortcuts::Command::FolderPrevious;
+	}
+	return std::nullopt;
+}
+
+[[nodiscard]] bool LaunchLegacyCommand(Shortcuts::Command command) {
+	return Shortcuts::Launch(command);
+}
+
+[[nodiscard]] bool HandleRegisteredAction(Action action) {
+	const auto remove = [](const ActionHandler &handler) {
+		return !handler.owner;
+	};
+	ActionHandlers.erase(
+		std::remove_if(begin(ActionHandlers), end(ActionHandlers), remove),
+		end(ActionHandlers));
+	for (auto i = ActionHandlers.rbegin(); i != ActionHandlers.rend(); ++i) {
+		if (i->handler(action)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+[[nodiscard]] bool HandleRegisteredKey(not_null<QKeyEvent*> e) {
+	const auto remove = [](const KeyHandler &handler) {
+		return !handler.owner;
+	};
+	KeyHandlers.erase(
+		std::remove_if(begin(KeyHandlers), end(KeyHandlers), remove),
+		end(KeyHandlers));
+	for (auto i = KeyHandlers.rbegin(); i != KeyHandlers.rend(); ++i) {
+		if (i->handler(e)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+[[nodiscard]] bool TextInputPassthroughRequested(not_null<QKeyEvent*> e) {
+	const auto remove = [](const TextInputPassthroughHandler &handler) {
+		return !handler.owner;
+	};
+	TextInputPassthroughHandlers.erase(
+		std::remove_if(
+			begin(TextInputPassthroughHandlers),
+			end(TextInputPassthroughHandlers),
+			remove),
+		end(TextInputPassthroughHandlers));
+	for (auto i = TextInputPassthroughHandlers.rbegin();
+			i != TextInputPassthroughHandlers.rend();
+			++i) {
+		if (i->handler(e)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+[[nodiscard]] bool ForcedNormalMode() {
+	const auto remove = [](const ForcedNormalModeHandler &handler) {
+		return !handler.owner;
+	};
+	ForcedNormalModeHandlers.erase(
+		std::remove_if(
+			begin(ForcedNormalModeHandlers),
+			end(ForcedNormalModeHandlers),
+			remove),
+		end(ForcedNormalModeHandlers));
+	for (const auto &handler : ForcedNormalModeHandlers) {
+		if (handler.handler && handler.handler()) {
+			return true;
+		}
+	}
+	return false;
+}
+
+void FocusForCurrentMode() {
+	if (const auto active = App().activeWindow()) {
+		active->widget()->setInnerFocus();
+	} else if (const auto primary = App().activePrimaryWindow()) {
+		primary->widget()->setInnerFocus();
+	}
+}
+
+void RefreshModeIndicator() {
+	const auto remove = [](const auto &widget) {
+		return !widget;
+	};
+	ModeIndicatorWidgets.erase(
+		std::remove_if(
+			begin(ModeIndicatorWidgets),
+			end(ModeIndicatorWidgets),
+			remove),
+		end(ModeIndicatorWidgets));
+	for (const auto &widget : ModeIndicatorWidgets) {
+		if (widget->isVisible()) {
+			widget->update();
+		}
+	}
+}
+
+[[nodiscard]] bool CanToggleByEscape() {
+	if (QApplication::activeModalWidget()
+		|| QApplication::activePopupWidget()) {
+		return false;
+	}
+	const auto active = App().activeWindow();
+	if (!active) {
+		return false;
+	} else if (active->locked() || active->isLayerShown()) {
+		return false;
+	}
+	return active->widget()->isActiveWindow();
+}
+
+[[nodiscard]] bool TelegramLayerOrPopupShown() {
+	if (QApplication::activeModalWidget()
+		|| QApplication::activePopupWidget()) {
+		return true;
+	}
+	const auto active = App().activeWindow();
+	return active && (active->locked() || active->isLayerShown());
+}
+
+[[nodiscard]] bool TelegramModalLayerShown() {
+	if (QApplication::activeModalWidget()) {
+		return true;
+	}
+	const auto active = App().activeWindow();
+	return active && (active->locked() || active->isLayerShown());
+}
+
+void SetNormalModeValue(bool enabled) {
+	const auto was = NormalMode();
+	const auto value = enabled;
+	if (NormalModeEnabled == value) {
+		return;
+	}
+	NormalModeEnabled = value;
+	if (was != NormalMode()) {
+		RefreshModeIndicator();
+	}
+}
+
+[[nodiscard]] bool OpenGlobalSearch() {
+	const auto active = App().activeWindow();
+	if (!active || active->locked() || active->isLayerShown()) {
+		return false;
+	}
+	const auto controller = active->sessionController();
+	return controller && controller->content()->focusDialogsSearch();
+}
+
+[[nodiscard]] bool HandleGlobalSearch(not_null<QKeyEvent*> e) {
+	if (!GlobalSearchKey(e)) {
+		return false;
+	}
+	if (OpenGlobalSearch()) {
+		SetNormalModeValue(false);
+		RecordKeyEvent(e, u"global chat search"_q, true);
+	} else {
+		RecordKeyEvent(e, u"global chat search unavailable"_q, true);
+	}
+	e->accept();
+	return true;
+}
+
+[[nodiscard]] bool UseRussianHelp() {
+	return Lang::LanguageIdOrDefault(
+		Lang::Id()).startsWith(u"ru"_q, Qt::CaseInsensitive);
+}
+
+[[nodiscard]] bool UseEnglishHintAlphabet() {
+	const auto value = VimKeymapHintAlphabetOption.value()
+		.trimmed()
+		.toCaseFolded();
+	return value == QString::fromLatin1(kHintAlphabetEnglish)
+		|| value == u"en"_q;
+}
+
+[[nodiscard]] QString EnglishHintAlphabet() {
+	return u"asdfghjklqwertyuiopzxcvbnm,."_q;
+}
+
+[[nodiscard]] QString RussianHintAlphabet() {
+	return u"фывапролдйцукенгшщзячсмитьбю"_q;
+}
+
+[[nodiscard]] QString CurrentHintAlphabet() {
+	return UseEnglishHintAlphabet()
+		? EnglishHintAlphabet()
+		: RussianHintAlphabet();
+}
+
+class HelpTabsWidget final : public Ui::RpWidget {
+public:
+	HelpTabsWidget(
+		QWidget *parent,
+		QString hints,
+		bool russian)
+	: Ui::RpWidget(parent)
+	, _hints(std::move(hints))
+	, _russian(russian)
+	, _slider(Ui::CreateChild<Ui::SettingsSlider>(this, st::settingsSlider))
+	, _label(Ui::CreateChild<Ui::FlatLabel>(this, st::boxLabel)) {
+		setFocusPolicy(Qt::StrongFocus);
+		_slider->addSection(tabTitle(0));
+		_slider->addSection(tabTitle(1));
+		_slider->setActiveSectionFast(_activeTab);
+		_slider->sectionActivated(
+		) | rpl::on_next([=](int index) {
+			setActiveTab(index);
+		}, _slider->lifetime());
+		_label->setSelectable(true);
+		updateLabel();
+	}
+
+	QAccessible::Role accessibilityRole() override {
+		return QAccessible::Role::PageTabList;
+	}
+
+	QString accessibilityName() override {
+		return currentTitle() + u"\n"_q + currentText();
+	}
+
+	bool handleBoxKey(
+			not_null<Ui::GenericBox*> box,
+			not_null<QKeyEvent*> e) {
+		const auto modifiers = CleanModifiers(e);
+		const auto text = e->text().toCaseFolded();
+		const auto previousTab = (e->key() == Qt::Key_Backtab)
+			|| ((e->key() == Qt::Key_Tab)
+				&& (modifiers == Qt::ShiftModifier))
+			|| ((modifiers == Qt::NoModifier)
+				&& ((e->key() == Qt::Key_Left)
+					|| (text == u"h"_q)
+					|| (text == u"\u0440"_q)));
+		const auto nextTab = ((e->key() == Qt::Key_Tab)
+				&& (modifiers == Qt::NoModifier))
+			|| ((modifiers == Qt::NoModifier)
+				&& ((e->key() == Qt::Key_Right)
+					|| (text == u"l"_q)
+					|| (text == u"\u0434"_q)));
+		if (previousTab || nextTab) {
+			RecordKeyEvent(
+				e,
+				previousTab ? u"help previous tab"_q : u"help next tab"_q,
+				true);
+			setActiveTab(_activeTab + (previousTab ? -1 : 1));
+			e->accept();
+			return true;
+		}
+		const auto plainScrollDirection = (modifiers == Qt::NoModifier)
+			? ((text == u"j"_q || text == u"\u043E"_q)
+				? 1
+				: (text == u"k"_q || text == u"\u043B"_q)
+				? -1
+				: 0)
+			: 0;
+		const auto scrollDirection = plainScrollDirection
+			? plainScrollDirection
+			: MatchesBindings(
+				VimKeymapKeyScrollDownOption,
+				e)
+			? 1
+			: MatchesBindings(VimKeymapKeyScrollUpOption, e)
+			? -1
+			: 0;
+		if (scrollDirection) {
+			const auto target = box->scrollTop()
+				+ scrollDirection * ScrollStep();
+			box->scrollTo(
+				{ target, target + box->scrollHeight() },
+				anim::type::normal);
+			RecordKeyEvent(
+				e,
+				(scrollDirection > 0)
+					? u"help scroll down"_q
+					: u"help scroll up"_q,
+				true);
+			if (_activeTab == 1) {
+				updateLabel();
+			}
+			e->accept();
+			return true;
+		}
+		return false;
+	}
+
+	int resizeGetHeight(int newWidth) override {
+		_slider->resizeToWidth(newWidth);
+		_label->resizeToWidth(newWidth);
+		layoutChildren(newWidth);
+		return _slider->height() + kTabGap + _label->height();
+	}
+
+protected:
+	void keyPressEvent(QKeyEvent *e) override {
+		for (auto current = parentWidget(); current; current = current->parentWidget()) {
+			if (const auto box = dynamic_cast<Ui::GenericBox*>(current)) {
+				if (handleBoxKey(not_null{ box }, not_null{ e })) {
+					return;
+				}
+				break;
+			}
+		}
+		Ui::RpWidget::keyPressEvent(e);
+	}
+
+public:
+	bool handleGlobalKey(
+			not_null<Ui::GenericBox*> box,
+			not_null<QKeyEvent*> e) {
+		const auto top = box->window();
+		if (!top || !top->isActiveWindow() || !isVisibleTo(top)) {
+			return false;
+		}
+		return handleBoxKey(box, e);
+	}
+
+protected:
+	void resizeEvent(QResizeEvent *e) override {
+		layoutChildren(e->size().width());
+		Ui::RpWidget::resizeEvent(e);
+	}
+
+private:
+	static constexpr auto kTabsCount = 2;
+	static constexpr auto kTabGap = 10;
+
+	[[nodiscard]] QString tabTitle(int index) const {
+		if (_russian) {
+			return index == 0 ? u"Подсказки"_q : u"Лог клавиш"_q;
+		}
+		return index == 0 ? u"Hints"_q : u"Key log"_q;
+	}
+
+	[[nodiscard]] QString currentTitle() const {
+		return tabTitle(_activeTab);
+	}
+
+	[[nodiscard]] QString currentText() const {
+		return (_activeTab == 0) ? _hints : keyLogText();
+	}
+
+	void setActiveTab(int tab) {
+		const auto value = (tab % kTabsCount + kTabsCount) % kTabsCount;
+		if (_activeTab == value) {
+			return;
+		}
+		_activeTab = value;
+		_slider->setActiveSectionFast(_activeTab);
+		updateLabel();
+		accessibilityNameChanged();
+		update();
+	}
+
+	void updateLabel() {
+		_label->setText(currentText());
+		_label->resizeToWidth(std::max(1, width()));
+		layoutChildren(width());
+	}
+
+	[[nodiscard]] QString keyLogText() const {
+		auto result = QString();
+		if (_russian) {
+			result += u"Последние "_q
+				+ QString::number(kKeyLogLimit)
+				+ u" клавиш:\n"_q;
+			result += u"Самое свежее нажатие находится внизу.\n\n"_q;
+			if (const auto recent = RecentKeyLogText(); !recent.isEmpty()) {
+				result += recent;
+			} else {
+				result += u"Лог пока пуст."_q;
+			}
+		} else {
+			result += u"Last "_q
+				+ QString::number(kKeyLogLimit)
+				+ u" keys:\n"_q;
+			result += u"The latest key is at the bottom.\n\n"_q;
+			if (const auto recent = RecentKeyLogText(); !recent.isEmpty()) {
+				result += recent;
+			} else {
+				result += u"The log is empty."_q;
+			}
+		}
+		return result;
+	}
+
+	void layoutChildren(int newWidth) {
+		_slider->moveToLeft(0, 0, newWidth);
+		_label->moveToLeft(0, _slider->height() + kTabGap, newWidth);
+	}
+
+	QString _hints;
+	bool _russian = false;
+	not_null<Ui::SettingsSlider*> _slider;
+	not_null<Ui::FlatLabel*> _label;
+	int _activeTab = 0;
+
+};
+
+void ShowHelpBox() {
+	const auto active = App().activeWindow();
+	const auto window = active ? active : App().activePrimaryWindow();
+	if (!window) {
+		return;
+	}
+	const auto russian = UseRussianHelp();
+	const auto toggle = BindingLabel(VimKeymapKeyToggleModeOption);
+	const auto cancelReply = BindingLabel(VimKeymapKeyCancelReplyOption);
+	const auto cancelEdit = BindingLabel(VimKeymapKeyCancelEditOption);
+	const auto cancelEditEnabled
+		= !VimKeymapKeyCancelEditOption.value().trimmed().isEmpty();
+	const auto help = BindingLabel(VimKeymapKeyHelpOption);
+	const auto scrollDown = BindingLabel(VimKeymapKeyScrollDownOption);
+	const auto scrollUp = BindingLabel(VimKeymapKeyScrollUpOption);
+	const auto jumpBottom = BindingLabel(VimKeymapKeyJumpBottomOption);
+	const auto copy = BindingLabel(VimKeymapKeyCopyMessageOption);
+	const auto reply = BindingLabel(VimKeymapKeyReplyToMessageOption);
+	const auto edit = BindingLabel(VimKeymapKeyEditMessageOption);
+	const auto deleteMessage = BindingLabel(VimKeymapKeyDeleteMessageOption);
+	const auto focus = BindingLabel(VimKeymapKeyFocusHintsOption);
+	const auto openChats = BindingLabel(VimKeymapKeyOpenChatHintsOption);
+	const auto preview = BindingLabel(VimKeymapKeyChatPreviewOption);
+	const auto search = BindingLabel(VimKeymapKeySearchOption);
+	const auto globalSearch = BindingLabel(VimKeymapKeyGlobalSearchOption);
+	const auto undo = BindingLabel(VimKeymapKeyUndoOption);
+	const auto redo = BindingLabel(VimKeymapKeyRedoOption);
+	const auto nextChat = BindingLabel(VimKeymapKeyNextChatOption);
+	const auto previousChat = BindingLabel(VimKeymapKeyPreviousChatOption);
+	const auto nextFolder = BindingLabel(VimKeymapKeyNextFolderOption);
+	const auto previousFolder = BindingLabel(VimKeymapKeyPreviousFolderOption);
+	const auto emojiPanel = BindingLabel(VimKeymapKeyEmojiPanelOption);
+	const auto emojiPanelEnabled
+		= !VimKeymapKeyEmojiPanelOption.value().trimmed().isEmpty();
+	const auto focusChat = BindingLabel(VimKeymapKeyFocusChatOption);
+	const auto focusEmoji = BindingLabel(VimKeymapKeyFocusEmojiOption);
+	const auto call = BindingLabel(VimKeymapKeyCallOption);
+	const auto version = u"TelegraVim "_q
+		+ QString::fromLatin1(kTelegraVimBuild)
+		+ u" / Telegram "_q
+		+ QString::fromLatin1(AppVersionStr);
+	const auto hints = [&] {
+		auto result = QString();
+		if (russian) {
+			result += u"Версия: "_q + version + u"\n\n"_q;
+			result += toggle
+				+ u" - режим ввода / навигации, если не открыт слой Telegram\n"_q;
+			result += u"Если открыто фото, меню или окно - Esc сначала закрывает его.\n\n"_q;
+				result += cancelReply
+					+ u" - снять активный reply у сообщения\n\n"_q;
+				if (cancelEditEnabled) {
+					result += cancelEdit
+						+ u" - отменить редактирование сообщения\n\n"_q;
+				}
+			result += u"Индикатор режима:\n"_q;
+			result += u"\U0001F7E2 ввод\n"_q;
+			result += u"\U0001F7E1 навигация\n\n"_q;
+			result += u"Режим навигации:\n"_q;
+			result += scrollDown + u" - скролл вниз\n"_q;
+			result += scrollUp + u" - скролл вверх\n"_q;
+			result += jumpBottom + u" - перейти вниз\n"_q;
+			result += copy + u" - подсказки для копирования сообщений\n"_q;
+				result += reply + u" - подсказки для ответа на сообщение\n"_q;
+				result += edit + u" - подсказки для редактирования своих сообщений\n"_q;
+				result += deleteMessage
+					+ u" - подсказки для удаления сообщений\n"_q;
+				result += focus
+					+ u" - подсказки для медиа, ссылок, голосований, ответов и пересланных авторов\n"_q;
+			result += openChats + u" - подсказки для открытия чатов\n"_q;
+			result += preview
+				+ u" - буквы для предпросмотра чата без прочтения\n"_q;
+			result += u"Cmd+V остается обычной вставкой текста, preview только на реальный Ctrl\n"_q;
+			result += search + u" - поиск\n"_q;
+			result += undo + u" - откатить последнее изменение текста\n"_q;
+			result += redo + u" - вернуть откатанное изменение текста\n"_q;
+			result += u"h/j/k/l, w/b/e, 0/^/$/|, gg/G, {/} - движение в composer\n"_q;
+			result += u"x/X, dd/D, diw, yy/Y, yiw, p/P, u/Ctrl+R - правка текста\n"_q;
+			result += u"c/cw/cc/C/ciw, s/S, r<char>, J, ~ - Vim-команды composer\n"_q;
+			result += u"v/V - visual/visual line заготовка: y копирует, d/x удаляет\n"_q;
+			result += u"i/a/I/A/o/O - вернуться к вводу текста\n"_q;
+			result += u"Option+h/l - двигать курсор на одну букву во время ввода\n"_q;
+			result += u"Cursor style/width/height/blink меняются в Settings > Vim keymap\n"_q;
+			result += help + u" - эта подсказка\n\n"_q;
+			result += u"Всегда доступно:\n"_q;
+			result += nextChat + u" - следующий чат\n"_q;
+			result += previousChat + u" - предыдущий чат\n"_q;
+			result += nextChat + u" + Shift - перейти через один чат\n"_q;
+			result += previousChat + u" + Shift - перейти через один чат\n"_q;
+			result += globalSearch + u" - поиск\n"_q;
+			result += call + u" - звонок / войти в групповой звонок\n"_q;
+			result += nextFolder + u" - следующая папка\n"_q;
+			result += previousFolder + u" - предыдущая папка\n\n"_q;
+			result += u"Emoji / stickers:\n"_q;
+			if (emojiPanelEnabled) {
+				result += emojiPanel + u" - открыть и сфокусировать панель\n"_q;
+			}
+				result += focusEmoji + u" - открыть и сфокусировать панель\n"_q;
+				result += focusChat + u" - фокус обратно в чат\n\n"_q;
+				result += u"h/j/k/l или р/о/л/д - выбор emoji/sticker/gif\n"_q;
+			result += u"Enter или Space - отправить выбранное\n"_q;
+			result += u"Tab / Shift+Tab - emoji, stickers, GIFs\n"_q;
+			result += u"Ctrl+J/K - скролл внутри панели\n"_q;
+			result += u"Ctrl+F - поиск внутри панели\n\n"_q;
+			result += u"Настройки: Settings > Vim keymap"_q;
+		} else {
+			result += u"Version: "_q + version + u"\n\n"_q;
+			result += toggle
+				+ u" - input / navigation mode when no Telegram layer is open\n"_q;
+			result += u"If a photo, menu or dialog is open, Esc closes it first.\n\n"_q;
+			result += cancelReply + u" - clear the active message reply\n\n"_q;
+				if (cancelEditEnabled) {
+					result += cancelEdit + u" - cancel message editing\n\n"_q;
+				}
+			result += u"Mode indicator:\n"_q;
+			result += u"\U0001F7E2 input\n"_q;
+			result += u"\U0001F7E1 navigation\n\n"_q;
+			result += u"Navigation mode:\n"_q;
+			result += scrollDown + u" - scroll down\n"_q;
+			result += scrollUp + u" - scroll up\n"_q;
+			result += jumpBottom + u" - jump to bottom\n"_q;
+			result += copy + u" - show copy message hints\n"_q;
+				result += reply + u" - show reply message hints\n"_q;
+				result += edit + u" - show edit message hints\n"_q;
+				result += deleteMessage + u" - show delete message hints\n"_q;
+				result += focus
+				+ u" - show media, link, poll, reply and forwarded-source hints\n"_q;
+			result += openChats + u" - show chat open hints\n"_q;
+			result += preview
+				+ u" - show chat preview hints without marking read\n"_q;
+			result += u"Cmd+V stays normal paste; preview uses real Control only\n"_q;
+			result += search + u" - focus search\n"_q;
+			result += undo + u" - undo the last compose text change\n"_q;
+			result += redo + u" - redo the last compose text change\n"_q;
+			result += u"h/j/k/l, w/b/e, 0/^/$/|, gg/G, {/} - compose motions\n"_q;
+			result += u"x/X, dd/D, diw, yy/Y, yiw, p/P, u/Ctrl+R - edit text\n"_q;
+			result += u"c/cw/cc/C/ciw, s/S, r<char>, J, ~ - compose Vim commands\n"_q;
+			result += u"v/V - visual/visual line groundwork: y copies, d/x deletes\n"_q;
+			result += u"i/a/I/A/o/O - return to text input\n"_q;
+			result += u"Option+h/l - move one character while typing\n"_q;
+			result += u"Cursor style/width/height/blink are in Settings > Vim keymap\n"_q;
+			result += help + u" - show this help\n\n"_q;
+			result += u"Always available:\n"_q;
+			result += nextChat + u" - next chat\n"_q;
+			result += previousChat + u" - previous chat\n"_q;
+			result += nextChat + u" + Shift - skip one chat\n"_q;
+			result += previousChat + u" + Shift - skip one chat\n"_q;
+			result += globalSearch + u" - search\n"_q;
+			result += call + u" - call / join group call\n"_q;
+			result += nextFolder + u" - next folder\n"_q;
+			result += previousFolder + u" - previous folder\n\n"_q;
+			result += u"Emoji / stickers:\n"_q;
+			if (emojiPanelEnabled) {
+				result += emojiPanel + u" - open and focus the panel\n"_q;
+			}
+				result += focusEmoji + u" - open and focus the panel\n"_q;
+				result += focusChat + u" - focus back to chat\n\n"_q;
+				result += u"h/j/k/l or р/о/л/д - select emoji/sticker/gif\n"_q;
+			result += u"Enter or Space - send selected item\n"_q;
+			result += u"Tab / Shift+Tab - emoji, stickers, GIFs\n"_q;
+			result += u"Ctrl+J/K - scroll inside the panel\n"_q;
+			result += u"Ctrl+F - search inside the panel\n\n"_q;
+			result += u"Settings: Settings > Vim keymap"_q;
+		}
+		return result;
+	}();
+	window->show(Box([=](not_null<Ui::GenericBox*> box) {
+		box->setTitle(russian ? u"Vim-навигация"_q : u"Vim navigation"_q);
+		box->setWidth(560);
+		box->setMaxHeight(640);
+		const auto tabs = box->addRow(
+			object_ptr<HelpTabsWidget>(
+				box.get(),
+				hints,
+				russian));
+		RegisterKeyHandler(tabs, [=](not_null<QKeyEvent*> e) {
+			return tabs->handleGlobalKey(box, e);
+		});
+		box->setFocusCallback([=] {
+			tabs->setFocus(Qt::ShortcutFocusReason);
+		});
+		box->setShowFinishedCallback([=] {
+			tabs->setFocus(Qt::ShortcutFocusReason);
+		});
+		box->addButton(tr::lng_box_ok(), [=] {
+			box->closeBox();
+		});
+	}));
+}
+
+} // namespace
+
+const char kOptionVimKeymap[] = "vim-keymap";
+const char kOptionVimKeymapScrollStep[] = "vim-keymap-scroll-step";
+const char kOptionVimKeymapHoldScrollSpeed[] = "vim-keymap-hold-scroll-speed";
+const char kOptionVimKeymapHintSize[] = "vim-keymap-hint-size";
+const char kOptionVimKeymapHintAlphabet[] = "vim-keymap-hint-alphabet";
+const char kOptionVimKeymapComposeCursorStyle[]
+	= "vim-keymap-compose-cursor-style";
+const char kOptionVimKeymapComposeCursorWidth[]
+	= "vim-keymap-compose-cursor-width";
+const char kOptionVimKeymapComposeCursorHeight[]
+	= "vim-keymap-compose-cursor-height";
+const char kOptionVimKeymapComposeCursorBlink[]
+	= "vim-keymap-compose-cursor-blink";
+const char kOptionVimKeymapKeyToggleMode[] = "vim-keymap-key-toggle-mode";
+const char kOptionVimKeymapKeyCancelReply[] = "vim-keymap-key-cancel-reply";
+const char kOptionVimKeymapKeyCancelEdit[] = "vim-keymap-key-cancel-edit";
+const char kOptionVimKeymapKeyHelp[] = "vim-keymap-key-help";
+const char kOptionVimKeymapKeyScrollDown[] = "vim-keymap-key-scroll-down";
+const char kOptionVimKeymapKeyScrollUp[] = "vim-keymap-key-scroll-up";
+const char kOptionVimKeymapKeyJumpBottom[] = "vim-keymap-key-jump-bottom";
+const char kOptionVimKeymapKeyCopyMessage[] = "vim-keymap-key-copy-message";
+const char kOptionVimKeymapKeyReplyToMessage[] =
+	"vim-keymap-key-reply-to-message";
+const char kOptionVimKeymapKeyEditMessage[] =
+	"vim-keymap-key-edit-message";
+const char kOptionVimKeymapKeyDeleteMessage[] =
+	"vim-keymap-key-delete-message";
+const char kOptionVimKeymapKeyFocusHints[] = "vim-keymap-key-focus-hints";
+const char kOptionVimKeymapKeyOpenChatHints[] =
+	"vim-keymap-key-open-chat-hints";
+const char kOptionVimKeymapKeyChatPreview[] = "vim-keymap-key-chat-preview";
+const char kOptionVimKeymapKeySearch[] = "vim-keymap-key-search";
+const char kOptionVimKeymapKeyGlobalSearch[] =
+	"vim-keymap-key-global-search";
+const char kOptionVimKeymapKeyUndo[] = "vim-keymap-key-undo";
+const char kOptionVimKeymapKeyRedo[] = "vim-keymap-key-redo";
+const char kOptionVimKeymapKeyNextChat[] = "vim-keymap-key-next-chat";
+const char kOptionVimKeymapKeyPreviousChat[] =
+	"vim-keymap-key-previous-chat";
+const char kOptionVimKeymapKeyNextFolder[] = "vim-keymap-key-next-folder";
+const char kOptionVimKeymapKeyPreviousFolder[] =
+	"vim-keymap-key-previous-folder";
+const char kOptionVimKeymapKeyEmojiPanel[] = "vim-keymap-key-emoji-panel";
+const char kOptionVimKeymapKeyFocusChat[] = "vim-keymap-key-focus-chat";
+const char kOptionVimKeymapKeyFocusEmoji[] = "vim-keymap-key-focus-emoji";
+const char kOptionVimKeymapKeyCall[] = "vim-keymap-key-call";
+
+void TraceKey(not_null<QKeyEvent*> e, const QString &status) {
+	RecordKeyEvent(e, status, true);
+}
+
+QString RecentKeyLogText() {
+	auto lines = QStringList();
+	for (auto i = KeyLog.rbegin(); i != KeyLog.rend(); ++i) {
+		lines.push_back(i->text);
+	}
+	return lines.join(u"\n"_q);
+}
+
+QString NormalizeBindingToken(QString value) {
+	value = value.trimmed().toCaseFolded();
+	value.remove(QChar(' '));
+	return value;
+}
+
+bool IsLegacyCtrlEToken(const QString &token) {
+	return token == u"ctrl+e"_q
+		|| token == u"cmd+e"_q
+		|| token == u"command+e"_q
+		|| token == u"meta+e"_q
+		|| token == u"ctrl+\u0443"_q;
+}
+
+bool IsLegacyDeleteMessageDefault(const QString &bindings) {
+	auto value = NormalizeBindingToken(bindings);
+	return value == u"ctrl+d,ctrl+\u0432"_q
+		|| value == u"ctrl+\u0432,ctrl+d"_q;
+}
+
+bool IsLegacyGlobalSearchDefault(const QString &bindings) {
+	const auto value = NormalizeBindingToken(bindings);
+	return value == u"ctrl+f,ctrl+\u0430"_q
+		|| value == u"ctrl+\u0430,ctrl+f"_q;
+}
+
+QString WithoutLegacyCtrlE(const QString &bindings) {
+	auto result = QStringList();
+	const auto parts = bindings.split(',', Qt::SkipEmptyParts);
+	for (const auto &part : parts) {
+		if (!IsLegacyCtrlEToken(NormalizeBindingToken(part))) {
+			result.push_back(part.trimmed());
+		}
+	}
+	return result.join(u", "_q);
+}
+
+bool Enabled() {
+	MigrateLegacyDefaults();
+	return VimKeymapOption.value();
+}
+
+bool NormalMode() {
+	MigrateLegacyDefaults();
+	return Enabled() && (NormalModeEnabled || ForcedNormalMode());
+}
+
+void MigrateLegacyDefaults() {
+	if (LegacyDefaultsMigrated) {
+		return;
+	}
+	LegacyDefaultsMigrated = true;
+
+	auto value = NormalizeBindingToken(VimKeymapKeyToggleModeOption.value());
+	if (IsLegacyCtrlEToken(value)) {
+		VimKeymapKeyToggleModeOption.set(u"Esc"_q);
+	}
+	const auto emojiPanel = VimKeymapKeyEmojiPanelOption.value();
+	const auto emojiPanelWithoutCtrlE = WithoutLegacyCtrlE(emojiPanel);
+	if (emojiPanelWithoutCtrlE != emojiPanel.trimmed()) {
+		VimKeymapKeyEmojiPanelOption.set(emojiPanelWithoutCtrlE);
+	}
+	const auto cancelEdit = VimKeymapKeyCancelEditOption.value();
+	const auto cancelEditWithoutCtrlE = WithoutLegacyCtrlE(cancelEdit);
+	if (cancelEditWithoutCtrlE != cancelEdit.trimmed()) {
+		VimKeymapKeyCancelEditOption.set(cancelEditWithoutCtrlE);
+	}
+	if (IsLegacyDeleteMessageDefault(
+			VimKeymapKeyDeleteMessageOption.value())) {
+		VimKeymapKeyDeleteMessageOption.set(u"d, \u0432"_q);
+	}
+	if (VimKeymapScrollStepOption.value() == kLegacyScrollStepDefault) {
+		VimKeymapScrollStepOption.set(kScrollStepDefault);
+	}
+	if (IsLegacyGlobalSearchDefault(VimKeymapKeyGlobalSearchOption.value())) {
+		VimKeymapKeyGlobalSearchOption.set(
+			u"Ctrl+F, Ctrl+\u0430, Cmd+Shift+F, "
+			u"Cmd+Shift+\u0430, Ctrl+Shift+F, Ctrl+Shift+\u0430"_q);
+	}
+}
+
+void SetNormalMode(bool enabled) {
+	SetNormalModeValue(enabled);
+}
+
+IntOptionBounds ScrollStepBounds() {
+	return { kScrollStepMin, kScrollStepMax };
+}
+
+IntOptionBounds HoldScrollSpeedBounds() {
+	return { kHoldScrollSpeedMin, kHoldScrollSpeedMax };
+}
+
+IntOptionBounds HintSizeBounds() {
+	return { kHintSizeMin, kHintSizeMax };
+}
+
+IntOptionBounds ComposeCursorWidthBounds() {
+	return { kComposeCursorWidthMin, kComposeCursorWidthMax };
+}
+
+IntOptionBounds ComposeCursorHeightBounds() {
+	return { kComposeCursorHeightMin, kComposeCursorHeightMax };
+}
+
+IntOptionBounds ComposeCursorBlinkBounds() {
+	return { kComposeCursorBlinkMin, kComposeCursorBlinkMax };
+}
+
+int ScrollStep() {
+	return std::clamp(
+		VimKeymapScrollStepOption.value(),
+		kScrollStepMin,
+		kScrollStepMax);
+}
+
+int HoldScrollSpeed() {
+	return std::clamp(
+		VimKeymapHoldScrollSpeedOption.value(),
+		kHoldScrollSpeedMin,
+		kHoldScrollSpeedMax);
+}
+
+int HintSize() {
+	return std::clamp(
+		VimKeymapHintSizeOption.value(),
+		kHintSizeMin,
+		kHintSizeMax);
+}
+
+QString ComposeCursorStyle() {
+	const auto value = VimKeymapComposeCursorStyleOption.value()
+		.trimmed()
+		.toCaseFolded();
+	if (value == QString::fromLatin1(kComposeCursorStyleBar)
+		|| value == QString::fromLatin1(kComposeCursorStyleUnderline)) {
+		return value;
+	}
+	return QString::fromLatin1(kComposeCursorStyleBlock);
+}
+
+int ComposeCursorWidth() {
+	return std::clamp(
+		VimKeymapComposeCursorWidthOption.value(),
+		kComposeCursorWidthMin,
+		kComposeCursorWidthMax);
+}
+
+int ComposeCursorHeight() {
+	return std::clamp(
+		VimKeymapComposeCursorHeightOption.value(),
+		kComposeCursorHeightMin,
+		kComposeCursorHeightMax);
+}
+
+int ComposeCursorBlink() {
+	return std::clamp(
+		VimKeymapComposeCursorBlinkOption.value(),
+		kComposeCursorBlinkMin,
+		kComposeCursorBlinkMax);
+}
+
+int HoldScrollTickMs() {
+	return kHoldScrollTickMs;
+}
+
+int HoldScrollStartDelayMs() {
+	return kHoldScrollStartDelayMs;
+}
+
+int HoldScrollDelta() {
+	return std::max(1, HoldScrollSpeed() * kHoldScrollTickMs / 1000);
+}
+
+int SingleScrollDurationMs() {
+	return kSingleScrollDurationMs;
+}
+
+bool HandleApplicationKeyPress(
+		not_null<QObject*> object,
+		not_null<QKeyEvent*> e) {
+	if (!Enabled()) {
+		return false;
+	}
+	if (IsModifierOnlyKey(e)) {
+		return false;
+	}
+	if (!e->isAutoRepeat()
+		&& e->key() == Qt::Key_Escape
+		&& TelegramLayerOrPopupShown()) {
+		RecordKeyEvent(e, u"Telegram layer/popup"_q, true);
+		return false;
+	}
+	const auto logGeneration = KeyLogGeneration;
+	if (HandleRegisteredKey(e)) {
+		if (KeyLogGeneration == logGeneration) {
+			RecordKeyEvent(e, u"registered handler"_q, true);
+		}
+		e->accept();
+		return true;
+	}
+	if (TextInputPassthroughRequested(e)) {
+		RecordKeyEvent(e, u"text input passthrough"_q, false);
+		return false;
+	}
+	if (TelegramModalLayerShown()) {
+		RecordKeyEvent(e, u"Telegram layer"_q, false);
+		return false;
+	}
+	const auto forcedNormalMode = ForcedNormalMode();
+	if (forcedNormalMode && IsTextInputObject(object.get())) {
+		RecordKeyEvent(e, u"text input in forced view mode"_q, false);
+		return false;
+	} else if (IsToggleModeKey(e) && CanToggleByEscape()) {
+		if (forcedNormalMode) {
+			FocusForCurrentMode();
+			RecordKeyEvent(e, u"focus current view mode"_q, true);
+			e->accept();
+			return true;
+		}
+		SetNormalModeValue(!NormalModeEnabled);
+		FocusForCurrentMode();
+		RecordKeyEvent(
+			e,
+			NormalModeEnabled ? u"navigation mode"_q : u"input mode"_q,
+			true);
+		e->accept();
+		return true;
+	} else if (HandleGlobalSearch(e)) {
+		return true;
+	} else if (const auto command = LegacyCommand(e)) {
+		if (LaunchLegacyCommand(*command)) {
+			if (*command == Shortcuts::Command::Search) {
+				SetNormalModeValue(false);
+			}
+			RecordKeyEvent(e, u"Telegram shortcut"_q, true);
+			e->accept();
+			return true;
+		}
+	} else if (!NormalModeEnabled && !forcedNormalMode) {
+		RecordKeyEvent(e, u"input mode ignored"_q, false);
+		return false;
+	} else if (HandleHelp(e) || HandleSearch(e)) {
+		return true;
+	} else if (const auto action = ActionKey(e)) {
+		if (HandleRegisteredAction(*action)) {
+			RecordKeyEvent(e, u"action handler"_q, true);
+			e->accept();
+			return true;
+		}
+		RecordKeyEvent(e, u"action without target"_q, true);
+		e->accept();
+		return true;
+	} else if (ScrollGenericArea(object, e)) {
+		RecordKeyEvent(e, u"generic scroll"_q, true);
+		e->accept();
+		return true;
+	} else if (IsTextInputObject(object.get())) {
+		RecordKeyEvent(e, u"normal mode consumed text"_q, false);
+		e->accept();
+		return true;
+	}
+	RecordKeyEvent(e, u"ignored"_q, false);
+	return false;
+}
+
+void RegisterActionHandler(
+		not_null<QObject*> owner,
+		Fn<bool(Action)> handler) {
+	UnregisterActionHandler(owner);
+	ActionHandlers.push_back({
+		.owner = owner.get(),
+		.handler = std::move(handler),
+	});
+}
+
+void UnregisterActionHandler(not_null<QObject*> owner) {
+	const auto raw = owner.get();
+	const auto remove = [=](const ActionHandler &handler) {
+		return !handler.owner || handler.owner == raw;
+	};
+	ActionHandlers.erase(
+		std::remove_if(begin(ActionHandlers), end(ActionHandlers), remove),
+		end(ActionHandlers));
+}
+
+void RegisterKeyHandler(
+		not_null<QObject*> owner,
+		Fn<bool(not_null<QKeyEvent*>)> handler) {
+	UnregisterKeyHandler(owner);
+	KeyHandlers.push_back({
+		.owner = owner.get(),
+		.handler = std::move(handler),
+	});
+}
+
+void UnregisterKeyHandler(not_null<QObject*> owner) {
+	const auto raw = owner.get();
+	const auto remove = [=](const KeyHandler &handler) {
+		return !handler.owner || handler.owner == raw;
+	};
+	KeyHandlers.erase(
+		std::remove_if(begin(KeyHandlers), end(KeyHandlers), remove),
+		end(KeyHandlers));
+}
+
+void RegisterTextInputPassthroughHandler(
+		not_null<QObject*> owner,
+		Fn<bool(not_null<QKeyEvent*>)> handler) {
+	UnregisterTextInputPassthroughHandler(owner);
+	TextInputPassthroughHandlers.push_back({
+		.owner = owner.get(),
+		.handler = std::move(handler),
+	});
+}
+
+void UnregisterTextInputPassthroughHandler(not_null<QObject*> owner) {
+	const auto raw = owner.get();
+	const auto remove = [=](const TextInputPassthroughHandler &handler) {
+		return !handler.owner || handler.owner == raw;
+	};
+	TextInputPassthroughHandlers.erase(
+		std::remove_if(
+			begin(TextInputPassthroughHandlers),
+			end(TextInputPassthroughHandlers),
+			remove),
+		end(TextInputPassthroughHandlers));
+}
+
+void RegisterForcedNormalModeHandler(
+		not_null<QObject*> owner,
+		Fn<bool()> handler) {
+	UnregisterForcedNormalModeHandler(owner);
+	ForcedNormalModeHandlers.push_back({
+		.owner = owner.get(),
+		.handler = std::move(handler),
+	});
+	RefreshForcedNormalMode();
+}
+
+void UnregisterForcedNormalModeHandler(not_null<QObject*> owner) {
+	const auto raw = owner.get();
+	const auto remove = [=](const ForcedNormalModeHandler &handler) {
+		return !handler.owner || handler.owner == raw;
+	};
+	ForcedNormalModeHandlers.erase(
+		std::remove_if(
+			begin(ForcedNormalModeHandlers),
+			end(ForcedNormalModeHandlers),
+			remove),
+		end(ForcedNormalModeHandlers));
+	RefreshModeIndicator();
+}
+
+void RegisterModeIndicatorWidget(not_null<QWidget*> widget) {
+	UnregisterModeIndicatorWidget(widget);
+	ModeIndicatorWidgets.push_back(widget.get());
+	RefreshModeIndicator();
+}
+
+void UnregisterModeIndicatorWidget(not_null<QWidget*> widget) {
+	const auto raw = widget.get();
+	const auto remove = [=](const QPointer<QWidget> &registered) {
+		return !registered || registered == raw;
+	};
+	ModeIndicatorWidgets.erase(
+		std::remove_if(
+			begin(ModeIndicatorWidgets),
+			end(ModeIndicatorWidgets),
+			remove),
+		end(ModeIndicatorWidgets));
+}
+
+void RefreshForcedNormalMode() {
+	if (ForcedNormalMode()) {
+		FocusForCurrentMode();
+	}
+	RefreshModeIndicator();
+}
+
+std::optional<ChatNavigation> ChatNavigationKey(not_null<QKeyEvent*> e) {
+	if (MatchesBindings(VimKeymapKeyNextChatOption, e, true)) {
+		return ChatNavigation::Next;
+	} else if (MatchesBindings(VimKeymapKeyPreviousChatOption, e, true)) {
+		return ChatNavigation::Previous;
+	}
+	return std::nullopt;
+}
+
+int ChatNavigationSteps(not_null<QKeyEvent*> e) {
+	return (CleanModifiers(e) & Qt::ShiftModifier) ? 2 : 1;
+}
+
+bool ChatPreviewKey(not_null<QKeyEvent*> e) {
+	return NormalMode()
+		&& MatchesBindings(
+			VimKeymapKeyChatPreviewOption,
+			e,
+			false,
+			true,
+			false);
+}
+
+bool ChatHintsKey(not_null<QKeyEvent*> e) {
+	return NormalMode()
+		&& MatchesBindings(VimKeymapKeyOpenChatHintsOption, e, true);
+}
+
+bool FocusHintsKey(not_null<QKeyEvent*> e) {
+	return Enabled()
+		&& MatchesBindings(VimKeymapKeyFocusHintsOption, e, true);
+}
+
+bool CancelReplyKey(not_null<QKeyEvent*> e) {
+	return !e->isAutoRepeat()
+		&& MatchesBindings(VimKeymapKeyCancelReplyOption, e);
+}
+
+bool CancelEditKey(not_null<QKeyEvent*> e) {
+	return Enabled()
+		&& !e->isAutoRepeat()
+		&& MatchesBindings(VimKeymapKeyCancelEditOption, e);
+}
+
+bool EmojiPanelKey(not_null<QKeyEvent*> e) {
+	return Enabled()
+		&& !e->isAutoRepeat()
+		&& MatchesBindings(VimKeymapKeyEmojiPanelOption, e);
+}
+
+bool FocusChatKey(not_null<QKeyEvent*> e) {
+	return Enabled()
+		&& !e->isAutoRepeat()
+		&& MatchesBindings(VimKeymapKeyFocusChatOption, e);
+}
+
+bool FocusEmojiKey(not_null<QKeyEvent*> e) {
+	return Enabled()
+		&& !e->isAutoRepeat()
+		&& MatchesBindings(VimKeymapKeyFocusEmojiOption, e);
+}
+
+bool CallKey(not_null<QKeyEvent*> e) {
+	return Enabled()
+		&& !e->isAutoRepeat()
+		&& MatchesBindings(VimKeymapKeyCallOption, e);
+}
+
+bool GlobalSearchKey(not_null<QKeyEvent*> e) {
+	const auto modifiers = CleanModifiers(e);
+	return Enabled()
+		&& !e->isAutoRepeat()
+		&& (modifiers & Qt::ShiftModifier)
+		&& IsGlobalSearchKey(e);
+}
+
+bool UndoKey(not_null<QKeyEvent*> e) {
+	return NormalMode()
+		&& !e->isAutoRepeat()
+		&& MatchesBindings(VimKeymapKeyUndoOption, e, true);
+}
+
+bool RedoKey(not_null<QKeyEvent*> e) {
+	return NormalMode()
+		&& !e->isAutoRepeat()
+		&& MatchesBindings(VimKeymapKeyRedoOption, e, true);
+}
+
+std::optional<Qt::Key> NavigationKey(not_null<QKeyEvent*> e) {
+	if (!NormalMode()) {
+		return std::nullopt;
+	}
+	if (MatchesBindings(VimKeymapKeyScrollDownOption, e)) {
+		return Qt::Key_Down;
+	} else if (MatchesBindings(VimKeymapKeyScrollUpOption, e)) {
+		return Qt::Key_Up;
+	}
+	return std::nullopt;
+}
+
+std::optional<Action> ActionKey(not_null<QKeyEvent*> e) {
+	if (!NormalMode()) {
+		return std::nullopt;
+	} else if (MatchesBindings(VimKeymapKeyCopyMessageOption, e, true)) {
+		return Action::CopyMessage;
+	} else if (MatchesBindings(VimKeymapKeyReplyToMessageOption, e, true)) {
+		return Action::ReplyToMessage;
+	} else if (MatchesBindings(VimKeymapKeyEditMessageOption, e, true)) {
+		return Action::EditMessage;
+	} else if (MatchesBindings(VimKeymapKeyDeleteMessageOption, e, true)) {
+		return Action::DeleteMessage;
+	} else if (MatchesBindings(VimKeymapKeyFocusHintsOption, e, true)) {
+		return Action::LinkHints;
+	}
+	return std::nullopt;
+}
+
+bool IsJumpToBottomKey(not_null<QKeyEvent*> e) {
+	return NormalMode()
+		&& MatchesBindings(VimKeymapKeyJumpBottomOption, e);
+}
+
+QString HintLabel(int index, int total) {
+	const auto alphabet = CurrentHintAlphabet();
+	const auto size = alphabet.size();
+	if (total <= size) {
+		return alphabet.mid(index, 1);
+	}
+	const auto first = (index / size) % size;
+	const auto second = index % size;
+	return alphabet.mid(first, 1) + alphabet.mid(second, 1);
+}
+
+QString HintInput(not_null<QKeyEvent*> e) {
+	const auto text = PlainText(e);
+	if (text.isEmpty()) {
+		return QString();
+	}
+	const auto english = EnglishHintAlphabet();
+	const auto russian = RussianHintAlphabet();
+	const auto target = CurrentHintAlphabet();
+	const auto source = UseEnglishHintAlphabet() ? russian : english;
+	const auto ch = text.front();
+	const auto sourceIndex = source.indexOf(ch);
+	if (sourceIndex >= 0 && sourceIndex < target.size()) {
+		return target.mid(sourceIndex, 1);
+	}
+	const auto targetIndex = target.indexOf(ch);
+	if (targetIndex >= 0) {
+		return target.mid(targetIndex, 1);
+	}
+	return text.mid(0, 1);
+}
+
+void ShowHelp() {
+	ShowHelpBox();
+}
+
+bool HandleHelp(not_null<QKeyEvent*> e) {
+	if (!Enabled() || !IsHelpKey(e)) {
+		return false;
+	}
+	RecordKeyEvent(e, u"help"_q, true);
+	ShowHelp();
+	e->accept();
+	return true;
+}
+
+bool HandleSearch(not_null<QKeyEvent*> e) {
+	if (HandleGlobalSearch(e)) {
+		return true;
+	}
+	if (!NormalMode() || !IsSearchKey(e)) {
+		return false;
+	}
+	if (Shortcuts::Launch(Shortcuts::Command::Search)) {
+		SetNormalModeValue(false);
+		RecordKeyEvent(e, u"search"_q, true);
+	}
+	e->accept();
+	return true;
+}
+
+} // namespace Core::VimKeymap

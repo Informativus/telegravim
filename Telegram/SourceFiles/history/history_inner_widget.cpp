@@ -13,11 +13,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/file_utilities.h"
 #include "core/click_handler_types.h"
 #include "core/phone_click_handler.h"
+#include "core/vim_keymap.h"
 #include "data/data_chat_participant_status.h"
 #include "history/history_item_helpers.h"
 #include "history/view/controls/history_view_forward_panel.h"
 #include "history/view/controls/history_view_draft_options.h"
 #include "history/view/controls/history_view_suggest_options.h"
+#include "history/view/media/history_view_media.h"
+#include "history/view/media/history_view_media_grouped.h"
 #include "history/view/media/history_view_save_document_action.h"
 #include "history/view/media/history_view_sticker.h"
 #include "history/view/media/history_view_web_page.h"
@@ -36,6 +39,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_add_poll_option.h"
 #include "history/view/history_view_element_overlay.h"
 #include "history/view/history_view_emoji_interactions.h"
+#include "history/view/history_view_reply.h"
 #include "history/view/history_view_top_peers_selector.h"
 #include "history/history_inner_widget_accessibility.h"
 #include "history/history_item_components.h"
@@ -132,6 +136,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_menu_icons.h"
 
 #include <QtGui/QClipboard>
+#include <QtGui/QFontMetrics>
+#include <QtGui/QKeyEvent>
 #include <QtWidgets/QApplication>
 #include <QtCore/QCoreApplication>
 #include <QtCore/QMimeData>
@@ -142,6 +148,21 @@ constexpr auto kScrollDateHideTimeout = 1000;
 constexpr auto kScrollDateHideOnDayCrossingTimeout = crl::time(3000);
 constexpr auto kUnloadHeavyPartsPages = 2;
 constexpr auto kClearUserpicsAfter = 50;
+constexpr auto kVimKeymapMinVisibleHintHeight = 32;
+constexpr auto kVimKeymapPlayableMediaHintXStep = 16;
+constexpr auto kVimKeymapPlayableMediaHintYStep = 12;
+constexpr auto kVimKeymapGroupedMediaHintLimit = 16;
+
+[[nodiscard]] bool IsVimKeymapVoiceDocumentLink(
+		const ClickHandlerPtr &link) {
+	const auto handler = dynamic_cast<DocumentClickHandler*>(link.get());
+	if (!handler
+		|| dynamic_cast<DocumentCancelClickHandler*>(link.get())
+		|| dynamic_cast<VoiceSeekClickHandler*>(link.get())) {
+		return false;
+	}
+	return handler->document()->isVoiceMessage();
+}
 
 // Helper binary search for an item in a list that is not completely
 // above the given top of the visible area or below the given bottom of the visible area
@@ -420,6 +441,29 @@ HistoryInner::HistoryInner(
 
 	setMouseTracking(true);
 	setAccessibleName(tr::lng_sr_message_list(tr::now));
+	Core::VimKeymap::RegisterActionHandler(this, [=](
+			Core::VimKeymap::Action action) {
+		const auto widgetWindow = window();
+		if (!widgetWindow
+			|| widgetWindow->isHidden()
+			|| !widgetWindow->isActiveWindow()
+			|| !isVisible()) {
+			return false;
+		}
+		switch (action) {
+				case Core::VimKeymap::Action::CopyMessage:
+				case Core::VimKeymap::Action::ReplyToMessage:
+				case Core::VimKeymap::Action::EditMessage:
+				case Core::VimKeymap::Action::DeleteMessage:
+				case Core::VimKeymap::Action::LinkHints:
+					return vimKeymapBeginHints(action);
+				}
+		return false;
+	});
+	Core::VimKeymap::RegisterKeyHandler(this, [=](
+			not_null<QKeyEvent*> e) {
+		return vimKeymapHandleHintKey(e);
+	});
 	Core::App().inAppKeyPressed(
 	) | rpl::on_next([=] {
 		registerReadMetricsActivity();
@@ -1831,6 +1875,7 @@ void HistoryInner::paintEvent(QPaintEvent *e) {
 
 	_replyButtonManager->paint(p, context);
 	_reactionsManager->paint(p, context);
+	vimKeymapPaintHints(p);
 }
 
 bool HistoryInner::eventHook(QEvent *e) {
@@ -3963,6 +4008,601 @@ void HistoryInner::copySelectedText() {
 		&session());
 }
 
+HistoryInner::Element *HistoryInner::vimKeymapTargetView() const {
+	if (!_history || _visibleAreaTop >= _visibleAreaBottom) {
+		return nullptr;
+	}
+	const auto visible = [&](not_null<Element*> view) {
+		const auto top = itemTop(view);
+		return (top < _visibleAreaBottom)
+			&& (top + view->height() > _visibleAreaTop);
+	};
+	if (const auto focused = _accessibilityFocusedItem) {
+		if (const auto view = viewByItem(focused)) {
+			if (visible(view)) {
+				return view;
+			}
+		}
+	}
+	const auto y = std::max(
+		_visibleAreaTop,
+		(_visibleAreaTop + _visibleAreaBottom) / 2);
+	auto best = (Element*)nullptr;
+	auto bestDistance = 0;
+	for (const auto view : accessibleElements()) {
+		const auto top = itemTop(view);
+		const auto bottom = top + view->height();
+		if (top >= _visibleAreaBottom || bottom <= _visibleAreaTop) {
+			continue;
+		} else if (top <= y && y < bottom) {
+			return view;
+		}
+		const auto distance = (y < top) ? (top - y) : (y - bottom);
+		if (!best || distance < bestDistance) {
+			best = view;
+			bestDistance = distance;
+		}
+	}
+	return best;
+}
+
+bool HistoryInner::vimKeymapCopyItem(not_null<HistoryItem*> item) {
+	if (showCopyRestriction(item)) {
+		return true;
+	} else if (const auto group = session().data().groups().find(item)) {
+		const auto text = HistoryGroupText(group);
+		if (text.empty()) {
+			return false;
+		}
+		TextUtilities::SetClipboardText(text);
+		return true;
+	}
+	const auto text = HistoryItemText(item);
+	if (text.empty()) {
+		return false;
+	}
+	Iv::SetRichBlocksClipboard(
+		text,
+		HistoryItemRichBlocks(item),
+		&session());
+	return true;
+}
+
+bool HistoryInner::vimKeymapReplyToItem(not_null<HistoryItem*> item) {
+	if ((!item->isRegular() && !CanReplyToEphemeral(item))
+		|| IsAnchoredEphemeral(item)
+		|| (!CanSendReply(item) && !item->allowsForward())) {
+		return false;
+	}
+	_widget->replyToMessage({ .messageId = item->fullId() });
+	Core::VimKeymap::SetNormalMode(false);
+	_widget->setInnerFocus();
+	return true;
+}
+
+bool HistoryInner::vimKeymapEditItem(not_null<HistoryItem*> item) {
+	const auto now = base::unixtime::now();
+	if (!item->allowsEdit(now)) {
+		return false;
+	}
+	const auto editItem = session().data().groups().findItemToEdit(item).get();
+	_widget->editMessage(editItem, {});
+	Core::VimKeymap::SetNormalMode(false);
+	_widget->setInnerFocus();
+	return true;
+}
+
+bool HistoryInner::vimKeymapDeleteItem(not_null<HistoryItem*> item) {
+	if (!item->canDelete()) {
+		return false;
+	}
+	deleteItem(item);
+	Core::VimKeymap::SetNormalMode(true);
+	_widget->setInnerFocus();
+	return true;
+}
+
+bool HistoryInner::vimKeymapCopyTarget() {
+	if (canCopySelected()) {
+		copySelectedText();
+		return true;
+	}
+	const auto view = vimKeymapTargetView();
+	return view ? vimKeymapCopyItem(view->data()) : false;
+}
+
+bool HistoryInner::vimKeymapReplyToTarget() {
+	const auto view = vimKeymapTargetView();
+	return view ? vimKeymapReplyToItem(view->data()) : false;
+}
+
+void HistoryInner::vimKeymapClearHints() {
+	if (_vimKeymapHintMode == VimKeymapHintMode::None
+		&& _vimKeymapHints.empty()
+		&& _vimKeymapHintPrefix.isEmpty()) {
+		return;
+	}
+	_vimKeymapHintMode = VimKeymapHintMode::None;
+	_vimKeymapHints.clear();
+	_vimKeymapHintPrefix.clear();
+	update();
+}
+
+void HistoryInner::vimKeymapBuildMessageHints(VimKeymapHintMode mode) {
+	_vimKeymapHintMode = mode;
+	_vimKeymapHints.clear();
+	_vimKeymapHintPrefix.clear();
+	auto views = std::vector<Element*>();
+	const auto now = base::unixtime::now();
+	for (const auto view : accessibleElements()) {
+		const auto item = view->data();
+			if (mode == VimKeymapHintMode::EditMessage
+				&& !item->allowsEdit(now)) {
+				continue;
+			}
+			if (mode == VimKeymapHintMode::DeleteMessage
+				&& !item->canDelete()) {
+				continue;
+			}
+		const auto top = itemTop(view);
+		const auto bottom = top + view->height();
+		const auto visibleTop = std::max(top, _visibleAreaTop);
+		const auto visibleBottom = std::min(bottom, _visibleAreaBottom);
+		if (visibleBottom - visibleTop < kVimKeymapMinVisibleHintHeight) {
+			continue;
+		}
+		views.push_back(view);
+	}
+	auto index = 0;
+	const auto total = int(views.size());
+	for (const auto view : views) {
+		const auto top = itemTop(view);
+		const auto y = std::min(
+			std::max(top + 12, _visibleAreaTop + 6),
+			_visibleAreaBottom - 24);
+		_vimKeymapHints.push_back({
+			.label = Core::VimKeymap::HintLabel(index++, total),
+			.itemId = view->data()->fullId(),
+			.badge = QRect(12, y, 1, 1),
+		});
+	}
+	if (_vimKeymapHints.empty()) {
+		_vimKeymapHintMode = VimKeymapHintMode::None;
+	}
+	update();
+}
+
+void HistoryInner::vimKeymapBuildLinkHints(not_null<Element*> view) {
+	_vimKeymapHintMode = VimKeymapHintMode::ActivateLink;
+	_vimKeymapHints.clear();
+	_vimKeymapHintPrefix.clear();
+	vimKeymapAddLinkHints(view);
+	if (_vimKeymapHints.empty()) {
+		_vimKeymapHintMode = VimKeymapHintMode::None;
+	}
+	vimKeymapAssignHintLabels();
+	update();
+}
+
+void HistoryInner::vimKeymapBuildVisibleLinkHints() {
+	_vimKeymapHintMode = VimKeymapHintMode::ActivateLink;
+	_vimKeymapHints.clear();
+	_vimKeymapHintPrefix.clear();
+	for (const auto view : accessibleElements()) {
+		const auto top = itemTop(view);
+		const auto bottom = top + view->height();
+		const auto visibleTop = std::max(top, _visibleAreaTop);
+		const auto visibleBottom = std::min(bottom, _visibleAreaBottom);
+		if (visibleBottom - visibleTop < kVimKeymapMinVisibleHintHeight) {
+			continue;
+		}
+		vimKeymapAddLinkHints(view);
+	}
+	if (_vimKeymapHints.empty()) {
+		_vimKeymapHintMode = VimKeymapHintMode::None;
+	}
+	vimKeymapAssignHintLabels();
+	update();
+}
+
+void HistoryInner::vimKeymapAddLinkHints(not_null<Element*> view) {
+	const auto item = view->data();
+	const auto itemId = item->fullId();
+	const auto top = itemTop(view);
+	auto seen = base::flat_set<ClickHandler*>();
+	const auto add = [&](ClickHandlerPtr link, QPoint point) {
+		if (!link || seen.contains(link.get())) {
+			return;
+		}
+		seen.emplace(link.get());
+		_vimKeymapHints.push_back({
+			.itemId = itemId,
+			.badge = QRect(point, QSize(1, 1)),
+			.link = std::move(link),
+		});
+	};
+	if (const auto reply = item->Get<HistoryMessageReply>()) {
+		if (const auto replyView = view->Get<HistoryView::Reply>()) {
+			add(
+				replyView->link(),
+				QPoint(12, std::max(top + 34, _visibleAreaTop + 6)));
+		} else if (const auto resolved = reply->resolvedMessage.get()) {
+			add(
+				JumpToMessageClickHandler(resolved, itemId),
+				QPoint(12, std::max(top + 34, _visibleAreaTop + 6)));
+		}
+	}
+	if (const auto forwarded = item->Get<HistoryMessageForwarded>()) {
+		const auto sender = forwarded->forwardOfForward()
+			? forwarded->savedFromSender
+			: forwarded->originalSender;
+		const auto hidden = forwarded->forwardOfForward()
+			? forwarded->savedFromHiddenSenderInfo.get()
+			: forwarded->originalHiddenSenderInfo.get();
+		const auto y = std::min(
+			std::max(top + 12, _visibleAreaTop + 6),
+			_visibleAreaBottom - 24);
+		if (sender) {
+			add(sender->openLink(), QPoint(12, y));
+		} else if (hidden) {
+			add(HiddenSenderInfo::ForwardClickHandler(), QPoint(12, y));
+		}
+	}
+	if (const auto media = view->media()) {
+		const auto mediaTopLeft = view->mediaTopLeft();
+		const auto mediaRect = QRect(
+			mediaTopLeft + QPoint(0, top),
+			QSize(media->width(), media->height()));
+		const auto visibleArea = QRect(
+			0,
+			_visibleAreaTop,
+			width(),
+			_visibleAreaBottom - _visibleAreaTop);
+		const auto visibleMediaRect = mediaRect.intersected(visibleArea);
+		const auto mediaBadgePoint = QPoint(
+			visibleMediaRect.left() + 8,
+			visibleMediaRect.top() + 8);
+		const auto addMedia = [&](
+				FullMsgId hintItemId,
+				QPoint badgePoint,
+				PhotoData *photo,
+				DocumentData *document) {
+			if (!hintItemId
+				|| (!photo && !document)) {
+				return;
+			}
+			_vimKeymapHints.push_back({
+				.itemId = hintItemId,
+				.badge = QRect(badgePoint, QSize(1, 1)),
+				.photo = photo,
+				.document = document,
+			});
+		};
+		const auto addClickPoint = [&](
+				FullMsgId hintItemId,
+				QPoint badgePoint,
+				QPoint clickPoint) {
+			if (!hintItemId) {
+				return;
+			}
+			_vimKeymapHints.push_back({
+				.itemId = hintItemId,
+				.badge = QRect(badgePoint, QSize(1, 1)),
+				.clickPoint = clickPoint,
+				.useClickPoint = true,
+			});
+		};
+		auto addedGroupedMedia = false;
+		if (const auto grouped
+				= dynamic_cast<HistoryView::GroupedMedia*>(media)) {
+			auto request = StateRequest();
+			for (auto i = 0; i != kVimKeymapGroupedMediaHintLimit; ++i) {
+				const auto groupRect = grouped->groupItemRect(i);
+				if (groupRect.isEmpty()) {
+					break;
+				}
+				const auto absoluteRect = groupRect.translated(
+					mediaTopLeft + QPoint(0, top));
+				const auto visibleRect = absoluteRect.intersected(visibleArea);
+				if (visibleRect.width() < 24 || visibleRect.height() < 24) {
+					continue;
+				}
+				const auto badgePoint = QPoint(
+					visibleRect.left() + 8,
+					visibleRect.top() + 8);
+				auto state = view->textState(
+					mediaTopLeft + groupRect.center(),
+					request);
+				const auto hintItemId = state.itemId ? state.itemId : itemId;
+				auto addedPart = false;
+				if (const auto part = grouped->partMediaAt(
+						groupRect.center())) {
+					const auto photo = part->getPhoto();
+					const auto document = part->getDocument();
+					if (photo
+						|| (document
+							&& (document->isVideoFile()
+								|| document->isAnimation()
+								|| document->isVideoMessage()))) {
+						addMedia(hintItemId, badgePoint, photo, document);
+						addedGroupedMedia = true;
+						addedPart = true;
+					}
+				}
+				if (!addedPart && state.link) {
+					_vimKeymapHints.push_back({
+						.itemId = hintItemId,
+						.badge = QRect(badgePoint, QSize(1, 1)),
+						.link = std::move(state.link),
+					});
+					addedGroupedMedia = true;
+					addedPart = true;
+				}
+				if (!addedPart) {
+					addClickPoint(
+						hintItemId,
+						badgePoint,
+						mediaTopLeft + QPoint(0, top) + groupRect.center());
+					addedGroupedMedia = true;
+				}
+			}
+		}
+		if (!addedGroupedMedia && visibleMediaRect.width() >= 24
+			&& visibleMediaRect.height() >= 24) {
+			if (const auto photo = media->getPhoto()) {
+				addMedia(itemId, mediaBadgePoint, photo, nullptr);
+			}
+		}
+		if (const auto document = media->getDocument()) {
+			if (document->isVoiceMessage()) {
+				auto request = StateRequest();
+				const auto fromY = std::max(0, _visibleAreaTop - top);
+				const auto tillY = std::min(
+					view->height(),
+					_visibleAreaBottom - top);
+				auto added = false;
+				for (auto y = fromY; y < tillY && !added;
+						y += kVimKeymapPlayableMediaHintYStep) {
+					for (auto x = 0; x < width();
+							x += kVimKeymapPlayableMediaHintXStep) {
+						const auto state = view->textState(
+							QPoint(x, y),
+							request);
+						if (IsVimKeymapVoiceDocumentLink(state.link)) {
+							add(state.link, QPoint(x, top + y));
+							added = true;
+							break;
+						}
+					}
+				}
+			} else if (document->isVideoFile()
+				|| document->isAnimation()
+				|| document->isVideoMessage()) {
+				if (!addedGroupedMedia && visibleMediaRect.width() >= 24
+					&& visibleMediaRect.height() >= 24) {
+					addMedia(itemId, mediaBadgePoint, nullptr, document);
+				}
+			}
+		}
+		if (const auto dataMedia = item->media();
+				dataMedia && dataMedia->poll()) {
+			auto request = StateRequest();
+			for (auto y = visibleMediaRect.top();
+					y <= visibleMediaRect.bottom();
+					y += 12) {
+				for (auto x = visibleMediaRect.left();
+						x <= visibleMediaRect.right();
+						x += 12) {
+					const auto state = view->textState(
+						QPoint(x, y - top),
+						request);
+					add(state.link, QPoint(x, y));
+				}
+			}
+		}
+	}
+	if (item->inlineReplyKeyboard()) {
+		auto request = StateRequest();
+		const auto fromY = std::max(0, _visibleAreaTop - top);
+		const auto tillY = std::min(
+			view->height(),
+			_visibleAreaBottom - top);
+		for (auto y = fromY; y < tillY; y += 18) {
+			for (auto x = 0; x < width(); x += 24) {
+				const auto state = view->textState(QPoint(x, y), request);
+				if (dynamic_cast<ReplyMarkupClickHandler*>(
+						state.link.get())) {
+					add(state.link, QPoint(x, top + y));
+				}
+			}
+		}
+	}
+	auto request = StateRequest();
+	request.onlyMessageText = true;
+	const auto fromY = std::max(0, _visibleAreaTop - top);
+	const auto tillY = std::min(view->height(), _visibleAreaBottom - top);
+	for (auto y = fromY; y < tillY; y += 18) {
+		for (auto x = 0; x < width(); x += 24) {
+			const auto state = view->textState(QPoint(x, y), request);
+			if (state.link && state.overMessageText) {
+				add(state.link, QPoint(x, top + y));
+			}
+		}
+	}
+}
+
+void HistoryInner::vimKeymapAssignHintLabels() {
+	for (auto i = 0, count = int(_vimKeymapHints.size()); i != count; ++i) {
+		_vimKeymapHints[i].label = Core::VimKeymap::HintLabel(i, count);
+	}
+}
+
+bool HistoryInner::vimKeymapBeginHints(Core::VimKeymap::Action action) {
+	switch (action) {
+	case Core::VimKeymap::Action::CopyMessage:
+		vimKeymapBuildMessageHints(VimKeymapHintMode::CopyMessage);
+		break;
+	case Core::VimKeymap::Action::ReplyToMessage:
+		vimKeymapBuildMessageHints(VimKeymapHintMode::ReplyToMessage);
+		break;
+		case Core::VimKeymap::Action::EditMessage:
+			vimKeymapBuildMessageHints(VimKeymapHintMode::EditMessage);
+			break;
+		case Core::VimKeymap::Action::DeleteMessage:
+			vimKeymapBuildMessageHints(VimKeymapHintMode::DeleteMessage);
+			break;
+		case Core::VimKeymap::Action::LinkHints:
+			vimKeymapBuildVisibleLinkHints();
+			break;
+	}
+	return _vimKeymapHintMode != VimKeymapHintMode::None;
+}
+
+bool HistoryInner::vimKeymapTriggerHint(const VimKeymapHint &hint) {
+	const auto mode = _vimKeymapHintMode;
+	if (mode == VimKeymapHintMode::ActivateLink) {
+		if (hint.photo) {
+			const auto photo = hint.photo;
+			vimKeymapClearHints();
+			elementOpenPhoto(not_null{ photo }, hint.itemId);
+			return true;
+		} else if (hint.document) {
+			const auto document = hint.document;
+			vimKeymapClearHints();
+			elementOpenDocument(not_null{ document }, hint.itemId, true);
+			return true;
+		} else if (hint.link) {
+			const auto link = hint.link;
+			vimKeymapClearHints();
+			ActivateClickHandler(
+				window(),
+				link,
+				prepareClickContext(Qt::LeftButton, hint.itemId));
+			return true;
+		} else if (hint.useClickPoint) {
+			const auto globalPoint = mapToGlobal(hint.clickPoint);
+			vimKeymapClearHints();
+			mouseActionStart(globalPoint, Qt::LeftButton);
+			mouseActionFinish(globalPoint, Qt::LeftButton);
+			return true;
+		}
+		vimKeymapClearHints();
+		return false;
+	}
+	const auto item = session().data().message(hint.itemId);
+	if (!item) {
+		vimKeymapClearHints();
+		return false;
+	}
+	const auto view = viewByItem(item);
+	if (!view) {
+		vimKeymapClearHints();
+		return false;
+	}
+	if (mode == VimKeymapHintMode::PickMessageLinks) {
+		vimKeymapBuildLinkHints(view);
+		return true;
+	}
+	const auto result = (mode == VimKeymapHintMode::CopyMessage)
+		? vimKeymapCopyItem(item)
+		: (mode == VimKeymapHintMode::ReplyToMessage)
+			? vimKeymapReplyToItem(item)
+			: (mode == VimKeymapHintMode::EditMessage)
+			? vimKeymapEditItem(item)
+			: (mode == VimKeymapHintMode::DeleteMessage)
+			? vimKeymapDeleteItem(item)
+			: false;
+	vimKeymapClearHints();
+	return result;
+}
+
+bool HistoryInner::vimKeymapHandleHintKey(not_null<QKeyEvent*> e) {
+	if (_vimKeymapHintMode == VimKeymapHintMode::None) {
+		return false;
+	} else if (e->key() == Qt::Key_Escape) {
+		vimKeymapClearHints();
+		return true;
+	} else if (e->key() == Qt::Key_Backspace) {
+		if (!_vimKeymapHintPrefix.isEmpty()) {
+			_vimKeymapHintPrefix.chop(1);
+			update();
+		}
+		return true;
+	}
+	const auto modifiers = e->modifiers()
+		& ~(Qt::KeypadModifier | Qt::GroupSwitchModifier);
+	if (modifiers != Qt::NoModifier && modifiers != Qt::ShiftModifier) {
+		return true;
+	}
+	const auto text = Core::VimKeymap::HintInput(e);
+	if (text.isEmpty()) {
+		return true;
+	}
+	_vimKeymapHintPrefix += text.front();
+	auto exact = (const VimKeymapHint*)nullptr;
+	auto hasPrefix = false;
+	for (const auto &hint : _vimKeymapHints) {
+		if (hint.label == _vimKeymapHintPrefix) {
+			exact = &hint;
+			break;
+		} else if (hint.label.startsWith(_vimKeymapHintPrefix)) {
+			hasPrefix = true;
+		}
+	}
+	if (exact) {
+		const auto chosen = *exact;
+		return vimKeymapTriggerHint(chosen);
+	} else if (!hasPrefix) {
+		_vimKeymapHintPrefix.clear();
+	}
+	update();
+	return true;
+}
+
+void HistoryInner::vimKeymapPaintHints(Painter &p) const {
+	if (_vimKeymapHintMode == VimKeymapHintMode::None
+		|| _vimKeymapHints.empty()) {
+		return;
+	}
+	p.save();
+	const auto hintSize = Core::VimKeymap::HintSize();
+	const auto font = QFont(u"Menlo"_q, hintSize, QFont::DemiBold);
+	const auto metrics = QFontMetrics(font);
+	const auto horizontalPadding = std::max(7, hintSize / 2);
+	const auto verticalPadding = std::max(3, hintSize / 4);
+	p.setFont(font);
+	p.setRenderHint(QPainter::Antialiasing, true);
+	for (const auto &hint : _vimKeymapHints) {
+		const auto remaining = hint.label.mid(_vimKeymapHintPrefix.size());
+		const auto label = _vimKeymapHintPrefix.isEmpty()
+			? hint.label
+			: remaining.isEmpty()
+			? hint.label
+			: remaining;
+		const auto textWidth = metrics.horizontalAdvance(label);
+		auto rect = QRect(
+			hint.badge.topLeft(),
+			QSize(
+				textWidth + 2 * horizontalPadding,
+				metrics.height() + 2 * verticalPadding));
+		const auto minLeft = 4;
+		const auto maxLeft = std::max(minLeft, width() - rect.width() - 4);
+		const auto minTop = _visibleAreaTop + 4;
+		const auto maxTop = std::max(
+			minTop,
+			_visibleAreaBottom - rect.height() - 4);
+		rect.moveLeft(std::clamp(rect.left(), minLeft, maxLeft));
+		rect.moveTop(std::clamp(rect.top(), minTop, maxTop));
+		const auto radius = rect.height() / 2;
+		p.setPen(QColor(102, 78, 0, 105));
+		p.setBrush(QColor(255, 218, 72, 246));
+		p.drawRoundedRect(rect, radius, radius);
+		p.setPen(QColor(28, 24, 14));
+		p.drawText(rect, Qt::AlignCenter, label);
+	}
+	p.restore();
+}
+
 void HistoryInner::editCaptionUploadLayer(not_null<HistoryItem*> item) {
 	if (const auto view = viewByItem(item)) {
 		if (item->isUploading()) {
@@ -4874,6 +5514,8 @@ void HistoryInner::setupThanosEffect() {
 }
 
 HistoryInner::~HistoryInner() {
+	Core::VimKeymap::UnregisterKeyHandler(this);
+	Core::VimKeymap::UnregisterActionHandler(this);
 	if (_overlayHost) {
 		_overlayHost->hide();
 	}

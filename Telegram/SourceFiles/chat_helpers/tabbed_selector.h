@@ -18,6 +18,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mtproto/sender.h"
 #include "base/object_ptr.h"
 
+class QKeyEvent;
+
 namespace InlineBots {
 struct ResultSelected;
 } // namespace InlineBots
@@ -198,6 +200,11 @@ public:
 		return _showRequests.events();
 	}
 
+	[[nodiscard]] bool vimKeymapHandleKey(not_null<QKeyEvent*> e);
+	[[nodiscard]] bool vimKeymapSearchHasFocus() const;
+	bool vimKeymapFocusPanel();
+	bool vimKeymapFocusSearch();
+
 	class Inner;
 	class InnerFooter;
 
@@ -284,6 +291,9 @@ private:
 	void fillTabsSliderSections();
 	void updateTabsSliderGeometry();
 	void switchTab();
+	bool vimKeymapSwitchTab(int direction);
+	bool vimKeymapScrollBy(int direction);
+	void vimKeymapRefocusPanelLater(int attemptsLeft);
 
 	not_null<Tab*> getTab(int index);
 	not_null<const Tab*> getTab(int index) const;
@@ -343,6 +353,9 @@ private:
 	rpl::event_stream<> _slideFinished;
 
 	rpl::lifetime _swipeLifetime;
+	Ui::Animations::Simple _vimKeymapScrollAnimation;
+	int _vimKeymapScrollTarget = 0;
+	bool _vimKeymapPanelFocusRequested = false;
 
 };
 
@@ -411,6 +424,15 @@ public:
 	rpl::producer<bool> disableScrollRequests() const;
 
 	virtual object_ptr<InnerFooter> createFooter() = 0;
+	[[nodiscard]] virtual bool vimKeymapMoveSelection(int dx, int dy) {
+		return false;
+	}
+	[[nodiscard]] virtual bool vimKeymapActivateSelection() {
+		return false;
+	}
+	virtual bool vimKeymapFocusSearch() {
+		return false;
+	}
 
 protected:
 	void visibleTopBottomUpdated(

@@ -135,6 +135,7 @@ public:
 	void scrollToEntry(const RowDescriptor &entry);
 
 	void searchMessages(SearchState state);
+	void focusSearch();
 
 	[[nodiscard]] RowDescriptor resolveChatNext(RowDescriptor from = {}) const;
 	[[nodiscard]] RowDescriptor resolveChatPrevious(RowDescriptor from = {}) const;
@@ -180,6 +181,10 @@ private:
 	void requestPublicPosts(bool fromStart);
 	void requestMessages(bool fromStart);
 	[[nodiscard]] not_null<SearchProcessState*> currentSearchProcess();
+	[[nodiscard]] bool vimKeymapSearchInputHasFocus() const;
+	void vimKeymapEnterSearchInputMode();
+	[[nodiscard]] bool vimKeymapSearchOpen() const;
+	void vimKeymapReturnToViewMode();
 
 	[[nodiscard]] bool computeSearchWithPostsPreview() const;
 

@@ -104,6 +104,10 @@ public:
 	base::unique_qptr<Ui::PopupMenu> fillContextMenu(
 		const SendMenu::Details &details) override;
 
+	[[nodiscard]] bool vimKeymapMoveSelection(int dx, int dy) override;
+	[[nodiscard]] bool vimKeymapActivateSelection() override;
+	bool vimKeymapFocusSearch() override;
+
 	~GifsListWidget();
 
 protected:
@@ -204,6 +208,7 @@ private:
 	int _selected = -1;
 	int _pressed = -1;
 	QPoint _lastMousePos;
+	int _vimKeymapSelected = -1;
 
 	base::Timer _previewTimer;
 	bool _previewShown = false;

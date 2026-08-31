@@ -138,6 +138,7 @@ public:
 			not_null<UserData*>)> moneyRestrictionError;
 	};
 	ShareBox(QWidget*, Descriptor &&descriptor);
+	~ShareBox();
 
 protected:
 	void prepare() override;
@@ -166,6 +167,7 @@ private:
 	int getBottomScrollSkip() const;
 	int contentHeight() const;
 	void updateScrollSkips();
+	[[nodiscard]] bool handleVimKeyNavigation(not_null<QKeyEvent*> e);
 
 	void addPeerToMultiSelect(not_null<Data::Thread*> thread);
 	void innerSelectedChanged(not_null<Data::Thread*> thread, bool checked);

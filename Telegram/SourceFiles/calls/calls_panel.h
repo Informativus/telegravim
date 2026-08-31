@@ -143,6 +143,14 @@ private:
 	void updateStatusGeometry();
 	[[nodiscard]] auto bottomButtons() const
 		-> std::vector<not_null<Ui::CallButton*>>;
+	[[nodiscard]] auto vimKeymapCallConfirmationButtons() const
+		-> std::vector<not_null<Ui::CallButton*>>;
+	[[nodiscard]] bool vimKeymapHandleCallConfirmationKey(
+		not_null<QKeyEvent*> e);
+	[[nodiscard]] bool vimKeymapSelectCallConfirmationButton(bool next);
+	void vimKeymapSelectCallConfirmationButton(
+		not_null<Ui::CallButton*> button);
+	void vimKeymapClearCallConfirmationFocus();
 	void refreshButtonLabelsShown();
 	void setupButtonTooltip(not_null<Ui::CallButton*> button);
 	void showButtonTooltip(not_null<Ui::CallButton*> button);
@@ -203,6 +211,7 @@ private:
 	base::unique_qptr<Ui::IconButton> _pinOnTop;
 	object_ptr<Ui::ImportantTooltip> _buttonTooltip = { nullptr };
 	QPointer<Ui::CallButton> _buttonTooltipFor;
+	QPointer<Ui::CallButton> _vimKeymapCallConfirmationFocused;
 	bool _buttonLabelsShown = true;
 	base::unique_qptr<Ui::FlatLabel> _name;
 	base::unique_qptr<Ui::FlatLabel> _status;

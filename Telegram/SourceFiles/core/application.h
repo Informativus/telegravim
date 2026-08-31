@@ -215,6 +215,7 @@ public:
 
 	// Media view interface.
 	bool hideMediaView();
+	[[nodiscard]] bool mediaViewHandlesEscape(QObject *object) const;
 
 	[[nodiscard]] QPoint getPointForCallPanelCenter() const;
 	[[nodiscard]] bool isSharingScreen() const;

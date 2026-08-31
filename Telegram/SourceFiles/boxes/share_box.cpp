@@ -41,6 +41,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/peer_list_controllers.h"
 #include "chat_helpers/emoji_suggestions_widget.h"
 #include "chat_helpers/share_message_phrase_factory.h"
+#include "core/vim_keymap.h"
 #include "data/business/data_shortcut_messages.h"
 #include "data/data_channel.h"
 #include "data/data_chat_filters.h"
@@ -88,6 +89,7 @@ public:
 
 	void activateSkipRow(int direction);
 	void activateSkipColumn(int direction);
+	void activateSkipColumnFromTab(int direction);
 	void activateSkipPage(int pageHeight, int direction);
 	void updateFilter(QString filter = QString());
 	[[nodiscard]] bool isFilterEmpty() const;
@@ -228,11 +230,30 @@ ShareBox::ShareBox(QWidget*, Descriptor &&descriptor)
 	? std::move(_descriptor.copyLinkText)
 	: tr::lng_share_copy_link())
 , _searchTimer([=] { searchByUsername(); }) {
+	Core::VimKeymap::RegisterKeyHandler(this, [=](
+			not_null<QKeyEvent*> e) {
+		if (!_inner || !isVisible()) {
+			return false;
+		}
+		const auto top = window();
+		if (!top || !top->isActiveWindow() || !isVisibleTo(top)) {
+			return false;
+		}
+		const auto focused = focusWidget();
+		if (focused && focused != this && !isAncestorOf(focused)) {
+			return false;
+		}
+		return handleVimKeyNavigation(e);
+	});
 	if (_bottomWidget) {
 		_bottomWidget->setParent(this);
 		_bottomWidget->resizeToWidth(st::boxWideWidth);
 		_bottomWidget->show();
 	}
+}
+
+ShareBox::~ShareBox() {
+	Core::VimKeymap::UnregisterKeyHandler(this);
 }
 
 void ShareBox::prepareCommentField() {
@@ -506,10 +527,30 @@ void ShareBox::resizeEvent(QResizeEvent *e) {
 	_inner->resizeToWidth(width());
 }
 
+bool ShareBox::handleVimKeyNavigation(not_null<QKeyEvent*> e) {
+	if (!Core::VimKeymap::Enabled() || !_inner) {
+		return false;
+	}
+	const auto modifiers = e->modifiers()
+		& ~(Qt::KeypadModifier | Qt::GroupSwitchModifier);
+	const auto tabForward = (e->key() == Qt::Key_Tab)
+		&& (modifiers == Qt::NoModifier);
+	const auto tabBackward = (e->key() == Qt::Key_Backtab)
+		|| ((e->key() == Qt::Key_Tab) && (modifiers == Qt::ShiftModifier));
+	if (!tabForward && !tabBackward) {
+		return false;
+	}
+	_inner->activateSkipColumnFromTab(tabBackward ? -1 : 1);
+	e->accept();
+	return true;
+}
+
 void ShareBox::keyPressEvent(QKeyEvent *e) {
 	auto focused = focusWidget();
 	if (_select == focused || _select->isAncestorOf(focusWidget())) {
-		if (e->key() == Qt::Key_Up) {
+		if (handleVimKeyNavigation(not_null{ e })) {
+			return;
+		} else if (e->key() == Qt::Key_Up) {
 			_inner->activateSkipColumn(-1);
 		} else if (e->key() == Qt::Key_Down) {
 			_inner->activateSkipColumn(1);
@@ -973,6 +1014,14 @@ void ShareBox::Inner::activateSkipColumn(int direction) {
 		active = count - 1;
 	}
 	setActive(active);
+}
+
+void ShareBox::Inner::activateSkipColumnFromTab(int direction) {
+	if (_active < 0 && direction < 0) {
+		setActive(displayedChatsCount() - 1);
+	} else {
+		activateSkipColumn(direction);
+	}
 }
 
 void ShareBox::Inner::activateSkipPage(int pageHeight, int direction) {

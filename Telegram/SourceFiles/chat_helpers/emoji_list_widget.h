@@ -172,6 +172,10 @@ public:
 	[[nodiscard]] rpl::producer<std::vector<QString>> searchQueries() const;
 	[[nodiscard]] rpl::producer<int> recentShownCount() const;
 
+	[[nodiscard]] bool vimKeymapMoveSelection(int dx, int dy) override;
+	[[nodiscard]] bool vimKeymapActivateSelection() override;
+	bool vimKeymapFocusSearch() override;
+
 protected:
 	void visibleTopBottomUpdated(
 		int visibleTop,
@@ -595,6 +599,8 @@ private:
 	OverState _pressed;
 	OverState _pickerSelected;
 	QPoint _lastMousePos;
+	OverEmoji _vimKeymapSelected;
+	bool _vimKeymapSelection = false;
 
 	base::Timer _searchRequestTimer;
 	object_ptr<EmojiColorPicker> _picker;

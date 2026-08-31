@@ -25,6 +25,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/core_settings.h"
 #include "core/update_checker.h"
 #include "core/shortcuts.h"
+#include "core/vim_keymap.h"
 #include "core/sandbox.h"
 #include "core/local_url_handlers.h"
 #include "core/launcher.h"
@@ -712,14 +713,41 @@ bool Application::hideMediaView() {
 	return false;
 }
 
+bool Application::mediaViewHandlesEscape(QObject *object) const {
+	if (!_mediaView) {
+		return false;
+	}
+	if (!_mediaView->isHidden()
+		&& !_mediaView->isMinimized()
+		&& _mediaView->isActive()) {
+		return true;
+	}
+	if (!object || !object->isWidgetType()) {
+		return false;
+	}
+	const auto widget = static_cast<QWidget*>(object);
+	const auto view = _mediaView->widget().get();
+	return (widget == view) || (widget->window() == view->window());
+}
+
 bool Application::eventFilter(QObject *object, QEvent *e) {
 	switch (e->type()) {
 	case QEvent::KeyPress: {
 		updateNonIdle();
 		_inAppKeyPressed.fire({});
 		const auto event = static_cast<QKeyEvent*>(e);
-		if (base::Platform::GlobalShortcuts::IsToggleFullScreenKey(event)
+		if (!event->isAutoRepeat()
+			&& event->key() == Qt::Key_Escape
+			&& mediaViewHandlesEscape(object)) {
+			_mediaView->close();
+			Core::VimKeymap::TraceKey(event, u"media viewer close"_q);
+			return true;
+		} else if (base::Platform::GlobalShortcuts::IsToggleFullScreenKey(event)
 			&& toggleActiveWindowFullScreen()) {
+			return true;
+		} else if (Core::VimKeymap::HandleApplicationKeyPress(
+				not_null{ object },
+				event)) {
 			return true;
 		} else if (Shortcuts::HandlePossibleChatSwitch(event)) {
 			return true;

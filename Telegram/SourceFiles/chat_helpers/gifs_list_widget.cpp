@@ -23,6 +23,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "menu/menu_send.h" // SendMenu::FillSendMenu
 #include "mtproto/mtproto_config.h"
 #include "core/click_handler_types.h"
+#include "core/vim_keymap.h"
 #include "ui/controls/tabbed_search.h"
 #include "ui/layers/generic_box.h"
 #include "ui/widgets/buttons.h"
@@ -42,9 +43,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_cursor_state.h"
 #include "storage/storage_account.h" // Account::writeSavedGifs
 #include "styles/style_chat_helpers.h"
+#include "styles/style_window.h"
 #include "styles/style_menu_icons.h"
 
+#include <QtGui/QPen>
 #include <QtWidgets/QApplication>
+
+#include <algorithm>
 
 namespace ChatHelpers {
 namespace {
@@ -52,6 +57,28 @@ namespace {
 constexpr auto kSearchRequestDelay = 400;
 constexpr auto kMinRepaintDelay = crl::time(33);
 constexpr auto kMinAfterScrollDelay = crl::time(33);
+constexpr auto kVimKeymapMaxGifColumns = 5;
+
+void PaintVimKeymapSelectionFrame(Painter &p, QRect rect) {
+	constexpr auto kInset = 3;
+	constexpr auto kStroke = 2;
+
+	rect = rect.marginsRemoved(QMargins(kInset, kInset, kInset, kInset));
+	if (rect.isEmpty()) {
+		return;
+	}
+
+	p.save();
+	auto pen = QPen(st::activeButtonBg->c, kStroke);
+	pen.setJoinStyle(Qt::RoundJoin);
+	p.setPen(pen);
+	p.setBrush(Qt::NoBrush);
+	p.drawRoundedRect(
+		QRectF(rect).adjusted(0.5, 0.5, -0.5, -0.5),
+		st::roundRadiusSmall,
+		st::roundRadiusSmall);
+	p.restore();
+}
 
 } // namespace
 
@@ -366,12 +393,23 @@ void GifsListWidget::paintInlineItems(Painter &p, QRect clip) {
 		p.translate(-point.x(), -point.y());
 	};
 	_mosaic.paint(std::move(paintItem), clip);
+
+	const auto selected = (_vimKeymapSelected >= 0)
+		? _vimKeymapSelected
+		: _selected;
+	if (selected >= 0 && _mosaic.maybeItemAt(selected)) {
+		const auto frame = _mosaic.findRect(selected);
+		if (frame.intersects(clip)) {
+			PaintVimKeymapSelectionFrame(p, frame);
+		}
+	}
 }
 
 void GifsListWidget::mousePressEvent(QMouseEvent *e) {
 	if (e->button() != Qt::LeftButton) {
 		return;
 	}
+	_vimKeymapSelected = -1;
 	_lastMousePos = e->globalPos();
 	updateSelected();
 
@@ -546,6 +584,10 @@ void GifsListWidget::selectInlineResult(
 }
 
 void GifsListWidget::mouseMoveEvent(QMouseEvent *e) {
+	if (_vimKeymapSelected >= 0 && e->globalPos() == _lastMousePos) {
+		return;
+	}
+	_vimKeymapSelected = -1;
 	_lastMousePos = e->globalPos();
 	updateSelected();
 }
@@ -824,6 +866,7 @@ void GifsListWidget::afterShown() {
 }
 
 void GifsListWidget::beforeHiding() {
+	_vimKeymapSelected = -1;
 	if (_search) {
 		_search->returnFocus();
 	}
@@ -999,6 +1042,108 @@ void GifsListWidget::updateSelected() {
 	if (ClickHandler::setActive(link, item)) {
 		setCursor(link ? style::cur_pointer : style::cur_default);
 	}
+}
+
+bool GifsListWidget::vimKeymapMoveSelection(int dx, int dy) {
+	if (_mosaic.empty()) {
+		return false;
+	}
+	const auto firstVisible = [&] {
+		const auto found = _mosaic.findByPoint({
+			rtl() ? width() / 2 : width() / 2,
+			std::max(0, getVisibleTop() + 1),
+		});
+		return _mosaic.maybeItemAt(found.index) ? found.index : -1;
+	};
+	const auto current = (_vimKeymapSelected >= 0
+			&& _mosaic.maybeItemAt(_vimKeymapSelected))
+		? _vimKeymapSelected
+		: (_selected >= 0 && _mosaic.maybeItemAt(_selected))
+		? _selected
+		: firstVisible();
+	if (current < 0) {
+		return false;
+	}
+
+	auto position = Layout::IndexToPosition(current);
+	auto target = -1;
+	const auto tryPosition = [&](int row, int column) {
+		if (const auto item = _mosaic.maybeItemAt(row, column)) {
+			return item->position();
+		}
+		return -1;
+	};
+	if (dx == 0 && dy == 0) {
+		target = current;
+	} else if (dy != 0) {
+		const auto row = std::clamp(
+			position.row + dy,
+			0,
+			std::max(0, _mosaic.rowsCount() - 1));
+		for (auto column = std::min(position.column, kVimKeymapMaxGifColumns - 1);
+				column >= 0;
+				--column) {
+			target = tryPosition(row, column);
+			if (target >= 0) {
+				break;
+			}
+		}
+	} else if (dx != 0) {
+		target = tryPosition(position.row, position.column + dx);
+		if (target < 0 && dx > 0) {
+			target = tryPosition(position.row + 1, 0);
+		} else if (target < 0 && dx < 0) {
+			for (auto column = kVimKeymapMaxGifColumns - 1;
+					column >= 0;
+					--column) {
+				target = tryPosition(position.row - 1, column);
+				if (target >= 0) {
+					break;
+				}
+			}
+		}
+	}
+	if (target < 0) {
+		return false;
+	}
+
+	const auto rect = _mosaic.findRect(target);
+	if (rect.isEmpty()) {
+		return false;
+	}
+	_vimKeymapSelected = target;
+	_selected = target;
+	_lastMousePos = QCursor::pos();
+	const auto margin = rect.height() / 2;
+	if (rect.top() < getVisibleTop()) {
+		scrollTo(std::max(0, rect.top() - margin));
+	} else if (rect.bottom() > getVisibleBottom()) {
+		scrollTo(std::max(0, rect.bottom() - (getVisibleBottom()
+			- getVisibleTop()) + margin));
+	}
+	update();
+	return true;
+}
+
+bool GifsListWidget::vimKeymapActivateSelection() {
+	const auto selected = (_vimKeymapSelected >= 0)
+		? _vimKeymapSelected
+		: _selected;
+	if (selected < 0 || !_mosaic.maybeItemAt(selected)) {
+		return false;
+	}
+	selectInlineResult(selected, {});
+	return true;
+}
+
+bool GifsListWidget::vimKeymapFocusSearch() {
+	if (!_search) {
+		return false;
+	}
+	_vimKeymapSelected = -1;
+	_search->stealFocus();
+	update();
+	return true;
 }
 
 void GifsListWidget::showPreview() {

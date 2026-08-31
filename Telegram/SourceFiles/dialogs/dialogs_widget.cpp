@@ -65,6 +65,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/ui_integration.h"
 #include "core/update_checker.h"
 #include "core/shortcuts.h"
+#include "core/vim_keymap.h"
 #include "window/window_controller.h"
 #include "window/window_session_controller.h"
 #include "window/window_slide_animation.h"
@@ -107,6 +108,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtWidgets/QScrollBar>
 #include <QtWidgets/QTextEdit>
 
+#include <optional>
+
 namespace Dialogs {
 namespace {
 
@@ -141,6 +144,59 @@ public:
 		}
 	}
 	return false;
+}
+
+[[nodiscard]] Qt::KeyboardModifiers CleanSearchKeyModifiers(QKeyEvent *e) {
+	return e->modifiers()
+		& ~(Qt::KeypadModifier | Qt::GroupSwitchModifier);
+}
+
+[[nodiscard]] QString SearchKeyName(QKeyEvent *e) {
+	const auto key = e->key();
+	return (key > 0 && key <= 0x10FFFF)
+		? QString(QChar(key)).toCaseFolded()
+		: QString();
+}
+
+[[nodiscard]] bool SearchKeyMatchesLetter(
+		QKeyEvent *e,
+		QChar latin,
+		QChar cyrillic) {
+	const auto text = e->text().toCaseFolded();
+	const auto key = SearchKeyName(e);
+	const auto latinText = QString(latin);
+	const auto cyrillicText = QString(cyrillic);
+	return (text == latinText)
+		|| (text == cyrillicText)
+		|| (key == latinText)
+		|| (key == cyrillicText);
+}
+
+[[nodiscard]] std::optional<Qt::Key> SearchResultNavigationKey(
+		not_null<QKeyEvent*> e,
+		bool allowPlainVimKeys) {
+	const auto modifiers = CleanSearchKeyModifiers(e.get());
+	const auto tabForward = (e->key() == Qt::Key_Tab)
+		&& (modifiers == Qt::NoModifier);
+	const auto tabBackward = (e->key() == Qt::Key_Backtab)
+		|| ((e->key() == Qt::Key_Tab) && (modifiers == Qt::ShiftModifier));
+	if (tabForward || tabBackward) {
+		return tabForward ? Qt::Key_Down : Qt::Key_Up;
+	} else if (const auto chat = Core::VimKeymap::ChatNavigationKey(e)) {
+		return (*chat == Core::VimKeymap::ChatNavigation::Next)
+			? Qt::Key_Down
+			: Qt::Key_Up;
+	} else if (allowPlainVimKeys && modifiers == Qt::NoModifier) {
+		if (SearchKeyMatchesLetter(e.get(), QChar('j'), QChar(ushort(0x043E)))) {
+			return Qt::Key_Down;
+		} else if (SearchKeyMatchesLetter(
+				e.get(),
+				QChar('k'),
+				QChar(ushort(0x043B)))) {
+			return Qt::Key_Up;
+		}
+	}
+	return std::nullopt;
 }
 
 [[nodiscard]] QImage UpdateIcon() {
@@ -685,6 +741,113 @@ Widget::Widget(
 
 	setupMainMenuToggle();
 	setupShortcuts();
+	Core::VimKeymap::RegisterKeyHandler(this, [=](
+			not_null<QKeyEvent*> e) {
+		if (!isActiveWindow()) {
+			return false;
+		}
+		if (!e->isAutoRepeat() && e->key() == Qt::Key_Escape) {
+			if (_inner->vimKeymapCancelChatHints()) {
+				Core::VimKeymap::SetNormalMode(true);
+				Core::VimKeymap::TraceKey(e, u"cancel chat hints"_q);
+				return true;
+			}
+			if (vimKeymapSearchOpen()
+				&& cancelSearch({ .jumpBackToSearchedChat = true })) {
+				vimKeymapReturnToViewMode();
+				Core::VimKeymap::TraceKey(e, u"close search and view mode"_q);
+				return true;
+			}
+		}
+		if (!_searchHasFocus && Core::VimKeymap::HandleSearch(e)) {
+			vimKeymapEnterSearchInputMode();
+			crl::on_main(this, [=] {
+				if (!isActiveWindow()) {
+					return;
+				}
+				setInnerFocus(false);
+				vimKeymapEnterSearchInputMode();
+			});
+			return true;
+		}
+		if (!e->isAutoRepeat()
+			&& (e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter)
+			&& _inner->vimKeymapOpenChatPreview()) {
+			Core::VimKeymap::SetNormalMode(true);
+			Core::VimKeymap::TraceKey(e, u"open chat preview"_q);
+			return true;
+		}
+		if (_inner->vimKeymapHandleChatHintKey(e)) {
+			return true;
+		}
+		if (Core::VimKeymap::ChatHintsKey(e)) {
+			return _inner->vimKeymapBeginChatHints();
+		}
+		if (Core::VimKeymap::ChatPreviewKey(e)) {
+			return _inner->vimKeymapBeginChatHints(true);
+		}
+		const auto subsectionSearchFocused = _subsectionTopBar
+			&& _subsectionTopBar->searchHasFocus();
+		const auto searchOpen = _searchHasFocus
+			|| _searchEngaged
+			|| _searchSuggestionsLocked
+			|| subsectionSearchFocused
+			|| _searchState.inChat
+			|| !_searchState.query.isEmpty()
+			|| !currentSearchQuery().trimmed().isEmpty();
+		const auto searchResultsOpen = searchOpen
+			&& !_searchState.inChat
+			&& (!_searchState.query.trimmed().isEmpty()
+				|| !currentSearchQuery().trimmed().isEmpty());
+		if (searchResultsOpen
+			&& (e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter)) {
+			submit();
+			Core::VimKeymap::TraceKey(e, u"search result open"_q);
+			return true;
+		} else if (searchOpen) {
+			if (const auto key = SearchResultNavigationKey(e, !_searchHasFocus)) {
+				if (_suggestions) {
+					_suggestions->selectJump(*key);
+					Core::VimKeymap::TraceKey(
+						e,
+						(*key == Qt::Key_Down)
+							? u"search suggestion next"_q
+							: u"search suggestion previous"_q);
+				} else {
+					const auto handled = _inner->vimKeymapNavigateSearchResults(
+						*key,
+						e->isAutoRepeat(),
+						e->count());
+					Core::VimKeymap::TraceKey(
+						e,
+						handled
+							? ((*key == Qt::Key_Down)
+								? u"search result next"_q
+								: u"search result previous"_q)
+							: u"search results waiting"_q);
+				}
+				return true;
+			}
+		}
+		const auto navigation = Core::VimKeymap::ChatNavigationKey(e);
+		if (!navigation) {
+			return false;
+		}
+		const auto next = (*navigation == Core::VimKeymap::ChatNavigation::Next);
+		const auto handled = _inner->vimKeymapJumpToChat(
+			next,
+			Core::VimKeymap::ChatNavigationSteps(e));
+		Core::VimKeymap::TraceKey(
+			e,
+			handled
+				? (next ? u"chat next"_q : u"chat previous"_q)
+				: u"chat navigation blocked"_q);
+		return true;
+	});
+	Core::VimKeymap::RegisterTextInputPassthroughHandler(this, [=](
+			not_null<QKeyEvent*>) {
+		return isActiveWindow() && vimKeymapSearchInputHasFocus();
+	});
 	if (_stories) {
 		setupStories();
 	}
@@ -2954,10 +3117,21 @@ void Widget::escape() {
 }
 
 void Widget::submit() {
+	const auto vimSearchOpen = vimKeymapSearchOpen();
+	const auto weak = base::make_weak(this);
+	const auto returnToVimViewMode = [=] {
+		if (vimSearchOpen) {
+			if (const auto strong = weak.get()) {
+				strong->vimKeymapReturnToViewMode();
+			}
+		}
+	};
 	if (_suggestions) {
 		_suggestions->chooseRow();
+		returnToVimViewMode();
 		return;
 	} else if (_inner->chooseRow()) {
+		returnToVimViewMode();
 		return;
 	}
 	const auto state = _inner->state();
@@ -2965,7 +3139,9 @@ void Widget::submit() {
 		|| (state == WidgetState::Filtered
 			&& _inner->hasFilteredResults())) {
 		_inner->selectSkip(1);
-		_inner->chooseRow();
+		if (_inner->chooseRow()) {
+			returnToVimViewMode();
+		}
 	} else {
 		search();
 	}
@@ -3266,6 +3442,19 @@ void Widget::searchMessages(SearchState state) {
 		}
 	} else {
 		_search->setFocus();
+	}
+}
+
+void Widget::focusSearch() {
+	if (_childList) {
+		_childList->setInnerFocus();
+	} else if (_subsectionTopBar) {
+		if (!_subsectionTopBar->searchSetFocus()
+			&& !_subsectionTopBar->searchHasFocus()) {
+			_subsectionTopBar->toggleSearch(true, anim::type::normal);
+		}
+	} else {
+		_search->setFocusFast();
 	}
 }
 
@@ -4682,6 +4871,24 @@ void Widget::keyPressEvent(QKeyEvent *e) {
 		_suggestions->selectJump(
 			(e->key() == Qt::Key_PageDown) ? Qt::Key_Down : Qt::Key_Up,
 			_scroll->height());
+	} else if (!_searchHasFocus && Core::VimKeymap::HandleHelp(e)) {
+	} else if (!_searchHasFocus && Core::VimKeymap::HandleSearch(e)) {
+	} else if (const auto vimNavigation = !_searchHasFocus
+			? Core::VimKeymap::NavigationKey(e)
+			: std::optional<Qt::Key>()) {
+		if (_suggestions) {
+			_suggestions->selectJump(*vimNavigation);
+		} else {
+			auto mapped = QKeyEvent(
+				QEvent::KeyPress,
+				*vimNavigation,
+				Qt::NoModifier,
+				QString(),
+				e->isAutoRepeat(),
+				e->count());
+			_inner->processKeyDispatch(&mapped);
+		}
+		e->accept();
 	} else if (_inner->processKeyDispatch(e)) {
 	} else if (redirectKeyToSearch(e)) {
 		// This delay in search focus processing allows us not to create
@@ -4872,6 +5079,47 @@ int Widget::currentSearchQueryCursorPosition() const {
 		: _search->textCursor().position();
 }
 
+bool Widget::vimKeymapSearchInputHasFocus() const {
+	return (_search && (_search->hasFocus() || _search->rawTextEdit()->hasFocus()))
+		|| (_subsectionTopBar && _subsectionTopBar->searchHasFocus());
+}
+
+void Widget::vimKeymapEnterSearchInputMode() {
+	Core::VimKeymap::SetNormalMode(false);
+	if (_subsectionTopBar && _subsectionTopBar->searchSetFocus()) {
+		return;
+	}
+	_search->setFocusFast();
+}
+
+bool Widget::vimKeymapSearchOpen() const {
+	const auto subsectionSearchFocused = _subsectionTopBar
+		&& _subsectionTopBar->searchHasFocus();
+	return _searchHasFocus
+		|| _searchEngaged
+		|| _searchSuggestionsLocked
+		|| subsectionSearchFocused
+		|| _searchState.inChat
+		|| !_searchState.query.isEmpty()
+		|| !currentSearchQuery().trimmed().isEmpty();
+}
+
+void Widget::vimKeymapReturnToViewMode() {
+	Core::VimKeymap::SetNormalMode(true);
+	crl::on_main(this, [=] {
+		if (!isActiveWindow()) {
+			return;
+		} else if (controller()->activeChatEntryCurrent().key) {
+			controller()->content()->dialogsCancelled();
+			controller()->widget()->setInnerFocus();
+		} else if (_childList) {
+			_childList->setInnerFocus();
+		} else {
+			setFocus();
+		}
+	});
+}
+
 void Widget::clearSearchField() {
 	if (_subsectionTopBar) {
 		_subsectionTopBar->searchClear();
@@ -4990,6 +5238,8 @@ bool Widget::cancelSearch(CancelSearchOptions options) {
 }
 
 Widget::~Widget() {
+	Core::VimKeymap::UnregisterKeyHandler(this);
+	Core::VimKeymap::UnregisterTextInputPassthroughHandler(this);
 	cancelSearchRequest();
 
 	// Destructor may hide the bar and attempt to double-destroy it.

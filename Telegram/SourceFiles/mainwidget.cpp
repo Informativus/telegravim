@@ -893,6 +893,26 @@ void MainWidget::searchMessages(
 	}
 }
 
+bool MainWidget::focusDialogsSearch() {
+	if (!_dialogs || _controller->window().locked()) {
+		return false;
+	}
+	const auto focus = [=] {
+		if (_dialogs && !_dialogs->isHidden()) {
+			_dialogs->focusSearch();
+		}
+	};
+	if (isOneColumn() && _dialogs->isHidden()) {
+		if (!showBackFromStack(SectionShow())) {
+			return false;
+		}
+		crl::on_main(this, focus);
+	} else {
+		focus();
+	}
+	return true;
+}
+
 void MainWidget::handleAudioUpdate(const Media::Player::TrackState &state) {
 	using State = Media::Player::State;
 	const auto document = state.id.audio();

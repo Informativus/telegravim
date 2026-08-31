@@ -10,11 +10,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/emoji_list_widget.h"
 #include "chat_helpers/stickers_list_widget.h"
 #include "chat_helpers/gifs_list_widget.h"
+#include "core/vim_keymap.h"
 #include "menu/menu_send.h"
 #include "ui/controls/swipe_handler.h"
 #include "ui/controls/tabbed_search.h"
 #include "ui/text/text_utilities.h"
 #include "ui/widgets/buttons.h"
+#include "ui/widgets/fields/input_field.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/shadow.h"
 #include "ui/widgets/discrete_sliders.h"
@@ -35,13 +37,77 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_changes.h"
 #include "data/stickers/data_stickers.h"
 #include "data/stickers/data_custom_emoji.h" // AllowEmojiWithoutPremium.
+#include "base/call_delayed.h"
 #include "boxes/premium_preview_box.h"
 #include "lang/lang_keys.h"
 #include "mainwindow.h"
 #include "apiwrap.h"
 #include "styles/style_chat_helpers.h"
 
+#include <QtGui/QKeyEvent>
+#include <QtWidgets/QApplication>
+#include <QtWidgets/QLineEdit>
+#include <QtWidgets/QTextEdit>
+
+#include <algorithm>
+
 namespace ChatHelpers {
+namespace {
+
+[[nodiscard]] Qt::KeyboardModifiers CommonModifiers(not_null<QKeyEvent*> e) {
+	return e->modifiers()
+		& ~(Qt::KeypadModifier | Qt::GroupSwitchModifier);
+}
+
+[[nodiscard]] QString KeyName(not_null<QKeyEvent*> e) {
+	const auto key = e->key();
+	return (key > 0 && key <= 0x10FFFF)
+		? QString(QChar(key)).toCaseFolded()
+		: QString();
+}
+
+[[nodiscard]] bool MatchesPanelLetter(
+		not_null<QKeyEvent*> e,
+		QChar latin,
+		QChar cyrillic) {
+	const auto text = e->text().toCaseFolded();
+	const auto key = KeyName(e);
+	const auto latinText = QString(latin);
+	const auto cyrillicText = QString(cyrillic);
+	return (text == latinText)
+		|| (text == cyrillicText)
+		|| (key == latinText)
+		|| (key == cyrillicText);
+}
+
+[[nodiscard]] bool TextInputFocusInside(QWidget *parent) {
+	const auto focus = QApplication::focusWidget();
+	if (!focus || (focus != parent && !parent->isAncestorOf(focus))) {
+		return false;
+	}
+	for (auto current = focus; current; current = current->parentWidget()) {
+		if (qobject_cast<QLineEdit*>(current)
+			|| qobject_cast<QTextEdit*>(current)
+			|| dynamic_cast<Ui::InputField*>(current)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+[[nodiscard]] bool ControlLike(Qt::KeyboardModifiers modifiers) {
+	return modifiers == Qt::ControlModifier
+		|| modifiers == Qt::MetaModifier;
+}
+
+[[nodiscard]] bool ControlLikeWithOptionalShift(
+		Qt::KeyboardModifiers modifiers) {
+	return ControlLike(modifiers)
+		|| modifiers == (Qt::ControlModifier | Qt::ShiftModifier)
+		|| modifiers == (Qt::MetaModifier | Qt::ShiftModifier);
+}
+
+} // namespace
 
 class TabbedSelector::SlideAnimation : public Ui::RoundShadowAnimation {
 public:
@@ -1069,6 +1135,7 @@ void TabbedSelector::showStarted() {
 }
 
 void TabbedSelector::beforeHiding() {
+	_vimKeymapPanelFocusRequested = false;
 	if (!_scroll->isHidden()) {
 		currentTab()->widget()->beforeHiding();
 		if (_beforeHidingCallback) {
@@ -1084,6 +1151,9 @@ void TabbedSelector::afterShown() {
 	if (!_a_slide.animating()) {
 		showAll();
 		currentTab()->widget()->afterShown();
+		if (_vimKeymapPanelFocusRequested) {
+			vimKeymapFocusPanel();
+		}
 		if (_afterShownCallback) {
 			_afterShownCallback(_currentTabType);
 		}
@@ -1301,9 +1371,11 @@ void TabbedSelector::switchTab() {
 
 	const auto wasSectionIcons = hasSectionIcons();
 	const auto wasIndex = indexByType(_currentTabType);
+	const auto restoreVimPanelFocus = _vimKeymapPanelFocusRequested;
 	currentTab()->saveScrollTop();
 
 	beforeHiding();
+	_vimKeymapPanelFocusRequested = restoreVimPanelFocus;
 
 	auto wasCache = grabForAnimation();
 
@@ -1421,6 +1493,215 @@ void TabbedSelector::scrollToY(int y) {
 	if (_topShadow) {
 		_topShadow->update();
 	}
+}
+
+bool TabbedSelector::vimKeymapSwitchTab(int direction) {
+	if (!_tabsSlider || _tabs.size() < 2) {
+		return false;
+	}
+	const auto current = _tabsSlider->activeSection();
+	const auto target = std::clamp(current + direction, 0, int(_tabs.size()) - 1);
+	if (target == current) {
+		return false;
+	}
+	_tabsSlider->setActiveSection(target);
+	return true;
+}
+
+bool TabbedSelector::vimKeymapScrollBy(int direction) {
+	if (!_scroll) {
+		return false;
+	}
+	const auto current = _scroll->scrollTop();
+	const auto fromTarget = _vimKeymapScrollAnimation.animating()
+		? _vimKeymapScrollTarget
+		: current;
+	const auto target = std::clamp(
+		fromTarget + direction * Core::VimKeymap::ScrollStep(),
+		0,
+		_scroll->scrollTopMax());
+	if (target == current && target == fromTarget) {
+		return false;
+	}
+	_vimKeymapScrollTarget = target;
+	_vimKeymapScrollAnimation.stop();
+	_vimKeymapScrollAnimation.start(
+		[=] {
+			scrollToY(qRound(_vimKeymapScrollAnimation.value(
+				_vimKeymapScrollTarget)));
+		},
+		current,
+		target,
+		Core::VimKeymap::SingleScrollDurationMs(),
+		anim::linear);
+	return true;
+}
+
+bool TabbedSelector::vimKeymapFocusSearch() {
+	_vimKeymapPanelFocusRequested = false;
+	const auto result = currentTab()->widget()->vimKeymapFocusSearch();
+	if (result) {
+		Core::VimKeymap::SetNormalMode(false);
+	}
+	return result;
+}
+
+bool TabbedSelector::vimKeymapSearchHasFocus() const {
+	return !isHidden()
+		&& _scroll
+		&& !_scroll->isHidden()
+		&& !_vimKeymapPanelFocusRequested
+		&& TextInputFocusInside(const_cast<TabbedSelector*>(this));
+}
+
+bool TabbedSelector::vimKeymapFocusPanel() {
+	_vimKeymapPanelFocusRequested = true;
+	if (isHidden() || !_scroll || _scroll->isHidden()) {
+		return false;
+	}
+	setFocusPolicy(Qt::StrongFocus);
+	_scroll->setFocusPolicy(Qt::StrongFocus);
+
+	const auto inner = currentTab()->widget();
+	if (const auto focus = QApplication::focusWidget();
+			focus && (focus == this || isAncestorOf(focus))) {
+		focus->clearFocus();
+	}
+	setFocus(Qt::ShortcutFocusReason);
+	_scroll->setFocus(Qt::ShortcutFocusReason);
+	inner->setFocusPolicy(Qt::StrongFocus);
+	inner->setFocus(Qt::ShortcutFocusReason);
+	const auto selected = inner->vimKeymapMoveSelection(0, 0);
+	vimKeymapRefocusPanelLater(selected ? 1 : 3);
+	return true;
+}
+
+void TabbedSelector::vimKeymapRefocusPanelLater(int attemptsLeft) {
+	if (attemptsLeft <= 0) {
+		return;
+	}
+	base::call_delayed(crl::time(50), this, [=] {
+		if (!_vimKeymapPanelFocusRequested
+			|| isHidden()
+			|| !_scroll
+			|| _scroll->isHidden()) {
+			return;
+		}
+		setFocusPolicy(Qt::StrongFocus);
+		_scroll->setFocusPolicy(Qt::StrongFocus);
+		setFocus(Qt::ShortcutFocusReason);
+		_scroll->setFocus(Qt::ShortcutFocusReason);
+
+		const auto inner = currentTab()->widget();
+		inner->setFocusPolicy(Qt::StrongFocus);
+		inner->setFocus(Qt::ShortcutFocusReason);
+		if (!inner->vimKeymapMoveSelection(0, 0)) {
+			vimKeymapRefocusPanelLater(attemptsLeft - 1);
+		}
+	});
+}
+
+bool TabbedSelector::vimKeymapHandleKey(not_null<QKeyEvent*> e) {
+	if (isHidden() || !_scroll) {
+		return false;
+	}
+	const auto modifiers = CommonModifiers(e);
+	const auto noModifiers = (modifiers == Qt::NoModifier);
+	const auto controlLike = ControlLikeWithOptionalShift(modifiers);
+
+	if (controlLike
+		&& MatchesPanelLetter(e, QChar('f'), QChar(ushort(0x0444)))) {
+		const auto result = vimKeymapFocusSearch();
+		if (result) {
+			Core::VimKeymap::TraceKey(e, u"panel search"_q);
+		}
+		return result;
+	} else if (controlLike
+		&& MatchesPanelLetter(e, QChar('j'), QChar(ushort(0x043E)))) {
+		if (TextInputFocusInside(this) && !_vimKeymapPanelFocusRequested) {
+			const auto result = vimKeymapFocusPanel();
+			if (result) {
+				Core::VimKeymap::SetNormalMode(true);
+				Core::VimKeymap::TraceKey(e, u"panel focus results"_q);
+			}
+			return result;
+		}
+		const auto result = vimKeymapScrollBy(1);
+		if (result) {
+			Core::VimKeymap::TraceKey(e, u"panel scroll down"_q);
+		}
+		return result;
+	} else if (controlLike
+		&& MatchesPanelLetter(e, QChar('k'), QChar(ushort(0x043B)))) {
+		if (TextInputFocusInside(this) && !_vimKeymapPanelFocusRequested) {
+			const auto result = vimKeymapFocusPanel();
+			if (result) {
+				Core::VimKeymap::SetNormalMode(true);
+				Core::VimKeymap::TraceKey(e, u"panel focus results"_q);
+			}
+			return result;
+		}
+		const auto result = vimKeymapScrollBy(-1);
+		if (result) {
+			Core::VimKeymap::TraceKey(e, u"panel scroll up"_q);
+		}
+		return result;
+	}
+
+	if (e->key() == Qt::Key_Backtab) {
+		const auto result = vimKeymapSwitchTab(-1);
+		if (result) {
+			Core::VimKeymap::TraceKey(e, u"panel previous tab"_q);
+		}
+		return result;
+	} else if (e->key() == Qt::Key_Tab
+		&& (noModifiers || modifiers == Qt::ShiftModifier)) {
+		const auto result = vimKeymapSwitchTab(noModifiers ? 1 : -1);
+		if (result) {
+			Core::VimKeymap::TraceKey(
+				e,
+				noModifiers ? u"panel next tab"_q : u"panel previous tab"_q);
+		}
+		return result;
+	}
+
+	if (TextInputFocusInside(this) && !_vimKeymapPanelFocusRequested) {
+		return false;
+	} else if (e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter
+		|| e->key() == Qt::Key_Space) {
+		const auto result = currentTab()->widget()->vimKeymapActivateSelection();
+		if (result) {
+			Core::VimKeymap::TraceKey(e, u"panel activate selection"_q);
+		}
+		return result;
+	} else if (!noModifiers) {
+		return false;
+	} else if (MatchesPanelLetter(e, QChar('h'), QChar(ushort(0x0440)))) {
+		const auto result = currentTab()->widget()->vimKeymapMoveSelection(-1, 0);
+		if (result) {
+			Core::VimKeymap::TraceKey(e, u"panel move left"_q);
+		}
+		return result;
+	} else if (MatchesPanelLetter(e, QChar('j'), QChar(ushort(0x043E)))) {
+		const auto result = currentTab()->widget()->vimKeymapMoveSelection(0, 1);
+		if (result) {
+			Core::VimKeymap::TraceKey(e, u"panel move down"_q);
+		}
+		return result;
+	} else if (MatchesPanelLetter(e, QChar('k'), QChar(ushort(0x043B)))) {
+		const auto result = currentTab()->widget()->vimKeymapMoveSelection(0, -1);
+		if (result) {
+			Core::VimKeymap::TraceKey(e, u"panel move up"_q);
+		}
+		return result;
+	} else if (MatchesPanelLetter(e, QChar('l'), QChar(ushort(0x0434)))) {
+		const auto result = currentTab()->widget()->vimKeymapMoveSelection(1, 0);
+		if (result) {
+			Core::VimKeymap::TraceKey(e, u"panel move right"_q);
+		}
+		return result;
+	}
+	return false;
 }
 
 void TabbedSelector::showMenuWithDetails(SendMenu::Details details) {

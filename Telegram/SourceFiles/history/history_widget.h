@@ -348,6 +348,7 @@ public:
 protected:
 	void resizeEvent(QResizeEvent *e) override;
 	void keyPressEvent(QKeyEvent *e) override;
+	void keyReleaseEvent(QKeyEvent *e) override;
 	void mousePressEvent(QMouseEvent *e) override;
 	void paintEvent(QPaintEvent *e) override;
 	void leaveEventHook(QEvent *e) override;
@@ -727,6 +728,18 @@ private:
 	void migrateSupportFieldToRichEditor();
 	void offerRichPaste(not_null<const QMimeData*> data);
 	void showRichEditorWithPaste(std::shared_ptr<QMimeData> data);
+	void vimKeymapStartScroll(int direction);
+	void vimKeymapStopScroll();
+	void vimKeymapScrollTick();
+	bool vimKeymapScrollBy(int direction, int delta, bool animated = false);
+	void vimKeymapRefreshComposeCursor();
+	bool vimKeymapHandleComposeTextKey(not_null<QKeyEvent*> e);
+	bool vimKeymapFocusEmojiPanel();
+	bool vimKeymapFocusChat();
+	bool vimKeymapCloseEmojiPanel();
+	bool vimKeymapStartCall();
+	void vimKeymapEnterSearchInputMode();
+	void vimKeymapLeaveSearchInputMode();
 
 	void setHistory(History *history);
 	void setEditMsgId(MsgId msgId);
@@ -889,6 +902,9 @@ private:
 	crl::time _lastUserScrolled = 0;
 	bool _synteticScrollEvent = false;
 	Ui::Animations::Simple _scrollToAnimation;
+	base::Timer _vimKeymapScrollTimer;
+	int _vimKeymapScrollDirection = 0;
+	bool _vimKeymapScrollRepeating = false;
 
 	HistoryView::CornerButtons _cornerButtons;
 	std::unique_ptr<HistoryView::PullToNextChannel> _pullToNext;
@@ -944,6 +960,10 @@ private:
 	const std::unique_ptr<VoiceRecordBar> _voiceRecordBar;
 	const std::unique_ptr<ForwardPanel> _forwardPanel;
 	std::unique_ptr<HistoryView::ComposeSearch> _composeSearch;
+	bool _vimKeymapSearchInputMode = false;
+	int _vimKeymapComposeOperator = 0;
+	int _vimKeymapComposeVisualMode = 0;
+	int _vimKeymapComposePending = 0;
 	std::unique_ptr<HistoryView::SubsectionTabs> _subsectionTabs;
 	rpl::lifetime _subsectionTabsLifetime;
 	rpl::lifetime _subsectionCheckLifetime;

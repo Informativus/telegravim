@@ -173,13 +173,18 @@ public:
 	bool scheduleChatPreview(QPoint positionOverride);
 	bool showChatPreview();
 	void chatPreviewShown(bool shown, RowDescriptor row = {});
-	bool chooseRow(
-		Qt::KeyboardModifiers modifiers = {},
-		MsgId pressedTopicRootId = {},
-		PeerId pressedSublistPeerId = {});
-	bool processKeyDispatch(QKeyEvent *e);
+	[[nodiscard]] bool vimKeymapOpenChatPreview();
+		bool chooseRow(
+			Qt::KeyboardModifiers modifiers = {},
+			MsgId pressedTopicRootId = {},
+			PeerId pressedSublistPeerId = {});
+		bool processKeyDispatch(QKeyEvent *e);
+		[[nodiscard]] bool vimKeymapNavigateSearchResults(
+			Qt::Key key,
+			bool autoRepeat,
+			int count);
 
-	void scrollToEntry(const RowDescriptor &entry);
+		void scrollToEntry(const RowDescriptor &entry);
 
 	[[nodiscard]] Data::Folder *shownFolder() const;
 	[[nodiscard]] Data::Forum *shownForum() const;
@@ -225,6 +230,11 @@ public:
 
 	[[nodiscard]] RowDescriptor resolveChatNext(RowDescriptor from = {}) const;
 	[[nodiscard]] RowDescriptor resolveChatPrevious(RowDescriptor from = {}) const;
+	[[nodiscard]] bool vimKeymapJumpToChat(bool next, int steps);
+	[[nodiscard]] bool vimKeymapShowChatPreview(RowDescriptor row = {});
+	[[nodiscard]] bool vimKeymapBeginChatHints(bool preview = false);
+	[[nodiscard]] bool vimKeymapCancelChatHints();
+	[[nodiscard]] bool vimKeymapHandleChatHintKey(not_null<QKeyEvent*> e);
 
 	~InnerWidget();
 
@@ -437,15 +447,28 @@ private:
 	bool addRightButtonRipple(QPoint origin, Fn<void()> updateCallback);
 
 	void setupShortcuts();
-	RowDescriptor computeJump(
-		const RowDescriptor &to,
-		JumpSkip skip) const;
-	bool jumpToDialogRow(RowDescriptor to);
+		RowDescriptor computeJump(
+			const RowDescriptor &to,
+			JumpSkip skip) const;
+		bool jumpToDialogRow(RowDescriptor to);
+		[[nodiscard]] bool currentListContains(RowDescriptor row) const;
+		[[nodiscard]] RowDescriptor vimKeymapEdgeChat(bool next) const;
+		[[nodiscard]] RowDescriptor vimKeymapSelectedChat() const;
+		bool vimKeymapSelectChat(RowDescriptor row);
+		void vimKeymapContinuePendingChatNavigation();
+		void vimKeymapClearPendingChatNavigation();
 
 	RowDescriptor chatListEntryBefore(const RowDescriptor &which) const;
 	RowDescriptor chatListEntryAfter(const RowDescriptor &which) const;
 	RowDescriptor chatListEntryFirst() const;
 	RowDescriptor chatListEntryLast() const;
+	struct VimKeymapChatHint {
+		QString label;
+		RowDescriptor row;
+		QRect badge;
+	};
+	void vimKeymapClearChatHints();
+	void vimKeymapPaintChatHints(Painter &p) const;
 
 	void itemRemoved(not_null<const HistoryItem*> item);
 	enum class UpdateRowSection {
@@ -577,10 +600,12 @@ private:
 	[[nodiscard]] int defaultChildCount() const;
 	[[nodiscard]] std::optional<DefaultChildRef>
 		defaultChildAt(int index) const;
-	[[nodiscard]] int defaultChildIndexOfSelected() const;
+		[[nodiscard]] int defaultChildIndexOfSelected() const;
 
-	void announceSelectedFocus();
-	void refreshFilterResults();
+		void announceSelectedFocus();
+		void vimKeymapSchedulePendingSearchNavigation();
+		void vimKeymapApplyPendingSearchNavigation();
+		void refreshFilterResults();
 	void clearSearchResults(bool alsoPeerSearchResults = true);
 	void clearPeerSearchResults();
 	void clearPreviewResults();
@@ -696,6 +721,15 @@ private:
 	int _visibleTop = 0;
 	int _visibleBottom = 0;
 	QString _filter, _hashtagFilter;
+	std::vector<VimKeymapChatHint> _vimKeymapChatHints;
+	QString _vimKeymapChatHintPrefix;
+	RowDescriptor _vimKeymapChatNavigationRow;
+	RowDescriptor _vimKeymapPendingChatNavigationRow;
+	bool _vimKeymapChatNavigationNeedsFirst = false;
+	bool _vimKeymapPendingChatNavigation = false;
+	bool _vimKeymapChatPreviewHints = false;
+	int _vimKeymapPendingSearchNavigation = 0;
+	int _vimKeymapPendingSearchNavigationAttempts = 0;
 
 	std::vector<std::unique_ptr<HashtagResult>> _hashtagResults;
 	int _hashtagSelected = -1;
@@ -807,9 +841,10 @@ private:
 	std::optional<QPoint> _touchDragNowGlobal;
 	rpl::event_stream<> _touchCancelRequests;
 
-	rpl::variable<ChildListShown> _childListShown;
-	base::Timer _freezeTimer;
-	float64 _narrowRatio = 0.;
+		rpl::variable<ChildListShown> _childListShown;
+		base::Timer _freezeTimer;
+		base::Timer _vimKeymapPendingSearchNavigationTimer;
+		float64 _narrowRatio = 0.;
 	bool _geometryInited = false;
 
 	Data::SavedMessages *_savedSublists = nullptr;

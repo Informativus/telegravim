@@ -18,6 +18,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/chat/message_bubble.h"
 
 #include <memory>
+#include <vector>
 
 struct WebPageData;
 struct TodoListItem;
@@ -589,15 +590,20 @@ public:
 	int naturalWidth() const;
 	int naturalHeight() const;
 
-	void paint(
-		Painter &p,
-		const Ui::ChatStyle *st,
-		Ui::BubbleRounding rounding,
-		int outerWidth,
-		const QRect &clip,
-		bool paused) const;
-	ClickHandlerPtr getLink(QPoint point) const;
-	ClickHandlerPtr getLinkByIndex(int index) const;
+		void paint(
+			Painter &p,
+			const Ui::ChatStyle *st,
+			Ui::BubbleRounding rounding,
+			int outerWidth,
+			const QRect &clip,
+			bool paused) const;
+		struct LinkRect {
+			QRect rect;
+			ClickHandlerPtr link;
+		};
+		[[nodiscard]] std::vector<LinkRect> linkRects() const;
+		ClickHandlerPtr getLink(QPoint point) const;
+		ClickHandlerPtr getLinkByIndex(int index) const;
 
 	void clickHandlerActiveChanged(
 		const ClickHandlerPtr &p,

@@ -11,6 +11,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/weak_qptr.h"
 #include "ui/rp_widget.h"
 
+#include <QtCore/QPointer>
+#include <QtCore/QRect>
+#include <QtCore/QString>
+
+class QPainter;
+
 namespace Ui {
 class AbstractButton;
 class ContinuousSlider;
@@ -34,8 +40,19 @@ private:
 		bool fullWidth = true;
 		bool ownBackground = false;
 	};
+	struct Hint {
+		base::weak_qptr<Ui::RpWidget> widget;
+		QPointer<Ui::AbstractButton> button;
+		QString label;
+		QRect badge;
+	};
 
 	[[nodiscard]] std::vector<Entry> list() const;
+	[[nodiscard]] bool handleHintKey(not_null<QKeyEvent*> e);
+	[[nodiscard]] bool beginHints();
+	void clearHints();
+	void ensureHintOverlay();
+	void paintHints(QPainter &p) const;
 	void activate(
 		not_null<Ui::AbstractButton*> button,
 		Qt::KeyboardModifiers modifiers);
@@ -49,10 +66,14 @@ private:
 	base::weak_qptr<Ui::RpWidget> _selected;
 	base::weak_qptr<QWidget> _anchor;
 	base::flat_set<not_null<Ui::RpWidget*>> _tracked;
+	std::vector<Hint> _hints;
+	QString _hintPrefix;
 	Ui::RpWidget *_highlight = nullptr;
+	Ui::RpWidget *_hintOverlay = nullptr;
 	QRect _selectedGeometry;
 	bool _highlightRounded = false;
 	rpl::lifetime _selectedLifetime;
+	rpl::lifetime _hintLifetime;
 	rpl::lifetime _lifetime;
 
 };

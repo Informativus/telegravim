@@ -48,6 +48,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/click_handler_types.h"
 #include "core/core_settings.h"
 #include "core/phone_click_handler.h"
+#include "core/vim_keymap.h"
 #include "apiwrap.h"
 #include "api/api_who_reacted.h"
 #include "api/api_views.h"
@@ -559,7 +560,8 @@ ListWidget::ListWidget(
 		[=](int d) { _delegate->listScrollTo(_visibleTop + d, false); },
 		[=](const QCursor &cursor) { setCursor(cursor); },
 		[=] { mouseActionUpdate(QCursor::pos()); setCursor(_cursor); },
-		[=] { return window()->isActiveWindow(); }) {
+		[=] { return window()->isActiveWindow(); })
+, _vimKeymapScrollTimer([=] { vimKeymapScrollTick(); }) {
 	setAttribute(Qt::WA_AcceptTouchEvents);
 	setMouseTracking(true);
 	setAccessibleName(tr::lng_sr_message_list(tr::now));
@@ -607,6 +609,29 @@ ListWidget::ListWidget(
 			repaintItem(data.view, data.rect);
 		}
 	}, lifetime());
+	Core::VimKeymap::RegisterActionHandler(this, [=](
+			Core::VimKeymap::Action action) {
+		const auto widgetWindow = window();
+		if (!widgetWindow
+			|| widgetWindow->isHidden()
+			|| !widgetWindow->isActiveWindow()
+			|| !isVisible()) {
+			return false;
+		}
+		switch (action) {
+		case Core::VimKeymap::Action::CopyMessage:
+			return vimKeymapCopyTarget();
+		case Core::VimKeymap::Action::ReplyToMessage:
+			return vimKeymapReplyToTarget();
+		case Core::VimKeymap::Action::EditMessage:
+			return vimKeymapEditTarget();
+		case Core::VimKeymap::Action::DeleteMessage:
+			return false;
+		case Core::VimKeymap::Action::LinkHints:
+			return false;
+		}
+		return false;
+	});
 	_session->data().viewResizeRequest(
 	) | rpl::on_next([this](auto view) {
 		if (view->delegate() == this) {
@@ -3577,6 +3602,82 @@ void ListWidget::copySelectedText() {
 		&session());
 }
 
+Element *ListWidget::vimKeymapTargetView() const {
+	if (_items.empty() || _visibleTop >= _visibleBottom) {
+		return nullptr;
+	}
+	if (const auto focused = _accessibilityFocusedItem) {
+		if (const auto view = viewForItem(focused)) {
+			const auto top = itemTop(view);
+			if (top < _visibleBottom && top + view->height() > _visibleTop) {
+				return view;
+			}
+		}
+	}
+	const auto y = std::max(_visibleTop, (_visibleTop + _visibleBottom) / 2);
+	if (const auto view = strictFindItemByY(y)) {
+		return view;
+	}
+	return findItemByY(y).get();
+}
+
+bool ListWidget::vimKeymapCopyTarget() {
+	if (hasSelectedText() || hasSelectedItems()) {
+		copySelectedText();
+		return true;
+	}
+	const auto view = vimKeymapTargetView();
+	if (!view) {
+		return false;
+	}
+	const auto item = view->data();
+	if (showCopyRestriction(item)) {
+		return true;
+	}
+	const auto text = HistoryItemText(item);
+	if (text.empty()) {
+		return false;
+	}
+	Iv::SetRichBlocksClipboard(
+		text,
+		HistoryItemRichBlocks(item),
+		&session());
+	return true;
+}
+
+bool ListWidget::vimKeymapReplyToTarget() {
+	const auto view = vimKeymapTargetView();
+	if (!view) {
+		return false;
+	}
+	const auto item = view->data();
+	if (!item->isRegular() && !CanReplyToEphemeral(item)) {
+		return false;
+	}
+	replyToMessageRequestNotify({ item->fullId() });
+	_requestedToShowMessage.fire_copy(item->fullId());
+	Core::VimKeymap::SetNormalMode(false);
+	_delegate->listWindowSetInnerFocus();
+	return true;
+}
+
+bool ListWidget::vimKeymapEditTarget() {
+	const auto view = vimKeymapTargetView();
+	if (!view) {
+		return false;
+	}
+	const auto item = view->data();
+	const auto now = base::unixtime::now();
+	if (!item->allowsEdit(now)) {
+		return false;
+	}
+	const auto editItem = session().data().groups().findItemToEdit(item).get();
+	editMessageRequestNotify(editItem->fullId());
+	Core::VimKeymap::SetNormalMode(false);
+	_delegate->listWindowSetInnerFocus();
+	return true;
+}
+
 MessageIdsList ListWidget::getSelectedIds() const {
 	return collectSelectedIds();
 }
@@ -3672,6 +3773,67 @@ void ListWidget::keyPressEvent(QKeyEvent *e) {
 	const auto hasModifiers = (modifiers != Qt::NoModifier);
 	if (_middleClickAutoscroll.active() && key == Qt::Key_Escape) {
 		_middleClickAutoscroll.stop();
+		return;
+	}
+	if (Core::VimKeymap::HandleHelp(e)) {
+		return;
+	} else if (Core::VimKeymap::HandleSearch(e)) {
+		return;
+	} else if (Core::VimKeymap::IsJumpToBottomKey(e)) {
+		_delegate->listScrollTo(height(), false);
+		e->accept();
+		return;
+	} else if (const auto vimAction = Core::VimKeymap::ActionKey(e)) {
+		switch (*vimAction) {
+		case Core::VimKeymap::Action::CopyMessage:
+			if (vimKeymapCopyTarget()) {
+				e->accept();
+			} else {
+				e->ignore();
+			}
+			return;
+		case Core::VimKeymap::Action::ReplyToMessage:
+			if (vimKeymapReplyToTarget()) {
+				e->accept();
+			} else {
+				e->ignore();
+			}
+			return;
+			case Core::VimKeymap::Action::EditMessage:
+				if (vimKeymapEditTarget()) {
+					e->accept();
+				} else {
+					e->ignore();
+				}
+				return;
+			case Core::VimKeymap::Action::DeleteMessage:
+				e->ignore();
+				return;
+			case Core::VimKeymap::Action::LinkHints:
+				e->ignore();
+				return;
+		}
+	} else if (const auto vimNavigation = Core::VimKeymap::NavigationKey(e)) {
+		const auto direction = (*vimNavigation == Qt::Key_Down) ? 1 : -1;
+		if (e->isAutoRepeat()) {
+			if (!_vimKeymapScrollTimer.isActive()) {
+				vimKeymapStartScroll(direction);
+			} else {
+				_vimKeymapScrollDirection = direction;
+			}
+		} else {
+			_vimKeymapScrollTimer.cancel();
+			_vimKeymapScrollRepeating = false;
+			_vimKeymapScrollDirection = direction;
+			vimKeymapScrollBy(
+				direction,
+				Core::VimKeymap::ScrollStep(),
+				true);
+			_vimKeymapScrollTimer.callOnce(
+				Core::VimKeymap::HoldScrollStartDelayMs(),
+				Qt::PreciseTimer);
+		}
+		e->accept();
 		return;
 	}
 
@@ -3896,6 +4058,79 @@ void ListWidget::keyPressEvent(QKeyEvent *e) {
 	} else {
 		e->ignore();
 	}
+}
+
+void ListWidget::keyReleaseEvent(QKeyEvent *e) {
+	if (Core::VimKeymap::NavigationKey(e)) {
+		if (!e->isAutoRepeat()) {
+			vimKeymapStopScroll();
+		}
+		e->accept();
+	} else {
+		RpWidget::keyReleaseEvent(e);
+	}
+}
+
+void ListWidget::vimKeymapStartScroll(int direction) {
+	_vimKeymapScrollDirection = direction;
+	_vimKeymapScrollRepeating = false;
+	_vimKeymapScrollTimer.callOnce(
+		Core::VimKeymap::HoldScrollStartDelayMs(),
+		Qt::PreciseTimer);
+}
+
+void ListWidget::vimKeymapStopScroll() {
+	_vimKeymapScrollTimer.cancel();
+	_vimKeymapScrollDirection = 0;
+	_vimKeymapScrollRepeating = false;
+}
+
+void ListWidget::vimKeymapScrollTick() {
+	const auto direction = _vimKeymapScrollDirection;
+	if (!direction) {
+		return;
+	} else if (!vimKeymapScrollBy(
+			direction,
+			Core::VimKeymap::HoldScrollDelta())) {
+		vimKeymapStopScroll();
+		return;
+	} else if (!_vimKeymapScrollRepeating) {
+		_vimKeymapScrollRepeating = true;
+		_vimKeymapScrollTimer.callEach(
+			Core::VimKeymap::HoldScrollTickMs(),
+			Qt::PreciseTimer);
+	}
+}
+
+bool ListWidget::vimKeymapScrollBy(int direction, int delta, bool animated) {
+	const auto visible = _visibleBottom - _visibleTop;
+	if (visible <= 0) {
+		return false;
+	}
+	const auto target = std::clamp(
+		_visibleTop + direction * delta,
+		0,
+		std::max(0, height() - visible));
+	if (target == _visibleTop) {
+		return false;
+	}
+	_scrollToAnimation.stop();
+	if (animated) {
+		const auto current = _visibleTop;
+		_scrollToAnimation.start(
+			[=] {
+				_delegate->listScrollTo(
+					int(base::SafeRound(_scrollToAnimation.value(target))),
+					false);
+			},
+			current,
+			target,
+			Core::VimKeymap::SingleScrollDurationMs(),
+			anim::easeOutCubic);
+	} else {
+		_delegate->listScrollTo(target, false);
+	}
+	return true;
 }
 
 auto ListWidget::scrollKeyEvents() const
@@ -5969,6 +6204,8 @@ void ListWidget::overrideChatMode(std::optional<ElementChatMode> mode) {
 }
 
 ListWidget::~ListWidget() {
+	Core::VimKeymap::UnregisterActionHandler(this);
+
 	// Stop listening to session events before any member is destroyed:
 	// ~TranslateTracker reverts translations still in flight, which fires
 	// viewResizeRequest() back into this half-destroyed widget and through

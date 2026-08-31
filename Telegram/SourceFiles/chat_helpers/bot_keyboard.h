@@ -10,6 +10,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/tooltip.h"
 #include "chat_helpers/bot_command.h"
 
+#include <vector>
+
+class Painter;
+class QKeyEvent;
 class ReplyKeyboard;
 
 namespace style {
@@ -36,6 +40,8 @@ public:
 	bool updateMarkup(HistoryItem *last, bool force = false);
 	[[nodiscard]] bool hasMarkup() const;
 	[[nodiscard]] bool forceReply() const;
+	[[nodiscard]] bool vimKeymapBeginHints();
+	[[nodiscard]] bool vimKeymapHandleHintKey(not_null<QKeyEvent*> e);
 
 	[[nodiscard]] QString placeholder() const {
 		return _placeholder;
@@ -79,7 +85,17 @@ protected:
 	void leaveEventHook(QEvent *e) override;
 
 private:
+	struct VimKeymapHint {
+		QString label;
+		QRect badge;
+		ClickHandlerPtr link;
+	};
+
 	void updateSelected();
+	void vimKeymapClearHints();
+	void vimKeymapAssignHintLabels();
+	[[nodiscard]] bool vimKeymapTriggerHint(const VimKeymapHint &hint);
+	void vimKeymapPaintHints(Painter &p) const;
 
 	void updateStyle(int newWidth);
 	void clearSelection();
@@ -100,5 +116,7 @@ private:
 	rpl::event_stream<Bot::SendCommandRequest> _sendCommandRequests;
 
 	const style::BotKeyboardButton *_st = nullptr;
+	std::vector<VimKeymapHint> _vimKeymapHints;
+	QString _vimKeymapHintPrefix;
 
 };

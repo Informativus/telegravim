@@ -51,6 +51,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/integration.h"
 #include "core/application.h"
 #include "core/core_settings.h"
+#include "core/vim_keymap.h"
 #include "lang/lang_keys.h"
 #include "main/session/session_show.h"
 #include "main/main_session.h"
@@ -70,6 +71,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_chat_helpers.h"
 
 #include <QtWidgets/QApplication>
+#include <QtGui/QKeyEvent>
 #include <QtGui/QWindow>
 #include <QtCore/QTimer>
 #include <QtSvg/QSvgRenderer>
@@ -166,10 +168,16 @@ Panel::Panel(not_null<Call*> call)
 	initConferenceInvite();
 	initLayout();
 	initMediaDeviceToggles();
+	Core::VimKeymap::RegisterKeyHandler(widget(), [=](
+			not_null<QKeyEvent*> e) {
+		return isActive() && vimKeymapHandleCallConfirmationKey(e);
+	});
 	showAndActivate();
 }
 
-Panel::~Panel() = default;
+Panel::~Panel() {
+	Core::VimKeymap::UnregisterKeyHandler(widget());
+}
 
 bool Panel::isVisible() const {
 	return window()->isVisible()
@@ -287,7 +295,10 @@ void Panel::initWindow() {
 			e->ignore();
 			return base::EventFilterResult::Cancel;
 		} else if (e->type() == QEvent::KeyPress) {
-			if ((static_cast<QKeyEvent*>(e.get())->key() == Qt::Key_Escape)
+			const auto key = static_cast<QKeyEvent*>(e.get());
+			if (vimKeymapHandleCallConfirmationKey(key)) {
+				return base::EventFilterResult::Cancel;
+			} else if ((key->key() == Qt::Key_Escape)
 				&& window()->isFullScreen()) {
 				window()->showNormal();
 			}
@@ -1454,6 +1465,131 @@ auto Panel::bottomButtons() const
 	return result;
 }
 
+auto Panel::vimKeymapCallConfirmationButtons() const
+-> std::vector<not_null<Ui::CallButton*>> {
+	auto result = std::vector<not_null<Ui::CallButton*>>();
+	if (!_call || _call->state() != State::WaitingUserConfirmation) {
+		return result;
+	}
+	const auto add = [&](Ui::CallButton *button) {
+		if (!button
+			|| button->isDisabled()
+			|| !button->isVisibleTo(widget().get())) {
+			return;
+		}
+		result.push_back(not_null{ button });
+	};
+	add(_startVideo.get());
+	add(_cancel->entity());
+	add(_answerHangupRedial.get());
+	return result;
+}
+
+bool Panel::vimKeymapHandleCallConfirmationKey(not_null<QKeyEvent*> e) {
+	if (!Core::VimKeymap::Enabled()
+		|| !_call
+		|| _call->state() != State::WaitingUserConfirmation
+		|| e->isAutoRepeat()) {
+		return false;
+	}
+	const auto modifiers = e->modifiers()
+		& ~(Qt::KeypadModifier | Qt::GroupSwitchModifier);
+	const auto key = e->key();
+	const auto forward = (key == Qt::Key_Tab)
+		&& (modifiers == Qt::NoModifier);
+	const auto backward = (key == Qt::Key_Backtab)
+		|| ((key == Qt::Key_Tab) && (modifiers == Qt::ShiftModifier));
+	if (forward || backward) {
+		if (!vimKeymapSelectCallConfirmationButton(forward)) {
+			return false;
+		}
+		Core::VimKeymap::TraceKey(
+			e,
+			backward
+				? u"call confirmation previous button"_q
+				: u"call confirmation next button"_q);
+		e->accept();
+		return true;
+	}
+
+	const auto submit = (key == Qt::Key_Enter || key == Qt::Key_Return)
+		&& (modifiers == Qt::NoModifier);
+	if (submit) {
+		const auto order = vimKeymapCallConfirmationButtons();
+		const auto selected = _vimKeymapCallConfirmationFocused.data();
+		auto inOrder = false;
+		for (const auto &button : order) {
+			if (button.get() == selected) {
+				inOrder = true;
+				break;
+			}
+		}
+		if (!selected || !inOrder) {
+			return false;
+		}
+		Core::VimKeymap::TraceKey(e, u"call confirmation activate button"_q);
+		e->accept();
+		selected->clicked(e->modifiers(), Qt::LeftButton);
+		return true;
+	}
+
+	const auto cancel = (key == Qt::Key_Escape)
+		&& (modifiers == Qt::NoModifier);
+	if (cancel) {
+		Core::VimKeymap::TraceKey(e, u"call confirmation cancel"_q);
+		e->accept();
+		vimKeymapClearCallConfirmationFocus();
+		const auto handled = handleClose();
+		(void)handled;
+		return true;
+	}
+	return false;
+}
+
+bool Panel::vimKeymapSelectCallConfirmationButton(bool next) {
+	const auto order = vimKeymapCallConfirmationButtons();
+	if (order.empty()) {
+		return false;
+	}
+	const auto focused = QApplication::focusWidget();
+	auto current = -1;
+	for (auto i = 0; i != int(order.size()); ++i) {
+		const auto button = order[i].get();
+		if (button == _vimKeymapCallConfirmationFocused.data()
+			|| button == focused
+			|| (focused && button->isAncestorOf(focused))) {
+			current = i;
+			break;
+		}
+	}
+	const auto count = int(order.size());
+	const auto target = (current < 0)
+		? (next ? 0 : count - 1)
+		: (current + (next ? 1 : -1) + count) % count;
+	vimKeymapSelectCallConfirmationButton(order[target]);
+	return true;
+}
+
+void Panel::vimKeymapSelectCallConfirmationButton(
+		not_null<Ui::CallButton*> button) {
+	vimKeymapClearCallConfirmationFocus();
+	_vimKeymapCallConfirmationFocused = button.get();
+	button->setFocusPolicy(Qt::StrongFocus);
+	button->setSynteticOver(true);
+	button->setFocus(Qt::TabFocusReason);
+	button->update();
+}
+
+void Panel::vimKeymapClearCallConfirmationFocus() {
+	for (const auto &button : bottomButtons()) {
+		if (button->isOver()) {
+			button->setSynteticOver(false);
+			button->update();
+		}
+	}
+	_vimKeymapCallConfirmationFocused = nullptr;
+}
+
 void Panel::refreshButtonLabelsShown() {
 	auto shown = true;
 	for (const auto &button : bottomButtons()) {
@@ -1475,6 +1611,8 @@ void Panel::refreshButtonLabelsShown() {
 }
 
 void Panel::setupButtonTooltip(not_null<Ui::CallButton*> button) {
+	button->setFocusPolicy(Qt::StrongFocus);
+
 	button->textFitsValue() | rpl::on_next([=] {
 		refreshButtonLabelsShown();
 	}, button->lifetime());
@@ -1629,6 +1767,9 @@ void Panel::stateChanged(State state) {
 
 	const auto isBusy = (state == State::Busy);
 	const auto isWaitingUser = (state == State::WaitingUserConfirmation);
+	if (!isWaitingUser) {
+		vimKeymapClearCallConfirmationFocus();
+	}
 	_window->togglePowerSaveBlocker(!isBusy && !isWaitingUser);
 
 	if ((state != State::HangingUp)

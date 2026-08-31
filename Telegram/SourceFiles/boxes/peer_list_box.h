@@ -1197,6 +1197,7 @@ public:
 		QWidget*,
 		std::unique_ptr<PeerListController> controller,
 		Fn<void(not_null<PeerListBox*>)> init);
+	~PeerListBox();
 
 	[[nodiscard]] std::vector<PeerListRowId> collectSelectedIds();
 	[[nodiscard]] std::vector<not_null<PeerData*>> collectSelectedRows();
@@ -1261,6 +1262,7 @@ private:
 	void createMultiSelect();
 	[[nodiscard]] int topScrollSkip() const;
 	[[nodiscard]] int topSelectSkip() const;
+	[[nodiscard]] bool handleVimKeyNavigation(not_null<QKeyEvent*> e);
 	void updateScrollSkips();
 	void searchQueryChanged(const QString &query);
 	void refreshSectionIndex();

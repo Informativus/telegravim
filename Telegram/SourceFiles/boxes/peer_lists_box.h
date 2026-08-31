@@ -19,6 +19,7 @@ public:
 		QWidget*,
 		std::vector<std::unique_ptr<PeerListController>> controllers,
 		Fn<void(not_null<PeerListsBox*>)> init);
+	~PeerListsBox();
 
 	not_null<Ui::RpWidget*> addSeparatorBefore(
 		int listIndex,
@@ -100,6 +101,8 @@ private:
 	void setSearchMode(PeerListSearchMode mode);
 	void createMultiSelect();
 	int getTopScrollSkip() const;
+	void skipRows(int rows);
+	[[nodiscard]] bool handleVimKeyNavigation(not_null<QKeyEvent*> e);
 	void updateScrollSkips();
 	void searchQueryChanged(const QString &query);
 

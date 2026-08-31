@@ -9,6 +9,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "ui/layers/box_content.h"
 
+#include <QtCore/QPointer>
+
+#include <vector>
+
+class QEvent;
+class QKeyEvent;
+
 enum class PaidPostType : uchar;
 
 namespace Main {
@@ -16,6 +23,7 @@ class Session;
 } // namespace Main
 
 namespace Ui {
+class AbstractButton;
 class Checkbox;
 class FlatLabel;
 class LinkButton;
@@ -47,8 +55,11 @@ public:
 protected:
 	void prepare() override;
 
+	bool eventHook(QEvent *e) override;
 	void resizeEvent(QResizeEvent *e) override;
 	void keyPressEvent(QKeyEvent *e) override;
+	bool eventFilter(QObject *watched, QEvent *e) override;
+	bool focusNextPrevChild(bool next) override;
 
 private:
 	struct RevokeConfig {
@@ -56,6 +67,12 @@ private:
 		TextWithEntities description;
 	};
 	void deleteAndClear();
+	void vimKeymapRememberButton(Ui::AbstractButton *button);
+	[[nodiscard]] std::vector<Ui::AbstractButton*> vimKeymapFocusOrder() const;
+	[[nodiscard]] bool vimKeymapSelectFocusNext(bool next);
+	[[nodiscard]] bool vimKeymapHandleTab(QKeyEvent *e);
+	void vimKeymapSelectFocus(Ui::AbstractButton *button);
+	void vimKeymapClearSyntheticFocus();
 	[[nodiscard]] PeerData *checkFromSinglePeer() const;
 	[[nodiscard]] bool hasScheduledMessages() const;
 	[[nodiscard]] bool hasWelcomeTemplateMessages() const;
@@ -79,6 +96,8 @@ private:
 	object_ptr<Ui::Checkbox> _revoke = { nullptr };
 	object_ptr<Ui::SlideWrap<Ui::Checkbox>> _revokeRemember = { nullptr };
 	object_ptr<Ui::LinkButton> _autoDeleteSettings = { nullptr };
+	std::vector<QPointer<Ui::AbstractButton>> _vimKeymapButtons;
+	QPointer<Ui::AbstractButton> _vimKeymapFocused;
 
 	int _fullHeight = 0;
 	bool _confirmedDeletePaidSuggestedPosts = false;

@@ -12,9 +12,18 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace Ui {
 class InputField;
 class SearchFieldController;
+class VerticalLayout;
 } // namespace Ui
 
+namespace Window {
+class Controller;
+} // namespace Window
+
 namespace Settings {
+
+void SetupVimKeymapOptions(
+	not_null<Window::Controller*> window,
+	not_null<Ui::VerticalLayout*> container);
 
 class Experimental : public Section<Experimental> {
 public:

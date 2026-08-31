@@ -213,6 +213,20 @@ void CallButton::paintEvent(QPaintEvent *e) {
 	}
 	paintRipple(p, _stFrom->button.rippleAreaPosition, rippleColorOverride);
 
+	if (hasFocus()) {
+		auto focusColor = st::activeButtonBg->c;
+		focusColor.setAlpha(220);
+		PainterHighQualityEnabler hq(p);
+		p.setBrush(Qt::NoBrush);
+		p.setPen(QPen(focusColor, 2.));
+		p.drawEllipse(
+			QRectF(myrtlrect(
+				bgPosition.x(),
+				bgPosition.y(),
+				_stFrom->bgSize,
+				_stFrom->bgSize)).marginsAdded(QMarginsF(3., 3., 3., 3.)));
+	}
+
 	auto positionFrom = iconPosition(_stFrom);
 	if (paintFrom) {
 		const auto icon = &_stFrom->button.icon;

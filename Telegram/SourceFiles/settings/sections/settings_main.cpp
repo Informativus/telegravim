@@ -45,6 +45,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session_settings.h"
 #include "settings/settings_builder.h"
 #include "settings/cloud_password/settings_cloud_password_input.h"
+#include "settings/settings_experimental.h"
 #include "settings/sections/settings_advanced.h"
 #include "settings/sections/settings_business.h"
 #include "settings/sections/settings_calls.h"
@@ -360,6 +361,40 @@ void Cover::refreshQrButtonGeometry(int newWidth) {
 	_qrButton->moveToRight(buttonRight - inset, buttonTop, newWidth);
 }
 
+class VimKeymap final : public Section<VimKeymap> {
+public:
+	VimKeymap(
+		QWidget *parent,
+		not_null<Window::SessionController*> controller);
+
+	[[nodiscard]] rpl::producer<QString> title() override;
+
+private:
+	void setupContent();
+
+};
+
+VimKeymap::VimKeymap(
+	QWidget *parent,
+	not_null<Window::SessionController*> controller)
+: Section(parent, controller) {
+	setupContent();
+}
+
+rpl::producer<QString> VimKeymap::title() {
+	return rpl::single(u"Vim keymap"_q);
+}
+
+void VimKeymap::setupContent() {
+	const auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
+
+	Ui::AddSkip(content);
+	Ui::AddSubsectionTitle(content, rpl::single(u"Vim keymap"_q));
+	SetupVimKeymapOptions(&controller()->window(), content);
+
+	Ui::ResizeFitChild(this, content);
+}
+
 void BuildSectionButtons(SectionBuilder &builder) {
 	const auto session = builder.session();
 	const auto controller = builder.controller();
@@ -428,6 +463,13 @@ void BuildSectionButtons(SectionBuilder &builder) {
 			.shown = std::move(shownProducer),
 		});
 	}
+
+	builder.addSectionButton({
+		.title = rpl::single(u"Vim keymap"_q),
+		.targetSection = VimKeymap::Id(),
+		.icon = { &st::menuIconShortcut },
+		.keywords = { u"vim"_q, u"keyboard"_q, u"keymap"_q, u"hints"_q },
+	});
 
 	builder.addSectionButton({
 		.title = tr::lng_settings_advanced(),

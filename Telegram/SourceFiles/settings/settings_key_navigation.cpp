@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings/settings_key_navigation.h"
 
 #include "base/invoke_queued.h"
+#include "core/vim_keymap.h"
 #include "settings/settings_common.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/checkbox.h"
@@ -18,6 +19,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "styles/style_settings.h"
 
+#include <QtGui/QKeyEvent>
+#include <QtGui/QPainter>
+
 namespace Settings {
 namespace {
 
@@ -26,6 +30,25 @@ constexpr auto kPageSkip = 5;
 [[nodiscard]] bool SameBand(const QRect &a, const QRect &b) {
 	const auto delta = std::abs(rect::center(a).y() - rect::center(b).y());
 	return (delta * 2) < std::min(a.height(), b.height());
+}
+
+[[nodiscard]] std::optional<Qt::Key> VimVerticalKey(
+		not_null<QKeyEvent*> e) {
+	if (const auto configured = Core::VimKeymap::NavigationKey(e)) {
+		return configured;
+	}
+	const auto modifiers = e->modifiers()
+		& ~(Qt::KeypadModifier | Qt::GroupSwitchModifier);
+	if (modifiers != Qt::NoModifier) {
+		return std::nullopt;
+	}
+	const auto text = e->text().toCaseFolded();
+	if (text == u"j"_q || text == u"\u043E"_q) {
+		return Qt::Key_Down;
+	} else if (text == u"k"_q || text == u"\u043B"_q) {
+		return Qt::Key_Up;
+	}
+	return std::nullopt;
 }
 
 } // namespace
@@ -104,8 +127,20 @@ bool KeyNavigation::handle(not_null<QKeyEvent*> e) {
 	const auto key = e->key();
 	const auto modifiers = e->modifiers()
 		& ~(Qt::KeypadModifier | Qt::GroupSwitchModifier);
-	const auto navigationKey = (key == Qt::Key_Up)
-		|| (key == Qt::Key_Down)
+	if (handleHintKey(e)) {
+		return true;
+	} else if (!e->isAutoRepeat() && Core::VimKeymap::FocusHintsKey(e)) {
+		return beginHints();
+	}
+	const auto tabForward = (key == Qt::Key_Tab)
+		&& (modifiers == Qt::NoModifier);
+	const auto tabBackward = (key == Qt::Key_Backtab)
+		|| ((key == Qt::Key_Tab) && (modifiers == Qt::ShiftModifier));
+	const auto tabKey = tabForward || tabBackward;
+	const auto vimVerticalKey = VimVerticalKey(e);
+	const auto effectiveKey = vimVerticalKey.value_or(Qt::Key(key));
+	const auto navigationKey = (effectiveKey == Qt::Key_Up)
+		|| (effectiveKey == Qt::Key_Down)
 		|| (key == Qt::Key_PageUp)
 		|| (key == Qt::Key_PageDown);
 	const auto horizontalKey = (key == Qt::Key_Left)
@@ -113,8 +148,8 @@ bool KeyNavigation::handle(not_null<QKeyEvent*> e) {
 	const auto submitKey = (key == Qt::Key_Return)
 		|| (key == Qt::Key_Enter)
 		|| (key == Qt::Key_Space);
-	if ((modifiers != Qt::NoModifier)
-		|| (!navigationKey && !horizontalKey && !submitKey)) {
+	if (((modifiers != Qt::NoModifier) && !tabBackward && !vimVerticalKey)
+		|| (!navigationKey && !horizontalKey && !submitKey && !tabKey)) {
 		return false;
 	}
 	const auto entries = list();
@@ -205,7 +240,7 @@ bool KeyNavigation::handle(not_null<QKeyEvent*> e) {
 		}
 		return index;
 	};
-	if (key == Qt::Key_Down) {
+	if (effectiveKey == Qt::Key_Down) {
 		if (start < 0) {
 			select(entries, firstVisible());
 		} else {
@@ -218,7 +253,7 @@ bool KeyNavigation::handle(not_null<QKeyEvent*> e) {
 			}
 			select(entries, (next < count) ? next : 0);
 		}
-	} else if (key == Qt::Key_Up) {
+	} else if (effectiveKey == Qt::Key_Up) {
 		if (start < 0) {
 			select(entries, bandStart(lastVisible()));
 		} else {
@@ -239,8 +274,185 @@ bool KeyNavigation::handle(not_null<QKeyEvent*> e) {
 			? kPageSkip
 			: -kPageSkip;
 		select(entries, start + delta);
+	} else if (tabKey) {
+		if (start < 0) {
+			select(entries, tabBackward ? lastVisible() : firstVisible());
+		} else {
+			const auto next = (start + (tabBackward ? -1 : 1) + count)
+				% count;
+			select(entries, next);
+		}
 	}
 	return true;
+}
+
+bool KeyNavigation::handleHintKey(not_null<QKeyEvent*> e) {
+	if (_hints.empty()) {
+		return false;
+	} else if (e->key() == Qt::Key_Escape) {
+		clearHints();
+		return true;
+	} else if (e->key() == Qt::Key_Backspace) {
+		if (!_hintPrefix.isEmpty()) {
+			_hintPrefix.chop(1);
+			if (_hintOverlay) {
+				_hintOverlay->update();
+			}
+		}
+		return true;
+	}
+	const auto modifiers = e->modifiers()
+		& ~(Qt::KeypadModifier | Qt::GroupSwitchModifier);
+	if (modifiers != Qt::NoModifier && modifiers != Qt::ShiftModifier) {
+		return true;
+	}
+	const auto text = Core::VimKeymap::HintInput(e);
+	if (text.isEmpty()) {
+		return true;
+	}
+	_hintPrefix += text.front();
+	auto exact = (const Hint*)nullptr;
+	auto hasPrefix = false;
+	for (const auto &hint : _hints) {
+		if (hint.label == _hintPrefix) {
+			exact = &hint;
+			break;
+		} else if (hint.label.startsWith(_hintPrefix)) {
+			hasPrefix = true;
+		}
+	}
+	if (exact) {
+		const auto widget = exact->widget.get();
+		const auto button = exact->button.data();
+		clearHints();
+		if (widget && button) {
+			const auto entries = list();
+			const auto i = ranges::find(entries, widget, [](const Entry &entry) {
+				return entry.widget.get();
+			});
+			if (i != end(entries)) {
+				select(entries, int(i - begin(entries)));
+			}
+			activate(not_null{ button }, Qt::NoModifier);
+		}
+	} else if (!hasPrefix) {
+		_hintPrefix.clear();
+	}
+	if (_hintOverlay) {
+		_hintOverlay->update();
+	}
+	return true;
+}
+
+bool KeyNavigation::beginHints() {
+	const auto entries = list();
+	auto hints = std::vector<Hint>();
+	const auto visible = _inner->visibleRegion().boundingRect();
+	for (const auto &entry : entries) {
+		if (!entry.button || !entry.geometry.intersects(visible)) {
+			continue;
+		}
+		const auto hintSize = Core::VimKeymap::HintSize();
+		const auto badgeTop = rect::center(entry.geometry).y()
+			- std::max(10, hintSize);
+		hints.push_back({
+			entry.widget,
+			entry.button,
+			QString(),
+			QRect(entry.geometry.x() + 18, badgeTop, 1, 1),
+		});
+	}
+	if (hints.empty()) {
+		clearHints();
+		return false;
+	}
+	const auto count = int(hints.size());
+	for (auto i = 0; i != count; ++i) {
+		hints[i].label = Core::VimKeymap::HintLabel(i, count);
+	}
+	_hints = std::move(hints);
+	_hintPrefix.clear();
+	ensureHintOverlay();
+	_hintOverlay->setGeometry(_inner->rect());
+	_hintOverlay->raise();
+	_hintOverlay->show();
+	_hintOverlay->update();
+	return true;
+}
+
+void KeyNavigation::clearHints() {
+	if (_hints.empty() && _hintPrefix.isEmpty()) {
+		return;
+	}
+	_hints.clear();
+	_hintPrefix.clear();
+	if (_hintOverlay) {
+		_hintOverlay->hide();
+	}
+}
+
+void KeyNavigation::ensureHintOverlay() {
+	if (_hintOverlay) {
+		return;
+	}
+	_hintOverlay = Ui::CreateChild<Ui::RpWidget>(_inner.get());
+	_hintOverlay->setAttribute(Qt::WA_TransparentForMouseEvents);
+	_hintOverlay->hide();
+	_hintOverlay->paintRequest(
+	) | rpl::on_next([=](QRect) {
+		auto p = QPainter(_hintOverlay);
+		paintHints(p);
+	}, _hintLifetime);
+	_inner->sizeValue(
+	) | rpl::on_next([=] {
+		if (_hintOverlay) {
+			_hintOverlay->setGeometry(_inner->rect());
+		}
+	}, _hintLifetime);
+}
+
+void KeyNavigation::paintHints(QPainter &p) const {
+	if (_hints.empty()) {
+		return;
+	}
+	p.save();
+	const auto hintSize = Core::VimKeymap::HintSize();
+	const auto font = QFont(u"Menlo"_q, hintSize, QFont::DemiBold);
+	const auto metrics = QFontMetrics(font);
+	const auto horizontalPadding = std::max(7, hintSize / 2);
+	const auto verticalPadding = std::max(3, hintSize / 4);
+	p.setFont(font);
+	p.setRenderHint(QPainter::Antialiasing, true);
+	for (const auto &hint : _hints) {
+		const auto remaining = hint.label.mid(_hintPrefix.size());
+		const auto label = _hintPrefix.isEmpty()
+			? hint.label
+			: remaining.isEmpty()
+			? hint.label
+			: remaining;
+		const auto textWidth = metrics.horizontalAdvance(label);
+		auto rect = QRect(
+			hint.badge.topLeft(),
+			QSize(
+				textWidth + 2 * horizontalPadding,
+				metrics.height() + 2 * verticalPadding));
+		const auto minLeft = 4;
+		const auto maxLeft = std::max(minLeft, _inner->width() - rect.width() - 4);
+		const auto visible = _inner->visibleRegion().boundingRect();
+		const auto minTop = visible.y() + 4;
+		const auto maxTop = std::max(
+			minTop,
+			rect::bottom(visible) - rect.height() - 4);
+		rect.moveLeft(std::clamp(rect.left(), minLeft, maxLeft));
+		rect.moveTop(std::clamp(rect.top(), minTop, maxTop));
+		const auto radius = rect.height() / 2;
+		p.setPen(QColor(102, 78, 0, 105));
+		p.setBrush(QColor(255, 218, 72, 246));
+		p.drawRoundedRect(rect, radius, radius);
+		p.setPen(QColor(28, 24, 14));
+		p.drawText(rect, Qt::AlignCenter, label);
+	}
+	p.restore();
 }
 
 void KeyNavigation::activate(

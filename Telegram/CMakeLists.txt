@@ -602,6 +602,8 @@ PRIVATE
     core/update_keys.h
     core/update_verify.cpp
     core/update_verify.h
+    core/vim_keymap.cpp
+    core/vim_keymap.h
     core/utils.cpp
     core/utils.h
     core/version.h

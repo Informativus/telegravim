@@ -1139,6 +1139,31 @@ ClickHandlerPtr ReplyKeyboard::getLink(QPoint point) const {
 	return ClickHandlerPtr();
 }
 
+std::vector<ReplyKeyboard::LinkRect> ReplyKeyboard::linkRects() const {
+	Assert(_width > 0);
+
+	auto result = std::vector<LinkRect>();
+	for (const auto &row : _rows) {
+		for (const auto &button : row) {
+			const auto rect = QRect(button.rect);
+
+			// just ignore the buttons that didn't layout well
+			if (rect.x() + rect.width() > _width) {
+				break;
+			}
+			if (_item->isAdminLogEntry()
+				&& button.type != HistoryMessageMarkupButton::Type::Url
+				&& button.type != HistoryMessageMarkupButton::Type::Callback) {
+				continue;
+			}
+			if (button.link) {
+				result.push_back({ rect, button.link });
+			}
+		}
+	}
+	return result;
+}
+
 ClickHandlerPtr ReplyKeyboard::getLinkByIndex(int index) const {
 	auto number = 1;
 	for (const auto &row : _rows) {

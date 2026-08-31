@@ -28,6 +28,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/click_handler_types.h"
 #include "core/shortcuts.h"
 #include "core/ui_integration.h"
+#include "core/vim_keymap.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/widgets/scroll_area.h"
@@ -98,6 +99,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_media_player.h"
 #include "styles/style_menu_icons.h"
 
+#include <QtGui/QFont>
+#include <QtGui/QFontMetrics>
+#include <QtGui/QKeyEvent>
 #include <QtWidgets/QApplication>
 #include <QtCore/QMimeData>
 #include <unordered_map>
@@ -112,6 +116,8 @@ constexpr auto kStartDragToFilterThresholdX = kStartReorderThreshold;
 constexpr auto kStartDragToFilterThresholdY = 75;
 constexpr auto kQueryPreviewLimit = 32;
 constexpr auto kPreviewPostsLimit = 3;
+constexpr auto kVimKeymapSearchNavigationRetryMs = crl::time(80);
+constexpr auto kVimKeymapSearchNavigationRetryLimit = 50;
 
 [[nodiscard]] uint64 RowsCacheKey(Entry *entry) {
 	return uint64(reinterpret_cast<quintptr>(entry));
@@ -309,7 +315,10 @@ InnerWidget::InnerWidget(
 	+ st::defaultDialogRow.photoSize
 	+ st::defaultDialogRow.padding.left())
 , _childListShown(std::move(childListShown))
-, _freezeTimer([=] { _shownList->unfreeze(); update(); }) {
+, _freezeTimer([=] { _shownList->unfreeze(); update(); })
+, _vimKeymapPendingSearchNavigationTimer([=] {
+	vimKeymapApplyPendingSearchNavigation();
+}) {
 	setAttribute(Qt::WA_OpaquePaintEvent, true);
 	setAccessibleName(tr::lng_recent_chats(tr::now));
 
@@ -392,6 +401,7 @@ InnerWidget::InnerWidget(
 			refreshFilterResults();
 		}
 		refresh();
+		vimKeymapContinuePendingChatNavigation();
 	}, lifetime());
 
 	Ui::ScheduleThanosEffectWarmUp(&session(), lifetime());
@@ -845,6 +855,10 @@ void InnerWidget::changeOpenedFolder(Data::Folder *folder) {
 	}
 	stopReorderPinned();
 	clearSelection();
+	_vimKeymapChatNavigationRow = RowDescriptor();
+	_vimKeymapChatNavigationNeedsFirst = true;
+	vimKeymapClearPendingChatNavigation();
+	vimKeymapClearChatHints();
 	_openedFolder = folder;
 	refreshShownList();
 	refreshWithCollapsedRows(true);
@@ -1684,6 +1698,7 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 			}
 		}
 	}
+	vimKeymapPaintChatHints(p);
 }
 
 void InnerWidget::fillRightButton(
@@ -2119,6 +2134,22 @@ void InnerWidget::cancelChatPreview() {
 		updateDialogRow(base::take(_chatPreviewRow));
 	}
 	_controller->cancelScheduledPreview();
+}
+
+bool InnerWidget::vimKeymapOpenChatPreview() {
+	if (!_chatPreviewRow.key) {
+		return false;
+	}
+	const auto row = base::take(_chatPreviewRow);
+	_controller->cancelScheduledPreview();
+	updateDialogRow(row);
+	if (jumpToDialogRow(row)) {
+		setFocus(Qt::ShortcutFocusReason);
+		_vimKeymapChatNavigationRow = row;
+		_vimKeymapChatNavigationNeedsFirst = false;
+		return true;
+	}
+	return false;
 }
 
 void InnerWidget::clearIrrelevantState() {
@@ -4258,6 +4289,70 @@ void InnerWidget::applySearchState(SearchState state) {
 	}
 }
 
+bool InnerWidget::vimKeymapNavigateSearchResults(
+		Qt::Key key,
+		bool autoRepeat,
+		int count) {
+	const auto direction = (key == Qt::Key_Down)
+		? 1
+		: (key == Qt::Key_Up)
+		? -1
+		: 0;
+	if (!direction) {
+		return false;
+	} else if (_state != WidgetState::Filtered || filteredChildCount() <= 0) {
+		_vimKeymapPendingSearchNavigation = direction;
+		_vimKeymapPendingSearchNavigationAttempts = 0;
+		vimKeymapSchedulePendingSearchNavigation();
+		return false;
+	}
+	_vimKeymapPendingSearchNavigation = 0;
+	_vimKeymapPendingSearchNavigationAttempts = 0;
+	_vimKeymapPendingSearchNavigationTimer.cancel();
+	auto mapped = QKeyEvent(
+		QEvent::KeyPress,
+		key,
+		Qt::NoModifier,
+		QString(),
+		autoRepeat,
+		count);
+	return processKeyDispatch(&mapped);
+}
+
+void InnerWidget::vimKeymapSchedulePendingSearchNavigation() {
+	if (!_vimKeymapPendingSearchNavigation) {
+		return;
+	} else if (_vimKeymapPendingSearchNavigationAttempts
+		>= kVimKeymapSearchNavigationRetryLimit) {
+		_vimKeymapPendingSearchNavigation = 0;
+		_vimKeymapPendingSearchNavigationAttempts = 0;
+		return;
+	}
+	++_vimKeymapPendingSearchNavigationAttempts;
+	_vimKeymapPendingSearchNavigationTimer.callOnce(
+		kVimKeymapSearchNavigationRetryMs,
+		Qt::PreciseTimer);
+}
+
+void InnerWidget::vimKeymapApplyPendingSearchNavigation() {
+	if (!_vimKeymapPendingSearchNavigation) {
+		return;
+	} else if (_state != WidgetState::Filtered || filteredChildCount() <= 0) {
+		vimKeymapSchedulePendingSearchNavigation();
+		return;
+	}
+	const auto direction = base::take(_vimKeymapPendingSearchNavigation);
+	_vimKeymapPendingSearchNavigationAttempts = 0;
+	auto mapped = QKeyEvent(
+		QEvent::KeyPress,
+		(direction > 0) ? Qt::Key_Down : Qt::Key_Up,
+		Qt::NoModifier,
+		QString(),
+		false,
+		1);
+	processKeyDispatch(&mapped);
+}
+
 void InnerWidget::onHashtagFilterUpdate(QStringView newFilter) {
 	if (newFilter.isEmpty()
 		|| newFilter.at(0) != '#'
@@ -4719,6 +4814,7 @@ void InnerWidget::searchReceived(
 	}
 
 	refresh();
+	vimKeymapApplyPendingSearchNavigation();
 }
 
 void InnerWidget::peerSearchReceived(Api::PeerSearchResult result) {
@@ -4762,6 +4858,7 @@ void InnerWidget::peerSearchReceived(Api::PeerSearchResult result) {
 			std::make_unique<PeerSearchResult>(peer));
 	}
 	refresh();
+	vimKeymapApplyPendingSearchNavigation();
 }
 
 Data::Folder *InnerWidget::shownFolder() const {
@@ -5256,6 +5353,9 @@ void InnerWidget::clearFilter() {
 		_trackedHistories.clear();
 		_trackedLifetime.destroy();
 		_filter = QString();
+		_vimKeymapPendingSearchNavigation = 0;
+		_vimKeymapPendingSearchNavigationAttempts = 0;
+		_vimKeymapPendingSearchNavigationTimer.cancel();
 		refresh(true);
 	}
 }
@@ -5581,6 +5681,10 @@ void InnerWidget::switchToFilter(FilterId filterId) {
 		return;
 	}
 	saveChatsFilterScrollState(_filterId);
+	_vimKeymapChatNavigationRow = RowDescriptor();
+	_vimKeymapChatNavigationNeedsFirst = true;
+	vimKeymapClearPendingChatNavigation();
+	vimKeymapClearChatHints();
 	if (_openedFolder) {
 		_filterId = filterId;
 		refreshShownList();
@@ -5825,9 +5929,11 @@ RowDescriptor InnerWidget::chatListEntryBefore(
 		return RowDescriptor();
 	}
 	if (_state == WidgetState::Default) {
+		const auto skip = _skipTopDialog ? 1 : 0;
 		if (const auto row = _shownList->getRow(which.key)) {
 			const auto i = _shownList->cfind(row);
-			if (i != _shownList->cbegin()) {
+			const auto position = int(i - _shownList->cbegin());
+			if (i != _shownList->cend() && position > skip) {
 				return RowDescriptor(
 					(*(i - 1))->key(),
 					FullMsgId(PeerId(), ShowAtUnreadMsgId));
@@ -5969,8 +6075,10 @@ RowDescriptor InnerWidget::chatListEntryAfter(
 
 RowDescriptor InnerWidget::chatListEntryFirst() const {
 	if (_state == WidgetState::Default) {
-		const auto i = _shownList->cbegin();
-		if (i != _shownList->cend()) {
+		const auto skip = _skipTopDialog ? 1 : 0;
+		const auto size = int(_shownList->size());
+		if (size > skip) {
+			const auto i = _shownList->cbegin() + skip;
 			return RowDescriptor(
 				(*i)->key(),
 				FullMsgId(PeerId(), ShowAtUnreadMsgId));
@@ -5994,8 +6102,10 @@ RowDescriptor InnerWidget::chatListEntryFirst() const {
 
 RowDescriptor InnerWidget::chatListEntryLast() const {
 	if (_state == WidgetState::Default) {
-		const auto i = _shownList->cend();
-		if (i != _shownList->cbegin()) {
+		const auto skip = _skipTopDialog ? 1 : 0;
+		const auto size = int(_shownList->size());
+		if (size > skip) {
+			const auto i = _shownList->cend();
 			return RowDescriptor(
 				(*(i - 1))->key(),
 				FullMsgId(PeerId(), ShowAtUnreadMsgId));
@@ -6125,6 +6235,447 @@ RowDescriptor InnerWidget::resolveChatPrevious(RowDescriptor from) const {
 			chatListEntryBefore(row),
 			JumpSkip::PreviousOrBegin)
 		: row;
+}
+
+bool InnerWidget::currentListContains(RowDescriptor row) const {
+	if (!row.key) {
+		return false;
+	} else if (_state == WidgetState::Default) {
+		const auto shown = _shownList->getRow(row.key);
+		return shown && (!_skipTopDialog || shown->index() > 0);
+	}
+	for (const auto &result : _filterResults) {
+		if (result.key() == row.key) {
+			return true;
+		}
+	}
+	if (const auto history = row.key.history()) {
+		for (const auto &result : _peerSearchResults) {
+			if (result->peer == history->peer) {
+				return true;
+			}
+		}
+	}
+	for (const auto &result : _previewResults) {
+		if (isSearchResultActive(result.get(), row)) {
+			return true;
+		}
+	}
+	for (const auto &result : _searchResults) {
+		if (isSearchResultActive(result.get(), row)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+RowDescriptor InnerWidget::vimKeymapEdgeChat(bool next) const {
+	return computeJump(
+		next ? chatListEntryFirst() : chatListEntryLast(),
+		next ? JumpSkip::NextOrOriginal : JumpSkip::PreviousOrOriginal);
+}
+
+RowDescriptor InnerWidget::vimKeymapSelectedChat() const {
+	const auto chosen = computeChosenRow();
+	if (!chosen.key || !chosen.key.thread()) {
+		return RowDescriptor();
+	}
+	return RowDescriptor(
+		chosen.key,
+		chosen.message.fullId
+			? chosen.message.fullId
+			: FullMsgId(PeerId(), ShowAtUnreadMsgId));
+}
+
+bool InnerWidget::vimKeymapSelectChat(RowDescriptor row) {
+	if (!row.key) {
+		return false;
+	}
+	clearMouseSelection();
+	clearSecondaryMouseState();
+	_hashtagDeleteSelected = false;
+	if (_state == WidgetState::Default) {
+		const auto selected = _shownList->getRow(row.key);
+		const auto skip = _skipTopDialog ? 1 : 0;
+		if (!selected || selected->index() < skip) {
+			return false;
+		}
+		updateSelectedRow();
+		_collapsedSelected = -1;
+		_selected = selected;
+		_communitySelected = -1;
+		_hashtagSelected = -1;
+		_filteredSelected = -1;
+		_peerSearchSelected = -1;
+		_previewSelected = -1;
+		_searchedSelected = -1;
+		updateSelectedRow();
+		return true;
+	} else if (_state == WidgetState::Filtered) {
+		auto filtered = -1;
+		auto peerSearch = -1;
+		auto preview = -1;
+		auto searched = -1;
+		for (auto i = 0, count = int(_filterResults.size()); i != count; ++i) {
+			if (_filterResults[i].key() == row.key) {
+				filtered = i;
+				break;
+			}
+		}
+		if (filtered < 0) {
+			if (const auto history = row.key.history()) {
+				for (auto i = 0, count = int(_peerSearchResults.size())
+					; i != count
+					; ++i) {
+					if (_peerSearchResults[i]->peer == history->peer) {
+						peerSearch = i;
+						break;
+					}
+				}
+			}
+		}
+		if (filtered < 0 && peerSearch < 0) {
+			for (auto i = 0, count = int(_previewResults.size())
+				; i != count
+				; ++i) {
+				if (isSearchResultActive(_previewResults[i].get(), row)) {
+					preview = i;
+					break;
+				}
+			}
+		}
+		if (filtered < 0 && peerSearch < 0 && preview < 0) {
+			for (auto i = 0, count = int(_searchResults.size())
+				; i != count
+				; ++i) {
+				if (isSearchResultActive(_searchResults[i].get(), row)) {
+					searched = i;
+					break;
+				}
+			}
+		}
+		if (filtered < 0 && peerSearch < 0 && preview < 0 && searched < 0) {
+			return false;
+		}
+		updateSelectedRow();
+		_collapsedSelected = -1;
+		_selected = nullptr;
+		_communitySelected = -1;
+		_hashtagSelected = -1;
+		_filteredSelected = filtered;
+		_peerSearchSelected = peerSearch;
+		_previewSelected = preview;
+		_searchedSelected = searched;
+		updateSelectedRow();
+		return true;
+	}
+	return false;
+}
+
+void InnerWidget::vimKeymapClearPendingChatNavigation() {
+	_vimKeymapPendingChatNavigation = false;
+	_vimKeymapPendingChatNavigationRow = RowDescriptor();
+}
+
+void InnerWidget::vimKeymapContinuePendingChatNavigation() {
+	if (!_vimKeymapPendingChatNavigation) {
+		return;
+	}
+	const auto target = resolveChatNext(
+		_vimKeymapPendingChatNavigationRow);
+	if (!target.key) {
+		if (_loadMoreCallback) {
+			_loadMoreCallback();
+		}
+		return;
+	}
+	vimKeymapClearPendingChatNavigation();
+	if (jumpToDialogRow(target)) {
+		setFocus(Qt::ShortcutFocusReason);
+		vimKeymapSelectChat(target);
+		_vimKeymapChatNavigationRow = target;
+		_vimKeymapChatNavigationNeedsFirst = false;
+	}
+}
+
+bool InnerWidget::vimKeymapJumpToChat(bool next, int steps) {
+	if (_controller->isLayerShown()
+		|| _controller->window().locked()
+		|| _childListShown.current().shown
+		|| _chatPreviewRow.key) {
+		return false;
+	}
+	if (!next) {
+		vimKeymapClearPendingChatNavigation();
+	} else if (_vimKeymapPendingChatNavigation) {
+		const auto candidate = resolveChatNext(
+			_vimKeymapPendingChatNavigationRow);
+		if (!candidate.key) {
+			return true;
+		}
+		_vimKeymapChatNavigationRow =
+			_vimKeymapPendingChatNavigationRow;
+		vimKeymapClearPendingChatNavigation();
+	}
+	const auto selected = vimKeymapSelectedChat();
+	const auto active = _controller->activeChatEntryCurrent();
+	const auto listHasFocus = Ui::InFocusChain(this);
+	const auto selectedInList = listHasFocus && currentListContains(selected);
+	const auto activeInList = currentListContains(active);
+	const auto navigationInList = currentListContains(_vimKeymapChatNavigationRow);
+	const auto hasAnchor = selectedInList || navigationInList || activeInList;
+	const auto forceFirst = _vimKeymapChatNavigationNeedsFirst && !hasAnchor;
+	auto target = forceFirst
+		? vimKeymapEdgeChat(true)
+		: navigationInList
+		? _vimKeymapChatNavigationRow
+		: selectedInList
+		? selected
+		: activeInList
+		? active
+		: vimKeymapEdgeChat(true);
+	const auto stepForward = next;
+	const auto count = std::max(steps, 1);
+	for (auto i = hasAnchor ? 0 : 1; i != count; ++i) {
+		const auto candidate = stepForward
+			? resolveChatNext(target)
+			: resolveChatPrevious(target);
+		if (!candidate.key) {
+			if (stepForward && target.key) {
+				_vimKeymapPendingChatNavigation = true;
+				_vimKeymapPendingChatNavigationRow = target;
+				if (_loadMoreCallback) {
+					_loadMoreCallback();
+				}
+				_listBottomReached.fire({});
+				setFocus(Qt::ShortcutFocusReason);
+				_vimKeymapChatNavigationRow = target;
+				_vimKeymapChatNavigationNeedsFirst = false;
+				return true;
+			}
+			break;
+		}
+		target = candidate;
+	}
+	vimKeymapClearChatHints();
+	if (!target.key) {
+		_vimKeymapChatNavigationRow = RowDescriptor();
+		return false;
+	}
+	if (jumpToDialogRow(target)) {
+		setFocus(Qt::ShortcutFocusReason);
+		vimKeymapSelectChat(target);
+		_vimKeymapChatNavigationRow = target;
+		_vimKeymapChatNavigationNeedsFirst = false;
+		return true;
+	}
+	return false;
+}
+
+bool InnerWidget::vimKeymapShowChatPreview(RowDescriptor row) {
+	if (_controller->isLayerShown()
+		|| _controller->window().locked()
+		|| _childListShown.current().shown
+		|| _chatPreviewRow.key) {
+		return false;
+	}
+	if (!row.key) {
+		const auto chosen = computeChatPreviewRow();
+		row = chosen.key ? chosen : vimKeymapEdgeChat(true);
+	}
+	if (!row.key) {
+		return false;
+	}
+	const auto callback = crl::guard(this, [=](bool shown) {
+		chatPreviewShown(shown, row);
+	});
+	vimKeymapClearChatHints();
+	return _controller->showChatPreview(row, callback);
+}
+
+bool InnerWidget::vimKeymapBeginChatHints(bool preview) {
+	if (_controller->isLayerShown()
+		|| _controller->window().locked()
+		|| _childListShown.current().shown
+		|| _chatPreviewRow.key) {
+		return false;
+	}
+	vimKeymapClearChatHints();
+	_vimKeymapChatPreviewHints = preview;
+	auto rows = std::vector<VimKeymapChatHint>();
+	if (_state == WidgetState::Default) {
+		const auto &list = _shownList->all();
+		const auto skip = _skipTopDialog ? 1 : 0;
+		for (const auto &row : list) {
+			if (row->index() < skip || !row->key().thread()) {
+				continue;
+			}
+			const auto top = defaultRowTop(row.get());
+			const auto bottom = top + row->height();
+			if (bottom <= _visibleTop || top >= _visibleBottom) {
+				continue;
+			}
+			rows.push_back({
+				.row = RowDescriptor(
+					row->key(),
+					FullMsgId(PeerId(), ShowAtUnreadMsgId)),
+				.badge = QRect(
+					st::defaultDialogRow.padding.left(),
+					top + (row->height() - 24) / 2,
+					1,
+					1),
+			});
+		}
+	} else {
+		for (const auto &result : _filterResults) {
+			const auto top = filteredOffset() + result.top;
+			const auto bottom = top + result.row->height();
+			if (bottom <= _visibleTop || top >= _visibleBottom) {
+				continue;
+			}
+			rows.push_back({
+				.row = RowDescriptor(
+					result.key(),
+					FullMsgId(PeerId(), ShowAtUnreadMsgId)),
+				.badge = QRect(
+					st::defaultDialogRow.padding.left(),
+					top + (result.row->height() - 24) / 2,
+					1,
+					1),
+			});
+		}
+	}
+	const auto total = int(rows.size());
+	if (!total) {
+		_vimKeymapChatPreviewHints = false;
+		return false;
+	}
+	for (auto i = 0; i != total; ++i) {
+		rows[i].label = Core::VimKeymap::HintLabel(i, total);
+	}
+	_vimKeymapChatHints = std::move(rows);
+	update();
+	return !_vimKeymapChatHints.empty();
+}
+
+void InnerWidget::vimKeymapClearChatHints() {
+	if (_vimKeymapChatHints.empty()
+		&& _vimKeymapChatHintPrefix.isEmpty()) {
+		return;
+	}
+	_vimKeymapChatHints.clear();
+	_vimKeymapChatHintPrefix.clear();
+	_vimKeymapChatPreviewHints = false;
+	update();
+}
+
+bool InnerWidget::vimKeymapCancelChatHints() {
+	auto cancelled = false;
+	if (!_vimKeymapChatHints.empty() || !_vimKeymapChatHintPrefix.isEmpty()) {
+		vimKeymapClearChatHints();
+		cancelled = true;
+	}
+	if (_chatPreviewRow.key || _chatPreviewScheduled) {
+		cancelChatPreview();
+		cancelled = true;
+	}
+	return cancelled;
+}
+
+bool InnerWidget::vimKeymapHandleChatHintKey(not_null<QKeyEvent*> e) {
+	if (_vimKeymapChatHints.empty()) {
+		return false;
+	} else if (e->key() == Qt::Key_Escape) {
+		return vimKeymapCancelChatHints();
+	} else if (e->key() == Qt::Key_Backspace) {
+		if (!_vimKeymapChatHintPrefix.isEmpty()) {
+			_vimKeymapChatHintPrefix.chop(1);
+			update();
+		}
+		return true;
+	}
+	const auto modifiers = e->modifiers()
+		& ~(Qt::KeypadModifier | Qt::GroupSwitchModifier);
+	if (modifiers != Qt::NoModifier && modifiers != Qt::ShiftModifier) {
+		return true;
+	}
+	const auto text = Core::VimKeymap::HintInput(e);
+	if (text.isEmpty()) {
+		return true;
+	}
+	_vimKeymapChatHintPrefix += text.front();
+	auto exact = (const VimKeymapChatHint*)nullptr;
+	auto hasPrefix = false;
+	for (const auto &hint : _vimKeymapChatHints) {
+		if (hint.label == _vimKeymapChatHintPrefix) {
+			exact = &hint;
+			break;
+		} else if (hint.label.startsWith(_vimKeymapChatHintPrefix)) {
+			hasPrefix = true;
+		}
+	}
+	if (exact) {
+		const auto row = exact->row;
+		const auto preview = _vimKeymapChatPreviewHints;
+		vimKeymapClearChatHints();
+		if (preview) {
+			return vimKeymapShowChatPreview(row);
+		} else if (jumpToDialogRow(row)) {
+			_vimKeymapChatNavigationRow = row;
+			_vimKeymapChatNavigationNeedsFirst = false;
+			return true;
+		}
+		return false;
+	} else if (!hasPrefix) {
+		_vimKeymapChatHintPrefix.clear();
+	}
+	update();
+	return true;
+}
+
+void InnerWidget::vimKeymapPaintChatHints(Painter &p) const {
+	if (_vimKeymapChatHints.empty()) {
+		return;
+	}
+	p.save();
+	p.resetTransform();
+	const auto hintSize = Core::VimKeymap::HintSize();
+	const auto font = QFont(u"Menlo"_q, hintSize, QFont::DemiBold);
+	const auto metrics = QFontMetrics(font);
+	const auto horizontalPadding = std::max(7, hintSize / 2);
+	const auto verticalPadding = std::max(3, hintSize / 4);
+	p.setFont(font);
+	p.setRenderHint(QPainter::Antialiasing, true);
+	for (const auto &hint : _vimKeymapChatHints) {
+		const auto remaining = hint.label.mid(
+			_vimKeymapChatHintPrefix.size());
+		const auto label = _vimKeymapChatHintPrefix.isEmpty()
+			? hint.label
+			: remaining.isEmpty()
+			? hint.label
+			: remaining;
+		const auto textWidth = metrics.horizontalAdvance(label);
+		auto rect = QRect(
+			hint.badge.topLeft(),
+			QSize(
+				textWidth + 2 * horizontalPadding,
+				metrics.height() + 2 * verticalPadding));
+		const auto minLeft = 4;
+		const auto maxLeft = std::max(minLeft, width() - rect.width() - 4);
+		const auto minTop = _visibleTop + 4;
+		const auto maxTop = std::max(
+			minTop,
+			_visibleBottom - rect.height() - 4);
+		rect.moveLeft(std::clamp(rect.left(), minLeft, maxLeft));
+		rect.moveTop(std::clamp(rect.top(), minTop, maxTop));
+		const auto radius = rect.height() / 2;
+		p.setPen(QColor(102, 78, 0, 105));
+		p.setBrush(QColor(255, 218, 72, 246));
+		p.drawRoundedRect(rect, radius, radius);
+		p.setPen(QColor(28, 24, 14));
+		p.drawText(rect, Qt::AlignCenter, label);
+	}
+	p.restore();
 }
 
 void InnerWidget::setupShortcuts() {
@@ -6508,7 +7059,33 @@ bool InnerWidget::processKeyDispatch(QKeyEvent *e) {
 		_previewSelected,
 		_searchedSelected,
 	};
-	if (e->key() == Qt::Key_Up) {
+	const auto modifiers = e->modifiers()
+		& ~(Qt::KeypadModifier | Qt::GroupSwitchModifier);
+	const auto tabForward = (e->key() == Qt::Key_Tab)
+		&& (modifiers == Qt::NoModifier);
+	const auto tabBackward = (e->key() == Qt::Key_Backtab)
+		|| ((e->key() == Qt::Key_Tab) && (modifiers == Qt::ShiftModifier));
+	const auto totalRows = [&] {
+		return (_state == WidgetState::Filtered)
+			? filteredChildCount()
+			: defaultChildCount();
+	};
+	if (tabBackward) {
+		const auto noneSelected = !snap.selected
+			&& (snap.hashtag < 0)
+			&& (snap.filtered < 0)
+			&& (snap.peerSearch < 0)
+			&& (snap.preview < 0)
+			&& (snap.searched < 0);
+		if (noneSelected) {
+			selectSkip(1);
+			selectSkip(totalRows());
+		} else {
+			selectSkip(-1);
+		}
+	} else if (tabForward) {
+		selectSkip(1);
+	} else if (e->key() == Qt::Key_Up) {
 		selectSkip(-1);
 	} else if (e->key() == Qt::Key_Down) {
 		selectSkip(1);
@@ -6520,13 +7097,7 @@ bool InnerWidget::processKeyDispatch(QKeyEvent *e) {
 		// Jump to the first/last row. selectSkip() clamps the target, so
 		// skipping by more than the total row count lands on the edge in both
 		// the default and the filtered (search) list.
-		const auto rows = int(_collapsedRows.size())
-			+ _shownList->size()
-			+ int(_hashtagResults.size())
-			+ int(_filterResults.size())
-			+ int(_peerSearchResults.size())
-			+ int(_previewResults.size())
-			+ int(_searchResults.size());
+		const auto rows = totalRows();
 		selectSkip((e->key() == Qt::Key_End) ? rows : -rows);
 	} else {
 		return false;
@@ -6540,6 +7111,7 @@ bool InnerWidget::processKeyDispatch(QKeyEvent *e) {
 	if (changed) {
 		announceSelectedFocus();
 	}
+	e->accept();
 	return true;
 }
 

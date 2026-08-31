@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/options.h"
 #include "base/timer_rpl.h"
 #include "core/application.h"
+#include "core/vim_keymap.h"
 #include "data/data_document.h"
 #include "data/data_document_media.h"
 #include "data/data_session.h"
@@ -58,7 +59,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_window.h"
 #include "styles/style_menu_icons.h"
 
+#include <QtGui/QPen>
 #include <QtWidgets/QApplication>
+
+#include <algorithm>
 
 namespace ChatHelpers {
 
@@ -91,6 +95,27 @@ base::options::toggle OptionUnlimitedRecentStickers({
 	.name = "Unlimited recent stickers",
 	.description = "Display as much recent stickers as the server provides",
 });
+
+void PaintVimKeymapSelectionFrame(Painter &p, QRect rect) {
+	constexpr auto kInset = 3;
+	constexpr auto kStroke = 2;
+
+	rect = rect.marginsRemoved(QMargins(kInset, kInset, kInset, kInset));
+	if (rect.isEmpty()) {
+		return;
+	}
+
+	p.save();
+	auto pen = QPen(st::activeButtonBg->c, kStroke);
+	pen.setJoinStyle(Qt::RoundJoin);
+	p.setPen(pen);
+	p.setBrush(Qt::NoBrush);
+	p.drawRoundedRect(
+		QRectF(rect).adjusted(0.5, 0.5, -0.5, -0.5),
+		st::roundRadiusSmall,
+		st::roundRadiusSmall);
+	p.restore();
+}
 
 [[nodiscard]] bool SetInMyList(Data::StickersSetFlags flags) {
 	return (flags & SetFlag::Installed) && !(flags & SetFlag::Archived);
@@ -1558,6 +1583,9 @@ void StickersListWidget::paintStickers(Painter &p, QRect clip) {
 
 	auto &sets = shownSets();
 	const auto selectedSticker = std::get_if<OverSticker>(&_selected);
+	const auto vimKeymapSelectedSticker = _vimKeymapSelection
+		? &_vimKeymapSelected
+		: nullptr;
 	const auto selectedButton = std::get_if<OverButton>(!v::is_null(_pressed)
 		? &_pressed
 		: &_selected);
@@ -1694,10 +1722,12 @@ void StickersListWidget::paintStickers(Painter &p, QRect clip) {
 					break;
 				}
 
-				const auto selected = selectedSticker
-					? (selectedSticker->section == info.section
-						&& selectedSticker->index == index)
-					: false;
+				const auto selected = (selectedSticker
+					&& selectedSticker->section == info.section
+					&& selectedSticker->index == index)
+					|| (vimKeymapSelectedSticker
+						&& vimKeymapSelectedSticker->section == info.section
+						&& vimKeymapSelectedSticker->index == index);
 				const auto deleteSelected = false;
 				paintSticker(
 					p,
@@ -1829,11 +1859,15 @@ void StickersListWidget::paintStickers(Painter &p, QRect clip) {
 					break;
 				}
 
-				const auto selected = selectedSticker
-					? (selectedSticker->section == info.section
-						&& selectedSticker->index == index)
-					: false;
-				const auto deleteSelected = selected
+				const auto selected = (selectedSticker
+					&& selectedSticker->section == info.section
+					&& selectedSticker->index == index)
+					|| (vimKeymapSelectedSticker
+						&& vimKeymapSelectedSticker->section == info.section
+						&& vimKeymapSelectedSticker->index == index);
+				const auto deleteSelected = selectedSticker
+					&& selectedSticker->section == info.section
+					&& selectedSticker->index == index
 					&& selectedSticker->overDelete;
 				paintSticker(
 					p,
@@ -2304,6 +2338,14 @@ void StickersListWidget::paintSticker(
 			_singleSize,
 			width());
 	}
+
+	if (selected) {
+		auto frame = QRect(pos, _singleSize);
+		if (rtl()) {
+			frame.moveLeft(width() - frame.x() - frame.width());
+		}
+		PaintVimKeymapSelectionFrame(p, frame);
+	}
 }
 
 int StickersListWidget::stickersRight() const {
@@ -2374,6 +2416,7 @@ void StickersListWidget::mousePressEvent(QMouseEvent *e) {
 	if (e->button() != Qt::LeftButton) {
 		return;
 	}
+	_vimKeymapSelection = false;
 	_lastMousePosition = e->globalPos();
 	updateSelected();
 
@@ -2918,6 +2961,10 @@ void StickersListWidget::wheelEvent(QWheelEvent *e) {
 }
 
 void StickersListWidget::mouseMoveEvent(QMouseEvent *e) {
+	if (_vimKeymapSelection && e->globalPos() == _lastMousePosition) {
+		return;
+	}
+	_vimKeymapSelection = false;
 	_lastMousePosition = e->globalPos();
 	if (std::get_if<OverSearchShortcut>(&_pressed)
 		&& _searchShortcutsScrollMax > 0) {
@@ -3687,6 +3734,149 @@ void StickersListWidget::setSelected(OverState newSelected) {
 	}
 }
 
+bool StickersListWidget::vimKeymapMoveSelection(int dx, int dy) {
+	if (_columnCount <= 0) {
+		return false;
+	}
+	const auto &sets = shownSets();
+	const auto findFirstVisible = [&](
+			OverSticker &result,
+			bool visibleOnly) {
+		for (auto section = 0, count = int(sets.size());
+				section != count;
+				++section) {
+			for (auto index = 0, items = int(sets[section].stickers.size());
+					index != items;
+					++index) {
+				const auto rect = stickerRect(section, index);
+				if (!visibleOnly
+					|| (rect.bottom() >= getVisibleTop()
+						&& rect.top() <= getVisibleBottom())) {
+					result = { section, index, false };
+					return true;
+				}
+			}
+		}
+		return false;
+	};
+	const auto totalBefore = [&](OverSticker item) {
+		auto result = 0;
+		for (auto section = 0; section != item.section; ++section) {
+			result += sets[section].stickers.size();
+		}
+		return result + item.index;
+	};
+	const auto valid = [&](OverSticker item) {
+		return item.section >= 0
+			&& item.section < sets.size()
+			&& item.index >= 0
+			&& item.index < sets[item.section].stickers.size();
+	};
+	const auto fromTotal = [&](int position, OverSticker &result) {
+		auto offset = position;
+		for (auto section = 0, count = int(sets.size());
+				section != count;
+				++section) {
+			const auto sectionCount = int(sets[section].stickers.size());
+			if (offset < sectionCount) {
+				result = { section, offset, false };
+				return true;
+			}
+			offset -= sectionCount;
+		}
+		return false;
+	};
+	auto totalCount = 0;
+	for (const auto &set : sets) {
+		totalCount += set.stickers.size();
+	}
+	if (!totalCount) {
+		return false;
+	}
+
+	auto target = OverSticker();
+	if (_vimKeymapSelection && valid(_vimKeymapSelected)) {
+		const auto step = (dy != 0) ? (dy * _columnCount) : dx;
+		const auto next = std::clamp(
+			totalBefore(_vimKeymapSelected) + step,
+			0,
+			totalCount - 1);
+		if (!fromTotal(next, target)) {
+			return false;
+		}
+	} else if (const auto selected = std::get_if<OverSticker>(&_selected)) {
+		const auto step = (dy != 0) ? (dy * _columnCount) : dx;
+		const auto next = std::clamp(
+			totalBefore(*selected) + step,
+			0,
+			totalCount - 1);
+		if (!fromTotal(next, target)) {
+			return false;
+		}
+	} else if (!findFirstVisible(target, true)
+		&& !findFirstVisible(target, false)) {
+		return false;
+	}
+
+	const auto rect = stickerRect(target.section, target.index);
+	_vimKeymapSelected = target;
+	_vimKeymapSelection = true;
+	_lastMousePosition = QCursor::pos();
+	setSelected(OverState{ target });
+	const auto margin = _singleSize.height() / 2;
+	if (rect.top() < getVisibleTop()) {
+		scrollTo(std::max(0, rect.top() - margin));
+	} else if (rect.bottom() > getVisibleBottom()) {
+		scrollTo(std::max(0, rect.bottom() - (getVisibleBottom()
+			- getVisibleTop()) + margin));
+	}
+	update();
+	return true;
+}
+
+bool StickersListWidget::vimKeymapActivateSelection() {
+	const auto &sets = shownSets();
+	const auto selected = _vimKeymapSelection
+		? OverState(_vimKeymapSelected)
+		: _selected;
+	if (const auto sticker = std::get_if<OverSticker>(&selected)) {
+		Assert(sticker->section >= 0 && sticker->section < sets.size());
+		auto &set = sets[sticker->section];
+		Assert(sticker->index >= 0 && sticker->index < set.stickers.size());
+		const auto document = set.stickers[sticker->index].document;
+		_chosen.fire({
+			.document = document,
+			.messageSendingFrom = messageSentAnimationInfo(
+				sticker->section,
+				sticker->index,
+				document),
+		});
+		return true;
+	} else if (const auto set = std::get_if<OverSet>(&selected)) {
+		Assert(set->section >= 0 && set->section < sets.size());
+		displaySet(sets[set->section].id);
+		return true;
+	} else if (const auto shortcut = std::get_if<OverSearchShortcut>(
+			&selected)) {
+		toggleSearchShortcut(shortcut->index);
+		return true;
+	} else if (std::get_if<OverSearchBack>(&selected)) {
+		backToSearchResults();
+		return true;
+	}
+	return false;
+}
+
+bool StickersListWidget::vimKeymapFocusSearch() {
+	if (!_search) {
+		return false;
+	}
+	_vimKeymapSelection = false;
+	_search->stealFocus();
+	update();
+	return true;
+}
+
 void StickersListWidget::showPreview() {
 	if (const auto sticker = std::get_if<OverSticker>(&_pressed)) {
 		const auto &sets = shownSets();
@@ -3813,6 +4003,7 @@ void StickersListWidget::afterShown() {
 }
 
 void StickersListWidget::beforeHiding() {
+	_vimKeymapSelection = false;
 	if (_search) {
 		_search->returnFocus();
 	}

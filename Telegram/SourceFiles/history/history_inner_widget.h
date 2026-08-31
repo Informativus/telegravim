@@ -28,6 +28,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 struct ClickContext;
 struct ClickHandlerContext;
+class DocumentData;
+class PhotoData;
 
 namespace Data {
 struct Group;
@@ -66,6 +68,10 @@ struct ButtonParameters;
 namespace Window {
 class SessionController;
 } // namespace Window
+
+namespace Core::VimKeymap {
+enum class Action;
+} // namespace Core::VimKeymap
 
 namespace Ui {
 class ChatTheme;
@@ -176,6 +182,11 @@ public:
 
 	[[nodiscard]] bool canCopySelected() const;
 	[[nodiscard]] bool canDeleteSelected() const;
+	[[nodiscard]] Element *vimKeymapTargetView() const;
+	[[nodiscard]] bool vimKeymapCopyTarget();
+	[[nodiscard]] bool vimKeymapReplyToTarget();
+	[[nodiscard]] bool vimKeymapBeginHints(Core::VimKeymap::Action action);
+	[[nodiscard]] bool vimKeymapHandleHintKey(not_null<QKeyEvent*> e);
 
 	[[nodiscard]] auto getSelectionState() const
 		-> HistoryView::TopBarWidget::SelectedState;
@@ -567,6 +578,38 @@ private:
 	// Does any of the shown histories has this flag set.
 	bool hasPendingResizedItems() const;
 
+	enum class VimKeymapHintMode {
+		None,
+				CopyMessage,
+				ReplyToMessage,
+				EditMessage,
+				DeleteMessage,
+				PickMessageLinks,
+				ActivateLink,
+	};
+	struct VimKeymapHint {
+		QString label;
+		FullMsgId itemId;
+		QRect badge;
+		ClickHandlerPtr link;
+		PhotoData *photo = nullptr;
+		DocumentData *document = nullptr;
+		QPoint clickPoint;
+		bool useClickPoint = false;
+	};
+	void vimKeymapClearHints();
+	void vimKeymapBuildMessageHints(VimKeymapHintMode mode);
+	void vimKeymapBuildLinkHints(not_null<Element*> view);
+	void vimKeymapBuildVisibleLinkHints();
+	void vimKeymapAddLinkHints(not_null<Element*> view);
+	void vimKeymapAssignHintLabels();
+	[[nodiscard]] bool vimKeymapTriggerHint(const VimKeymapHint &hint);
+	void vimKeymapPaintHints(Painter &p) const;
+			[[nodiscard]] bool vimKeymapCopyItem(not_null<HistoryItem*> item);
+			[[nodiscard]] bool vimKeymapReplyToItem(not_null<HistoryItem*> item);
+			[[nodiscard]] bool vimKeymapEditItem(not_null<HistoryItem*> item);
+			[[nodiscard]] bool vimKeymapDeleteItem(not_null<HistoryItem*> item);
+
 	int _accessibilityFocusedIndex = -1;
 	HistoryItem *_accessibilityFocusedItem = nullptr;
 	HistoryItem *_accessibilitySelectionAnchor = nullptr;
@@ -710,6 +753,10 @@ private:
 	bool _scrollDateAfterDayCrossing = false;
 	ClickHandlerPtr _scrollDateLink;
 	ClickHandlerPtr _forumThreadBarLink;
+
+	VimKeymapHintMode _vimKeymapHintMode = VimKeymapHintMode::None;
+	std::vector<VimKeymapHint> _vimKeymapHints;
+	QString _vimKeymapHintPrefix;
 
 	[[nodiscard]] HistoryView::ElementOverlayHost &ensureOverlayHost();
 	std::unique_ptr<HistoryView::ElementOverlayHost> _overlayHost;

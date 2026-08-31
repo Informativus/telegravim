@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/unixtime.h"
 #include "core/application.h"
 #include "core/core_settings.h"
+#include "core/vim_keymap.h"
 #include "data/data_channel.h"
 #include "data/data_chat.h"
 #include "data/data_histories.h"
@@ -33,6 +34,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/wrap/slide_wrap.h"
 #include "styles/style_chat_helpers.h"
 #include "styles/style_layers.h"
+
+#include <QtCore/QEvent>
+#include <QtGui/QKeyEvent>
+#include <QtWidgets/QApplication>
 
 namespace {
 
@@ -161,6 +166,7 @@ void DeleteMessagesBox::prepare() {
 				revoke->checkbox,
 				false,
 				st::defaultBoxCheckbox);
+			vimKeymapRememberButton(_revoke.data());
 			appendDetails(std::move(revoke->description));
 			if (!peer->isUser() && !_wipeHistoryJustClear) {
 				_revoke->checkedValue(
@@ -197,6 +203,7 @@ void DeleteMessagesBox::prepare() {
 					revoke->checkbox,
 					revokeByDefault,
 					st::defaultBoxCheckbox);
+				vimKeymapRememberButton(_revoke.data());
 				_revokeRemember.create(
 					this,
 					object_ptr<Ui::Checkbox>(
@@ -204,6 +211,7 @@ void DeleteMessagesBox::prepare() {
 						tr::lng_remember(),
 						false,
 						st::defaultBoxCheckbox));
+				vimKeymapRememberButton(_revokeRemember->entity());
 				_revokeRemember->hide(anim::type::instant);
 				_revoke->checkedValue(
 				) | rpl::on_next([=](bool checked) {
@@ -255,6 +263,7 @@ void DeleteMessagesBox::prepare() {
 					? tr::lng_edit_auto_delete_settings(tr::now)
 					: tr::lng_enable_auto_delete(tr::now)),
 				st::boxLinkButton);
+			vimKeymapRememberButton(_autoDeleteSettings.data());
 			_autoDeleteSettings->setClickedCallback([=] {
 				validator.showBox();
 			});
@@ -262,13 +271,20 @@ void DeleteMessagesBox::prepare() {
 	}
 
 	if (canDelete) {
-		addButton(
+		const auto deleteButton = addButton(
 			deleteText->value(),
 			[=] { deleteAndClear(); },
 			*deleteStyle);
-		addButton(tr::lng_cancel(), [=] { closeBox(); });
+		vimKeymapRememberButton(deleteButton.data());
+		const auto cancelButton = addButton(
+			tr::lng_cancel(),
+			[=] { closeBox(); });
+		vimKeymapRememberButton(cancelButton.data());
 	} else {
-		addButton(tr::lng_about_done(), [=] { closeBox(); });
+		const auto doneButton = addButton(
+			tr::lng_about_done(),
+			[=] { closeBox(); });
+		vimKeymapRememberButton(doneButton.data());
 	}
 
 	const auto &padding = st::boxPadding;
@@ -456,8 +472,18 @@ void DeleteMessagesBox::resizeEvent(QResizeEvent *e) {
 	}
 }
 
+bool DeleteMessagesBox::eventHook(QEvent *e) {
+	if (e->type() == QEvent::KeyPress
+		&& vimKeymapHandleTab(static_cast<QKeyEvent*>(e))) {
+		return true;
+	}
+	return BoxContent::eventHook(e);
+}
+
 void DeleteMessagesBox::keyPressEvent(QKeyEvent *e) {
-	if (e->key() == Qt::Key_Enter || e->key() == Qt::Key_Return) {
+	if (vimKeymapHandleTab(e)) {
+		return;
+	} else if (e->key() == Qt::Key_Enter || e->key() == Qt::Key_Return) {
 		// Don't make the clearing history so easy.
 		if (!_wipeHistoryPeer) {
 			deleteAndClear();
@@ -465,6 +491,123 @@ void DeleteMessagesBox::keyPressEvent(QKeyEvent *e) {
 	} else {
 		BoxContent::keyPressEvent(e);
 	}
+}
+
+bool DeleteMessagesBox::eventFilter(QObject *watched, QEvent *e) {
+	if (e->type() == QEvent::KeyPress) {
+		if (vimKeymapHandleTab(static_cast<QKeyEvent*>(e))) {
+			return true;
+		}
+	} else if (e->type() == QEvent::FocusOut) {
+		if (watched == _vimKeymapFocused) {
+			vimKeymapClearSyntheticFocus();
+		}
+	}
+	return BoxContent::eventFilter(watched, e);
+}
+
+bool DeleteMessagesBox::focusNextPrevChild(bool next) {
+	if (vimKeymapSelectFocusNext(next)) {
+		return true;
+	}
+	return BoxContent::focusNextPrevChild(next);
+}
+
+void DeleteMessagesBox::vimKeymapRememberButton(Ui::AbstractButton *button) {
+	if (!button) {
+		return;
+	}
+	button->setFocusPolicy(Qt::StrongFocus);
+	button->installEventFilter(this);
+	_vimKeymapButtons.push_back(button);
+}
+
+std::vector<Ui::AbstractButton*> DeleteMessagesBox::vimKeymapFocusOrder() const {
+	auto result = std::vector<Ui::AbstractButton*>();
+	const auto add = [&](Ui::AbstractButton *button) {
+		if (!button
+			|| button->isDisabled()
+			|| !button->isVisibleTo(const_cast<DeleteMessagesBox*>(this))) {
+			return;
+		}
+		result.push_back(button);
+	};
+	for (const auto &button : _vimKeymapButtons) {
+		add(button.data());
+	}
+	return result;
+}
+
+bool DeleteMessagesBox::vimKeymapSelectFocusNext(bool next) {
+	if (!Core::VimKeymap::Enabled()) {
+		return false;
+	}
+	const auto order = vimKeymapFocusOrder();
+	if (order.empty()) {
+		return false;
+	}
+	const auto focus = QApplication::focusWidget();
+	auto current = -1;
+	for (auto i = 0; i != int(order.size()); ++i) {
+		if (order[i] == focus
+			|| order[i]->isAncestorOf(focus)
+			|| order[i] == _vimKeymapFocused) {
+			current = i;
+			break;
+		}
+	}
+	const auto count = int(order.size());
+	const auto target = (current < 0)
+		? (next ? 0 : count - 1)
+		: (current + (next ? 1 : -1) + count) % count;
+	vimKeymapSelectFocus(order[target]);
+	return true;
+}
+
+bool DeleteMessagesBox::vimKeymapHandleTab(QKeyEvent *e) {
+	if (!Core::VimKeymap::Enabled() || e->isAutoRepeat()) {
+		return false;
+	}
+	const auto modifiers = e->modifiers()
+		& ~(Qt::KeypadModifier | Qt::GroupSwitchModifier);
+	const auto forward = (e->key() == Qt::Key_Tab)
+		&& (modifiers == Qt::NoModifier);
+	const auto backward = (e->key() == Qt::Key_Backtab)
+		|| ((e->key() == Qt::Key_Tab) && (modifiers == Qt::ShiftModifier));
+	if (!forward && !backward) {
+		return false;
+	}
+	if (!vimKeymapSelectFocusNext(forward)) {
+		return false;
+	}
+	Core::VimKeymap::TraceKey(
+		not_null{ e },
+		backward
+			? u"delete dialog previous control"_q
+			: u"delete dialog next control"_q);
+	e->accept();
+	return true;
+}
+
+void DeleteMessagesBox::vimKeymapSelectFocus(Ui::AbstractButton *button) {
+	vimKeymapClearSyntheticFocus();
+	if (!button) {
+		return;
+	}
+	_vimKeymapFocused = button;
+	button->setSynteticOver(true);
+	button->setFocus(Qt::TabFocusReason);
+	button->update();
+}
+
+void DeleteMessagesBox::vimKeymapClearSyntheticFocus() {
+	for (const auto &button : _vimKeymapButtons) {
+		if (button) {
+			button->setSynteticOver(false);
+			button->update();
+		}
+	}
+	_vimKeymapFocused = nullptr;
 }
 
 PaidPostType DeleteMessagesBox::paidPostType() const {

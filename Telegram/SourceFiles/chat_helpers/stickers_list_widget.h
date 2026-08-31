@@ -140,6 +140,10 @@ public:
 	void applySearchQuery(std::vector<QString> &&query);
 	[[nodiscard]] rpl::producer<int> recentShownCount() const;
 
+	[[nodiscard]] bool vimKeymapMoveSelection(int dx, int dy) override;
+	[[nodiscard]] bool vimKeymapActivateSelection() override;
+	bool vimKeymapFocusSearch() override;
+
 	~StickersListWidget();
 
 protected:
@@ -482,6 +486,8 @@ private:
 	OverState _selected;
 	OverState _pressed;
 	QPoint _lastMousePosition;
+	OverSticker _vimKeymapSelected;
+	bool _vimKeymapSelection = false;
 
 	Ui::RoundRect _trendingAddBgOver, _trendingAddBg, _inactiveButtonBg;
 	Ui::RoundRect _groupCategoryAddBgOver, _groupCategoryAddBg;

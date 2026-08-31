@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "boxes/peer_list_section_headers.h"
 #include "boxes/peer_list_section_index.h"
+#include "core/vim_keymap.h"
 #include "history/history.h" // chatListNameSortKey.
 #include "main/session/session_show.h"
 #include "main/main_session.h"
@@ -105,6 +106,25 @@ PeerListBox::PeerListBox(
 , _controller(std::move(controller))
 , _init(std::move(init)) {
 	Expects(_controller != nullptr);
+	Core::VimKeymap::RegisterKeyHandler(this, [=](
+			not_null<QKeyEvent*> e) {
+		if (!_select || !content() || !isVisible()) {
+			return false;
+		}
+		const auto top = window();
+		if (!top || !top->isActiveWindow() || !isVisibleTo(top)) {
+			return false;
+		}
+		const auto focused = focusWidget();
+		if (focused && focused != this && !isAncestorOf(focused)) {
+			return false;
+		}
+		return handleVimKeyNavigation(e);
+	});
+}
+
+PeerListBox::~PeerListBox() {
+	Core::VimKeymap::UnregisterKeyHandler(this);
 }
 
 void PeerListBox::createMultiSelect() {
@@ -186,6 +206,28 @@ void PeerListBox::updateScrollSkips() {
 	}
 }
 
+bool PeerListBox::handleVimKeyNavigation(not_null<QKeyEvent*> e) {
+	if (!Core::VimKeymap::Enabled()) {
+		return false;
+	}
+	const auto modifiers = e->modifiers()
+		& ~(Qt::KeypadModifier | Qt::GroupSwitchModifier);
+	const auto tabForward = (e->key() == Qt::Key_Tab)
+		&& (modifiers == Qt::NoModifier);
+	const auto tabBackward = (e->key() == Qt::Key_Backtab)
+		|| ((e->key() == Qt::Key_Tab) && (modifiers == Qt::ShiftModifier));
+	if (!tabForward && !tabBackward) {
+		return false;
+	}
+	if (tabBackward && !content()->hasSelection()) {
+		content()->selectLast();
+	} else {
+		content()->selectSkip(tabBackward ? -1 : 1);
+	}
+	e->accept();
+	return true;
+}
+
 void PeerListBox::prepare() {
 	setContent(setInnerWidget(
 		object_ptr<PeerListContent>(
@@ -228,7 +270,9 @@ void PeerListBox::prepare() {
 }
 
 void PeerListBox::keyPressEvent(QKeyEvent *e) {
-	if (e->key() == Qt::Key_Down) {
+	if (handleVimKeyNavigation(not_null{ e })) {
+		return;
+	} else if (e->key() == Qt::Key_Down) {
 		content()->selectSkip(1);
 	} else if (e->key() == Qt::Key_Up) {
 		content()->selectSkip(-1);

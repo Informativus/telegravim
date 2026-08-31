@@ -368,7 +368,11 @@ public:
 	[[nodiscard]] TextForMimeData getSelectedText() const;
 	[[nodiscard]] Iv::RichPageBlocksSlice getSelectedRichBlocks() const;
 	void copySelectedText();
-	[[nodiscard]] MessageIdsList getSelectedIds() const;
+		[[nodiscard]] Element *vimKeymapTargetView() const;
+		[[nodiscard]] bool vimKeymapCopyTarget();
+		[[nodiscard]] bool vimKeymapReplyToTarget();
+		[[nodiscard]] bool vimKeymapEditTarget();
+		[[nodiscard]] MessageIdsList getSelectedIds() const;
 	[[nodiscard]] SelectedItems getSelectedItems() const;
 	[[nodiscard]] TextSelection getSelectedTextRange(
 		not_null<HistoryItem*> item) const;
@@ -591,6 +595,7 @@ protected:
 	void paintEvent(QPaintEvent *e) override;
 	void focusInEvent(QFocusEvent *e) override;
 	void keyPressEvent(QKeyEvent *e) override;
+	void keyReleaseEvent(QKeyEvent *e) override;
 	void mousePressEvent(QMouseEvent *e) override;
 	void mouseMoveEvent(QMouseEvent *e) override;
 	void mouseReleaseEvent(QMouseEvent *e) override;
@@ -784,6 +789,10 @@ private:
 		Data::MessagePosition attachPosition,
 		int delta,
 		AnimatedScroll type);
+	void vimKeymapStartScroll(int direction);
+	void vimKeymapStopScroll();
+	void vimKeymapScrollTick();
+	bool vimKeymapScrollBy(int direction, int delta, bool animated = false);
 
 	void trySwitchToWordSelection();
 	void switchToWordSelection();
@@ -1090,6 +1099,9 @@ private:
 	crl::time _touchTime = 0;
 	base::Timer _touchScrollTimer;
 	Ui::MiddleClickAutoscroll _middleClickAutoscroll;
+	base::Timer _vimKeymapScrollTimer;
+	int _vimKeymapScrollDirection = 0;
+	bool _vimKeymapScrollRepeating = false;
 
 	rpl::event_stream<FullMsgId> _requestedToEditMessage;
 	rpl::event_stream<ReplyToMessageRequest> _requestedToReplyToMessage;
