@@ -70,7 +70,7 @@ constexpr auto kComposeCursorStyleUnderline = "underline";
 constexpr auto kHoldScrollTickMs = 16;
 constexpr auto kHoldScrollStartDelayMs = 90;
 constexpr auto kSingleScrollDurationMs = 190;
-constexpr auto kTelegraVimBuild = "2026.08.31-60";
+constexpr auto kTelegraVimBuild = "2026.08.31-61";
 constexpr auto kKeyLogLimit = 200;
 
 base::options::toggle VimKeymapOption({
