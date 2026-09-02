@@ -55,4 +55,19 @@ bool TextVisualModeConsumesKey(bool visualMode, bool visualKey) {
 	return visualMode && visualKey;
 }
 
+bool EmptyComposeDefersToMessageAction(
+		bool composeStateActive,
+		bool fieldEmpty,
+		bool messageAction) {
+	return !composeStateActive && fieldEmpty && messageAction;
+}
+
+QRect GroupedMediaHintRect(
+		QRect groupItemRect,
+		QPoint itemInnerTopLeft,
+		int itemTop) {
+	return groupItemRect.translated(
+		itemInnerTopLeft + QPoint(0, itemTop));
+}
+
 } // namespace Core::VimKeymap

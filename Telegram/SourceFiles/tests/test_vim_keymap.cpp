@@ -240,6 +240,24 @@ void TestVimKeymapTransientUiKeys() {
 	Check(
 		!Core::VimKeymap::TextVisualModeConsumesKey(false, true),
 		"visual key starts only after message cursor mode");
+	Check(
+		Core::VimKeymap::EmptyComposeDefersToMessageAction(
+			false,
+			true,
+			true),
+		"empty composer defers reply and edit keys to message actions");
+	Check(
+		!Core::VimKeymap::EmptyComposeDefersToMessageAction(
+			true,
+			true,
+			true),
+		"active composer command keeps reply and edit keys");
+	Check(
+		!Core::VimKeymap::EmptyComposeDefersToMessageAction(
+			false,
+			false,
+			true),
+		"nonempty composer keeps reply and edit keys");
 	auto enter = QKeyEvent(
 		QEvent::KeyPress,
 		Qt::Key_Return,
@@ -335,6 +353,98 @@ void TestVimKeymapCursorGeometry() {
 		Core::VimKeymap::MakeVisualSelectionRange(11, 12, 12)
 			== Core::VimKeymap::VisualSelectionRange{ 11, 12 },
 		"visual selection stays visible at right edge");
+
+	Check(
+		Core::VimKeymap::GroupedMediaHintRect(
+			QRect(300, 400, 120, 90),
+			QPoint(80, 70),
+			900) == QRect(380, 1370, 120, 90),
+		"grouped media hint uses the visible item origin");
+}
+
+void TestVimKeymapMediaNavigation() {
+	auto previous = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_H,
+		Qt::ControlModifier,
+		u"h"_q);
+	Check(
+		Core::VimKeymap::Bindings::MediaNavigationDelta(&previous) == -1,
+		"ctrl h opens previous media");
+	auto next = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_L,
+		Qt::ControlModifier,
+		u"l"_q);
+	Check(
+		Core::VimKeymap::Bindings::MediaNavigationDelta(&next) == 1,
+		"ctrl l opens next media");
+	auto previousCyrillic = QKeyEvent(
+		QEvent::KeyPress,
+		0x0420,
+		Qt::ControlModifier,
+		u"\u0440"_q);
+	Check(
+		Core::VimKeymap::Bindings::MediaNavigationDelta(
+			&previousCyrillic) == -1,
+		"ctrl cyrillic h position opens previous media");
+	auto nextCyrillic = QKeyEvent(
+		QEvent::KeyPress,
+		0x0414,
+		Qt::ControlModifier,
+		u"\u0434"_q);
+	Check(
+		Core::VimKeymap::Bindings::MediaNavigationDelta(
+			&nextCyrillic) == 1,
+		"ctrl cyrillic l position opens next media");
+#ifdef Q_OS_MAC
+	auto physicalPrevious = QKeyEvent(
+		QEvent::KeyPress,
+		0,
+		Qt::ControlModifier,
+		0,
+		4,
+		0);
+	Check(
+		Core::VimKeymap::Bindings::MediaNavigationDelta(
+			&physicalPrevious) == -1,
+		"ctrl physical h opens previous media with empty text");
+	auto physicalNext = QKeyEvent(
+		QEvent::KeyPress,
+		0,
+		Qt::ControlModifier,
+		0,
+		37,
+		0);
+	Check(
+		Core::VimKeymap::Bindings::MediaNavigationDelta(
+			&physicalNext) == 1,
+		"ctrl physical l opens next media with empty text");
+#endif // Q_OS_MAC
+	auto commandNext = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_L,
+		Qt::MetaModifier,
+		u"l"_q);
+	Check(
+		Core::VimKeymap::Bindings::MediaNavigationDelta(&commandNext) == 1,
+		"command l opens next media on macos");
+	auto shiftedNext = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_L,
+		Qt::ControlModifier | Qt::ShiftModifier,
+		u"L"_q);
+	Check(
+		Core::VimKeymap::Bindings::MediaNavigationDelta(&shiftedNext) == 0,
+		"ctrl shift l does not navigate media");
+	auto plainNext = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_L,
+		Qt::NoModifier,
+		u"l"_q);
+	Check(
+		Core::VimKeymap::Bindings::MediaNavigationDelta(&plainNext) == 0,
+		"plain l does not navigate media");
 }
 
 void TestVimKeymapCommandBindings() {
@@ -401,6 +511,7 @@ int main(int, char *[]) {
 	TestVimKeymapCommandBindings();
 	TestVimKeymapTransientUiKeys();
 	TestVimKeymapCursorGeometry();
+	TestVimKeymapMediaNavigation();
 
 	std::cout << (TotalChecks - FailedChecks) << "/" << TotalChecks
 		<< " checks passed." << std::endl;

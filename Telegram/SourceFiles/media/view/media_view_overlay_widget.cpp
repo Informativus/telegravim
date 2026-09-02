@@ -27,6 +27,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/sandbox.h"
 #include "core/shortcuts.h"
 #include "core/vim_keymap.h"
+#include "core/vim_keymap_bindings.h"
 #include "ui/widgets/menu/menu_add_action_callback.h"
 #include "ui/widgets/menu/menu_add_action_callback_factory.h"
 #include "ui/widgets/dropdown_menu.h"
@@ -155,59 +156,6 @@ using RecognitionCacheMap = base::flat_map<RecognitionId, RecognitionResult>;
 		? std::make_unique<base::flat_map<RecognitionId, RecognitionResult>>()
 		: nullptr;
 	return cache.get();
-}
-
-[[nodiscard]] Qt::KeyboardModifiers CleanVimModifiers(
-		not_null<QKeyEvent*> e) {
-	return e->modifiers()
-		& ~(Qt::KeypadModifier | Qt::GroupSwitchModifier);
-}
-
-[[nodiscard]] bool VimControlLike(not_null<QKeyEvent*> e) {
-	const auto modifiers = CleanVimModifiers(e);
-	return modifiers == Qt::ControlModifier || modifiers == Qt::MetaModifier;
-}
-
-[[nodiscard]] bool VimPhysicalLetter(
-		not_null<QKeyEvent*> e,
-		Qt::Key key,
-		QChar latin,
-		QChar cyrillic) {
-	if (e->key() == key) {
-		return true;
-	}
-	const auto text = e->text().toCaseFolded();
-	if (text == QString(latin) || text == QString(cyrillic)) {
-		return true;
-	}
-#ifdef Q_OS_MAC
-	switch (key) {
-	case Qt::Key_H: return e->nativeVirtualKey() == 4;
-	case Qt::Key_L: return e->nativeVirtualKey() == 37;
-	default: return false;
-	}
-#else // Q_OS_MAC
-	return false;
-#endif // Q_OS_MAC
-}
-
-[[nodiscard]] int VimMediaNavigationDelta(not_null<QKeyEvent*> e) {
-	if (!VimControlLike(e)) {
-		return 0;
-	} else if (VimPhysicalLetter(
-			e,
-			Qt::Key_H,
-			QChar('h'),
-			QChar(ushort(0x0440)))) {
-		return -1;
-	} else if (VimPhysicalLetter(
-			e,
-			Qt::Key_L,
-			QChar('l'),
-			QChar(ushort(0x0434)))) {
-		return 1;
-	}
-	return 0;
 }
 
 [[nodiscard]] bool InstantViewMediaItemMatches(
@@ -7339,23 +7287,8 @@ void OverlayWidget::handleKeyPress(not_null<QKeyEvent*> e) {
 	const auto key = e->key();
 	const auto modifiers = e->modifiers();
 	const auto ctrl = modifiers.testFlag(Qt::ControlModifier);
-	if (!_stories) {
-		if (const auto delta = VimMediaNavigationDelta(e)) {
-			if (_controlsHideTimer.isActive()) {
-				activateControls();
-			}
-			if (moveToNext(delta)) {
-				Core::VimKeymap::TraceKey(
-					e,
-					(delta > 0)
-						? u"media next"_q
-						: u"media previous"_q);
-			} else {
-				Core::VimKeymap::TraceKey(e, u"media edge"_q);
-			}
-			e->accept();
-			return;
-		}
+	if (handleVimMediaNavigation(e)) {
+		return;
 	}
 	if (_stories) {
 		if (key == Qt::Key_Space && _down != Over::Video) {
@@ -7510,6 +7443,29 @@ void OverlayWidget::handleKeyPress(not_null<QKeyEvent*> e) {
 	} else if (_stories) {
 		_stories->tryProcessKeyInput(e);
 	}
+}
+
+bool OverlayWidget::handleVimMediaNavigation(not_null<QKeyEvent*> e) {
+	if (_stories) {
+		return false;
+	}
+	const auto delta
+		= Core::VimKeymap::Bindings::MediaNavigationDelta(e);
+	if (!delta) {
+		return false;
+	}
+	if (_controlsHideTimer.isActive()) {
+		activateControls();
+	}
+	if (moveToNext(delta)) {
+		Core::VimKeymap::TraceKey(
+			e,
+			(delta > 0) ? u"media next"_q : u"media previous"_q);
+	} else {
+		Core::VimKeymap::TraceKey(e, u"media edge"_q);
+	}
+	e->accept();
+	return true;
 }
 
 void OverlayWidget::handleKeyRelease(not_null<QKeyEvent*> e) {
@@ -8774,7 +8730,12 @@ bool OverlayWidget::filterApplicationEvent(
 		not_null<QObject*> object,
 		not_null<QEvent*> e) {
 	const auto type = e->type();
-	if (type == QEvent::ShortcutOverride) {
+	if (type == QEvent::KeyPress && isActive()) {
+		const auto event = static_cast<QKeyEvent*>(e.get());
+		if (handleVimMediaNavigation(event)) {
+			return true;
+		}
+	} else if (type == QEvent::ShortcutOverride) {
 		const auto event = static_cast<QKeyEvent*>(e.get());
 		const auto key = event->key();
 		const auto ctrl = event->modifiers().testFlag(Qt::ControlModifier);

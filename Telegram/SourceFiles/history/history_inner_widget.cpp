@@ -4583,14 +4583,18 @@ void HistoryInner::vimKeymapAddLinkHints(not_null<Element*> view) {
 		auto addedGroupedMedia = false;
 		if (const auto grouped
 				= dynamic_cast<HistoryView::GroupedMedia*>(media)) {
+			const auto itemInnerTopLeft = view->innerGeometry().topLeft();
 			auto request = StateRequest();
 			for (auto i = 0; i != kVimKeymapGroupedMediaHintLimit; ++i) {
 				const auto groupRect = grouped->groupItemRect(i);
 				if (groupRect.isEmpty()) {
 					break;
 				}
-				const auto absoluteRect = groupRect.translated(
-					mediaTopLeft + QPoint(0, top));
+				const auto absoluteRect
+					= Core::VimKeymap::GroupedMediaHintRect(
+						groupRect,
+						itemInnerTopLeft,
+						top);
 				const auto visibleRect = absoluteRect.intersected(visibleArea);
 				if (visibleRect.width() < 24 || visibleRect.height() < 24) {
 					continue;
@@ -4598,9 +4602,9 @@ void HistoryInner::vimKeymapAddLinkHints(not_null<Element*> view) {
 				const auto badgePoint = QPoint(
 					visibleRect.left() + 8,
 					visibleRect.top() + 8);
-				auto state = view->textState(
-					mediaTopLeft + groupRect.center(),
-					request);
+				const auto localGroupCenter
+					= itemInnerTopLeft + groupRect.center();
+				auto state = view->textState(localGroupCenter, request);
 				const auto hintItemId = state.itemId ? state.itemId : itemId;
 				auto addedPart = false;
 				if (const auto part = grouped->partMediaAt(
@@ -4630,7 +4634,7 @@ void HistoryInner::vimKeymapAddLinkHints(not_null<Element*> view) {
 					addClickPoint(
 						hintItemId,
 						badgePoint,
-						mediaTopLeft + QPoint(0, top) + groupRect.center());
+						QPoint(0, top) + localGroupCenter);
 					addedGroupedMedia = true;
 				}
 			}

@@ -36,5 +36,6 @@ struct MatchOptions {
 	const QString &bindings,
 	not_null<QKeyEvent*> e,
 	MatchOptions options = {});
+[[nodiscard]] int MediaNavigationDelta(not_null<QKeyEvent*> e);
 
 } // namespace Core::VimKeymap::Bindings

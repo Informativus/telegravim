@@ -234,6 +234,7 @@ private:
 	void handleWheelEvent(not_null<QWheelEvent*> e);
 	bool handleNativeGesture(not_null<QNativeGestureEvent*> e);
 	void setupSwipeNavigation();
+	[[nodiscard]] bool handleVimMediaNavigation(not_null<QKeyEvent*> e);
 	void handleKeyPress(not_null<QKeyEvent*> e);
 	void handleKeyRelease(not_null<QKeyEvent*> e);
 

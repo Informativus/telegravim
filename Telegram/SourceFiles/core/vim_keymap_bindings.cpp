@@ -321,4 +321,17 @@ bool Matches(
 	return false;
 }
 
+int MediaNavigationDelta(not_null<QKeyEvent*> e) {
+	const auto modifiers = CleanModifiers(e);
+	if (modifiers != Qt::ControlModifier
+		&& modifiers != Qt::MetaModifier) {
+		return 0;
+	} else if (KeyIs(e, Qt::Key_H, u"h"_q, u"\u0440"_q)) {
+		return -1;
+	} else if (KeyIs(e, Qt::Key_L, u"l"_q, u"\u0434"_q)) {
+		return 1;
+	}
+	return 0;
+}
+
 } // namespace Core::VimKeymap::Bindings

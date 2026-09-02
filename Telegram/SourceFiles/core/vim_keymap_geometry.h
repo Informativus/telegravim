@@ -34,5 +34,13 @@ struct VisualSelectionRange {
 [[nodiscard]] bool TextVisualModeConsumesKey(
 	bool visualMode,
 	bool visualKey);
+[[nodiscard]] bool EmptyComposeDefersToMessageAction(
+	bool composeStateActive,
+	bool fieldEmpty,
+	bool messageAction);
+[[nodiscard]] QRect GroupedMediaHintRect(
+	QRect groupItemRect,
+	QPoint itemInnerTopLeft,
+	int itemTop);
 
 } // namespace Core::VimKeymap
