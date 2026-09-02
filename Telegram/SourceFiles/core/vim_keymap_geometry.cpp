@@ -36,4 +36,23 @@ QRect CursorPaintRect(
 		height);
 }
 
+VisualSelectionRange MakeVisualSelectionRange(
+		int anchor,
+		int focus,
+		int textLength) {
+	if (textLength <= 0) {
+		return {};
+	}
+	anchor = std::clamp(anchor, 0, textLength - 1);
+	focus = std::clamp(focus, 0, textLength - 1);
+	return {
+		.from = std::min(anchor, focus),
+		.till = std::max(anchor, focus) + 1,
+	};
+}
+
+bool TextVisualModeConsumesKey(bool visualMode, bool visualKey) {
+	return visualMode && visualKey;
+}
+
 } // namespace Core::VimKeymap

@@ -4292,6 +4292,12 @@ bool HistoryInner::vimKeymapHandleTextSelectionKey(
 		}
 		Core::VimKeymap::SetNormalMode(true);
 		return true;
+	} else if (selectionActive
+		&& Core::VimKeymap::TextVisualModeConsumesKey(
+			_vimKeymapTextVisualMode,
+			Core::VimKeymap::TextVisualKey(e))) {
+		Core::VimKeymap::TraceKey(e, u"message text visual stays active"_q);
+		return true;
 	} else if (!selectionActive && Core::VimKeymap::TextVisualKey(e)) {
 		const auto view = viewByItem(_vimKeymapTextCursorItem);
 		if (!view) {

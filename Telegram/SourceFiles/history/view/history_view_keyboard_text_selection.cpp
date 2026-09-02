@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/history_view_keyboard_text_selection.h"
 
+#include "core/vim_keymap_geometry.h"
 #include "history/view/history_view_cursor_state.h"
 #include "history/view/history_view_element.h"
 #include "history/history_item.h"
@@ -341,10 +342,7 @@ std::optional<MessageSelection> KeyboardTextSelection::startSelection(
 		.symbol = adjusted.from,
 		.afterSymbol = false,
 	};
-	const auto focus = MessageSelectionFlatEndpoint{
-		.symbol = uint16(adjusted.to - 1),
-		.afterSymbol = true,
-	};
+	const auto focus = anchor;
 	auto result = MessageSelection::Flat(adjusted, anchor, focus);
 	_item = view->data().get();
 	_produced = result.flatSelection();
@@ -388,11 +386,27 @@ std::optional<MessageSelection> KeyboardTextSelection::extend(
 			? current.focus.flat.offset()
 			: flat.to;
 		const auto focusAtEnd = (rawFocus >= rawAnchor);
-		_anchor = { focusAtEnd ? flat.from : flat.to, false };
-		_focus = { focusAtEnd ? flat.to : flat.from, false };
+		_anchor = {
+			uint16(focusAtEnd ? flat.from : (flat.to - 1)),
+			false,
+		};
+		_focus = {
+			uint16(focusAtEnd ? (flat.to - 1) : flat.from),
+			false,
+		};
 	}
 
-	const auto position = int(_focus.offset());
+	const auto position = int(_focus.symbol);
+	const auto makeResult = [&] {
+		const auto range = Core::VimKeymap::MakeVisualSelectionRange(
+			_anchor.symbol,
+			_focus.symbol,
+			*maxOffset);
+		return MessageSelection::Flat(
+			TextSelection(uint16(range.from), uint16(range.till)),
+			_anchor,
+			_focus);
+	};
 	if (key == Qt::Key_Up || key == Qt::Key_Down) {
 		const auto next = MoveByLine(
 			view,
@@ -402,10 +416,7 @@ std::optional<MessageSelection> KeyboardTextSelection::extend(
 			return std::nullopt;
 		}
 		_focus = *next;
-		auto result = MessageSelection::Flat(_anchor, _focus);
-		if (result.empty()) {
-			return std::nullopt;
-		}
+		auto result = makeResult();
 		_has = true;
 		_item = item;
 		_produced = result.flatSelection();
@@ -421,7 +432,7 @@ std::optional<MessageSelection> KeyboardTextSelection::extend(
 	if (key == Qt::Key_Home) {
 		wanted = 0;
 	} else if (key == Qt::Key_End) {
-		wanted = *maxOffset;
+		wanted = *maxOffset - 1;
 	} else if (byWord) {
 		const auto separator = [&](int symbol) {
 			const auto one = view->selectedText(
@@ -451,9 +462,12 @@ std::optional<MessageSelection> KeyboardTextSelection::extend(
 	} else {
 		wanted = position + (forward ? 1 : -1);
 	}
-	_focus = { uint16(std::clamp(wanted, 0, *maxOffset)), false };
+	_focus = {
+		uint16(std::clamp(wanted, 0, *maxOffset - 1)),
+		false,
+	};
 
-	auto result = MessageSelection::Flat(_anchor, _focus);
+	auto result = makeResult();
 	_has = true;
 	_item = item;
 	_produced = result.flatSelection();

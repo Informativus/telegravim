@@ -14,10 +14,25 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace Core::VimKeymap {
 
+struct VisualSelectionRange {
+	int from = 0;
+	int till = 0;
+
+	[[nodiscard]] bool operator==(const VisualSelectionRange &other) const
+		= default;
+};
+
 [[nodiscard]] QRect CursorPaintRect(
 	QRect characterRect,
 	const QString &style,
 	int requestedWidth,
 	int requestedHeight);
+[[nodiscard]] VisualSelectionRange MakeVisualSelectionRange(
+	int anchor,
+	int focus,
+	int textLength);
+[[nodiscard]] bool TextVisualModeConsumesKey(
+	bool visualMode,
+	bool visualKey);
 
 } // namespace Core::VimKeymap

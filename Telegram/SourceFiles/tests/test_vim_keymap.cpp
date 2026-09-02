@@ -234,6 +234,12 @@ void TestVimKeymapActionBindings() {
 }
 
 void TestVimKeymapTransientUiKeys() {
+	Check(
+		Core::VimKeymap::TextVisualModeConsumesKey(true, true),
+		"repeated visual key stays in visual mode");
+	Check(
+		!Core::VimKeymap::TextVisualModeConsumesKey(false, true),
+		"visual key starts only after message cursor mode");
 	auto enter = QKeyEvent(
 		QEvent::KeyPress,
 		Qt::Key_Return,
@@ -308,6 +314,27 @@ void TestVimKeymapCursorGeometry() {
 			4,
 			24) == QRect(20, 50, 14, 4),
 		"message underline cursor follows character width");
+
+	Check(
+		Core::VimKeymap::MakeVisualSelectionRange(5, 5, 12)
+			== Core::VimKeymap::VisualSelectionRange{ 5, 6 },
+		"visual selection starts on current character");
+	Check(
+		Core::VimKeymap::MakeVisualSelectionRange(5, 4, 12)
+			== Core::VimKeymap::VisualSelectionRange{ 4, 6 },
+		"visual selection moves left without collapsing");
+	Check(
+		Core::VimKeymap::MakeVisualSelectionRange(5, 6, 12)
+			== Core::VimKeymap::VisualSelectionRange{ 5, 7 },
+		"visual selection moves right without collapsing");
+	Check(
+		Core::VimKeymap::MakeVisualSelectionRange(0, -1, 12)
+			== Core::VimKeymap::VisualSelectionRange{ 0, 1 },
+		"visual selection stays visible at left edge");
+	Check(
+		Core::VimKeymap::MakeVisualSelectionRange(11, 12, 12)
+			== Core::VimKeymap::VisualSelectionRange{ 11, 12 },
+		"visual selection stays visible at right edge");
 }
 
 void TestVimKeymapCommandBindings() {
