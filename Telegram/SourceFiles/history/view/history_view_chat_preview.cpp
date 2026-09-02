@@ -9,6 +9,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "apiwrap.h"
 #include "base/unixtime.h"
+#include "core/vim_keymap.h"
+#include "core/vim_keymap_bindings.h"
 #include "data/data_changes.h"
 #include "data/data_channel.h"
 #include "data/data_chat.h"
@@ -36,6 +38,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/chat/chat_style.h"
 #include "ui/chat/chat_theme.h"
 #include "ui/controls/userpic_button.h"
+#include "ui/effects/animations.h"
 #include "ui/widgets/menu/menu_item_base.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/elastic_scroll.h"
@@ -82,6 +85,8 @@ private:
 	void setupHistory();
 	void setupAboutView();
 	void updateInnerVisibleArea();
+	[[nodiscard]] bool vimKeymapHandleKey(not_null<QKeyEvent*> e);
+	void vimKeymapScrollBy(int direction, bool autoRepeat);
 
 	// ListDelegate delegate.
 	Context listContext() override;
@@ -209,6 +214,8 @@ private:
 	std::unique_ptr<AboutView> _aboutView;
 	std::unique_ptr<CornerButtons> _cornerButtons;
 	rpl::event_stream<ChatPreviewAction> _actions;
+	Ui::Animations::Simple _vimKeymapScrollAnimation;
+	int _vimKeymapScrollTarget = 0;
 
 	QImage _bg;
 
@@ -316,6 +323,10 @@ Item::Item(not_null<Ui::Menu::Menu*> parent, not_null<Data::Thread*> thread)
 	setupMarkRead();
 	setupBackground();
 	setupHistory();
+	Core::VimKeymap::RegisterKeyHandler(this, [=](
+			not_null<QKeyEvent*> e) {
+		return vimKeymapHandleKey(e);
+	});
 }
 
 not_null<QAction*> Item::action() const {
@@ -608,6 +619,60 @@ void Item::updateInnerVisibleArea() {
 	const auto scrollTop = _scroll->scrollTop();
 	_inner->setVisibleTopBottom(scrollTop, scrollTop + _scroll->height());
 	_cornerButtons->updateJumpDownVisibility();
+}
+
+bool Item::vimKeymapHandleKey(not_null<QKeyEvent*> e) {
+	const auto top = window();
+	if (!Core::VimKeymap::NormalMode()
+		|| !isVisible()
+		|| !top
+		|| !top->isActiveWindow()) {
+		return false;
+	}
+	if (Core::VimKeymap::Bindings::IsPlainEnter(e)) {
+		Core::VimKeymap::TraceKey(e, u"open chat from preview"_q);
+		_actions.fire({});
+		return true;
+	}
+	const auto navigation = Core::VimKeymap::NavigationKey(e);
+	if (!navigation) {
+		return false;
+	}
+	const auto direction = (*navigation == Qt::Key_Down) ? 1 : -1;
+	vimKeymapScrollBy(direction, e->isAutoRepeat());
+	Core::VimKeymap::TraceKey(
+		e,
+		(direction > 0) ? u"preview scroll down"_q : u"preview scroll up"_q);
+	return true;
+}
+
+void Item::vimKeymapScrollBy(int direction, bool autoRepeat) {
+	const auto current = _scroll->scrollTop();
+	const auto base = (autoRepeat && _vimKeymapScrollAnimation.animating())
+		? _vimKeymapScrollTarget
+		: current;
+	const auto target = std::clamp(
+		base + direction * Core::VimKeymap::ScrollStep(),
+		0,
+		_scroll->scrollTopMax());
+	if (target == current && target == base) {
+		return;
+	}
+	_vimKeymapScrollTarget = target;
+	_vimKeymapScrollAnimation.stop();
+	const auto weak = QPointer<Item>(this);
+	_vimKeymapScrollAnimation.start(
+		[weak] {
+			if (weak) {
+				weak->_scroll->scrollToY(qRound(
+					weak->_vimKeymapScrollAnimation.value(
+						weak->_vimKeymapScrollTarget)));
+			}
+		},
+		current,
+		target,
+		Core::VimKeymap::SingleScrollDurationMs(),
+		anim::linear);
 }
 
 Context Item::listContext() {

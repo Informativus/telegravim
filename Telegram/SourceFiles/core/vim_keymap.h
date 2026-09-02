@@ -73,6 +73,10 @@ enum class Action {
 	LinkHints,
 };
 
+[[nodiscard]] constexpr bool ActionUsesMessageHints(Action action) {
+	return action != Action::ChatPreview;
+}
+
 enum class TextMotion {
 	CharacterLeft,
 	CharacterRight,
@@ -121,6 +125,10 @@ void RegisterKeyHandler(
 	not_null<QObject*> owner,
 	Fn<bool(not_null<QKeyEvent*>)> handler);
 void UnregisterKeyHandler(not_null<QObject*> owner);
+void RegisterPreLayerKeyHandler(
+	not_null<QObject*> owner,
+	Fn<bool(not_null<QKeyEvent*>)> handler);
+void UnregisterPreLayerKeyHandler(not_null<QObject*> owner);
 void RegisterTextInputPassthroughHandler(
 	not_null<QObject*> owner,
 	Fn<bool(not_null<QKeyEvent*>)> handler);

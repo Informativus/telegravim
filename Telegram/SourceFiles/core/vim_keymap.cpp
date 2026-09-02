@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/vim_keymap.h"
 
 #include "core/vim_keymap_bindings.h"
+#include "core/vim_keymap_geometry.h"
 #include "base/options.h"
 #include "core/application.h"
 #include "core/shortcuts.h"
@@ -71,7 +72,7 @@ constexpr auto kComposeCursorStyleUnderline = "underline";
 constexpr auto kHoldScrollTickMs = 16;
 constexpr auto kHoldScrollStartDelayMs = 90;
 constexpr auto kSingleScrollDurationMs = 190;
-constexpr auto kTelegraVimBuild = "2026.09.02-78";
+constexpr auto kTelegraVimBuild = "2026.09.02-79";
 constexpr auto kKeyLogLimit = 200;
 
 base::options::toggle VimKeymapOption({
@@ -362,6 +363,7 @@ struct KeyHandler {
 };
 
 std::vector<KeyHandler> KeyHandlers;
+std::vector<KeyHandler> PreLayerKeyHandlers;
 
 struct TextInputPassthroughHandler {
 	QPointer<QObject> owner;
@@ -886,13 +888,36 @@ void CleanupScrollAnimations() {
 }
 
 [[nodiscard]] bool HandleRegisteredKey(not_null<QKeyEvent*> e) {
+	const auto handle = [&](std::vector<KeyHandler> &handlers) {
+		const auto remove = [](const KeyHandler &handler) {
+			return !handler.owner;
+		};
+		handlers.erase(
+			std::remove_if(begin(handlers), end(handlers), remove),
+			end(handlers));
+		for (auto i = handlers.rbegin(); i != handlers.rend(); ++i) {
+			if (i->handler(e)) {
+				return true;
+			}
+		}
+		return false;
+	};
+	return handle(KeyHandlers);
+}
+
+[[nodiscard]] bool HandlePreLayerKey(not_null<QKeyEvent*> e) {
 	const auto remove = [](const KeyHandler &handler) {
 		return !handler.owner;
 	};
-	KeyHandlers.erase(
-		std::remove_if(begin(KeyHandlers), end(KeyHandlers), remove),
-		end(KeyHandlers));
-	for (auto i = KeyHandlers.rbegin(); i != KeyHandlers.rend(); ++i) {
+	PreLayerKeyHandlers.erase(
+		std::remove_if(
+			begin(PreLayerKeyHandlers),
+			end(PreLayerKeyHandlers),
+			remove),
+		end(PreLayerKeyHandlers));
+	for (auto i = PreLayerKeyHandlers.rbegin();
+		i != PreLayerKeyHandlers.rend();
+		++i) {
 		if (i->handler(e)) {
 			return true;
 		}
@@ -1719,8 +1744,12 @@ bool HandleApplicationKeyPress(
 	if (IsModifierOnlyKey(e)) {
 		return false;
 	}
-	if (!e->isAutoRepeat()
-		&& e->key() == Qt::Key_Escape
+	if (Bindings::IsPlainEscape(e) && HandlePreLayerKey(e)) {
+		RecordKeyEvent(e, u"pre-layer handler"_q, true);
+		e->accept();
+		return true;
+	}
+	if (Bindings::IsPlainEscape(e)
 		&& TelegramLayerOrPopupShown()) {
 		RecordKeyEvent(e, u"Telegram layer/popup"_q, true);
 		return false;
@@ -1837,6 +1866,29 @@ void UnregisterKeyHandler(not_null<QObject*> owner) {
 	KeyHandlers.erase(
 		std::remove_if(begin(KeyHandlers), end(KeyHandlers), remove),
 		end(KeyHandlers));
+}
+
+void RegisterPreLayerKeyHandler(
+		not_null<QObject*> owner,
+		Fn<bool(not_null<QKeyEvent*>)> handler) {
+	UnregisterPreLayerKeyHandler(owner);
+	PreLayerKeyHandlers.push_back({
+		.owner = owner.get(),
+		.handler = std::move(handler),
+	});
+}
+
+void UnregisterPreLayerKeyHandler(not_null<QObject*> owner) {
+	const auto raw = owner.get();
+	const auto remove = [=](const KeyHandler &handler) {
+		return !handler.owner || handler.owner == raw;
+	};
+	PreLayerKeyHandlers.erase(
+		std::remove_if(
+			begin(PreLayerKeyHandlers),
+			end(PreLayerKeyHandlers),
+			remove),
+		end(PreLayerKeyHandlers));
 }
 
 void RegisterTextInputPassthroughHandler(

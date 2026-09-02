@@ -6611,16 +6611,20 @@ void InnerWidget::vimKeymapClearChatHints() {
 }
 
 bool InnerWidget::vimKeymapCancelChatHints() {
-	auto cancelled = false;
-	if (!_vimKeymapChatHints.empty() || !_vimKeymapChatHintPrefix.isEmpty()) {
-		vimKeymapClearChatHints();
-		cancelled = true;
-	}
+	auto cancelled = vimKeymapCancelChatHintLabels();
 	if (_chatPreviewRow.key || _chatPreviewScheduled) {
 		cancelChatPreview();
 		cancelled = true;
 	}
 	return cancelled;
+}
+
+bool InnerWidget::vimKeymapCancelChatHintLabels() {
+	if (_vimKeymapChatHints.empty() && _vimKeymapChatHintPrefix.isEmpty()) {
+		return false;
+	}
+	vimKeymapClearChatHints();
+	return true;
 }
 
 bool InnerWidget::vimKeymapHandleChatHintKey(not_null<QKeyEvent*> e) {

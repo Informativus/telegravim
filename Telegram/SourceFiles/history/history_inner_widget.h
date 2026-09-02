@@ -477,7 +477,8 @@ private:
 	void clearTextSelection();
 	void setTextSelection(
 		not_null<Element*> view,
-		MessageSelection selection);
+		MessageSelection selection,
+		bool vimVisualMode = false);
 	void vimKeymapClearTextCursor();
 	void vimKeymapSetTextCursor(
 		not_null<Element*> view,
@@ -619,7 +620,6 @@ private:
 	void vimKeymapPaintHints(Painter &p) const;
 	[[nodiscard]] bool vimKeymapCopyItem(not_null<HistoryItem*> item);
 	[[nodiscard]] bool vimKeymapReplyToItem(not_null<HistoryItem*> item);
-	[[nodiscard]] bool vimKeymapEditTarget();
 	[[nodiscard]] bool vimKeymapEditItem(not_null<HistoryItem*> item);
 	[[nodiscard]] bool vimKeymapDeleteItem(not_null<HistoryItem*> item);
 
@@ -682,8 +682,9 @@ private:
 	HistoryView::KeyboardTextSelection _keyboardTextSelection;
 	HistoryItem *_vimKeymapTextCursorItem = nullptr;
 	HistoryView::MessageSelectionFlatEndpoint _vimKeymapTextCursor;
-	std::optional<QPoint> _vimKeymapTextCursorPoint;
+	std::optional<QRect> _vimKeymapTextCursorRect;
 	QSize _vimKeymapTextCursorViewSize;
+	bool _vimKeymapTextVisualMode = false;
 	std::optional<Data::ReportInput> _chooseForReportReason;
 
 	const std::unique_ptr<Ui::PathShiftGradient> _pathGradient;

@@ -151,6 +151,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "iv/iv_rich_page.h"
 #include "core/click_handler_types.h"
 #include "core/vim_keymap.h"
+#include "core/vim_keymap_geometry.h"
 #include "chat_helpers/field_autocomplete.h"
 #include "chat_helpers/tabbed_panel.h"
 #include "chat_helpers/tabbed_selector.h"
@@ -509,31 +510,20 @@ protected:
 		const auto text = VimKeymapComposeCursorText(
 			_edit.data(),
 			paintCursor);
-		const auto requestedWidth = Core::VimKeymap::ComposeCursorWidth();
-		const auto characterWidth = std::max(
-			requestedWidth,
-			text.isEmpty() ? 0 : metrics.horizontalAdvance(text));
-		const auto requestedHeight = std::clamp(
-			lineHeight * Core::VimKeymap::ComposeCursorHeight() / 100,
-			1,
-			lineHeight);
-		const auto style = Core::VimKeymap::ComposeCursorStyle();
-		auto rect = QRect();
-		if (style == u"underline"_q) {
-			const auto thickness = std::clamp(requestedWidth, 1, lineHeight);
-			rect = QRect(
-				cursor.left(),
-				cursor.bottom() - thickness + 1,
-				characterWidth,
-				thickness);
-		} else {
-			const auto top = cursor.top() + (lineHeight - requestedHeight) / 2;
-			rect = QRect(
-				cursor.left(),
-				top,
-				(style == u"block"_q) ? characterWidth : requestedWidth,
+			const auto requestedWidth = Core::VimKeymap::ComposeCursorWidth();
+			const auto characterWidth = std::max(
+				requestedWidth,
+				text.isEmpty() ? 0 : metrics.horizontalAdvance(text));
+			const auto requestedHeight = std::clamp(
+				lineHeight * Core::VimKeymap::ComposeCursorHeight() / 100,
+				1,
+				lineHeight);
+			const auto style = Core::VimKeymap::ComposeCursorStyle();
+			auto rect = Core::VimKeymap::CursorPaintRect(
+				QRect(cursor.topLeft(), QSize(characterWidth, lineHeight)),
+				style,
+				requestedWidth,
 				requestedHeight);
-		}
 		rect = rect.intersected(this->rect());
 		if (rect.isEmpty()) {
 			return;

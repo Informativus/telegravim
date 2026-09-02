@@ -13,6 +13,8 @@ nice_target_sources(test_vim_keymap ${src_loc}
 PRIVATE
     core/vim_keymap_bindings.cpp
     core/vim_keymap_bindings.h
+    core/vim_keymap_geometry.cpp
+    core/vim_keymap_geometry.h
     tests/test_vim_keymap.cpp
 )
 

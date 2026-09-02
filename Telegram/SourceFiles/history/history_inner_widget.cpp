@@ -14,6 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/click_handler_types.h"
 #include "core/phone_click_handler.h"
 #include "core/vim_keymap.h"
+#include "core/vim_keymap_geometry.h"
 #include "data/data_chat_participant_status.h"
 #include "history/history_item_helpers.h"
 #include "history/view/controls/history_view_forward_panel.h"
@@ -1328,8 +1329,9 @@ void HistoryInner::vimKeymapClearTextCursor() {
 	}
 	_vimKeymapTextCursorItem = nullptr;
 	_vimKeymapTextCursor = {};
-	_vimKeymapTextCursorPoint = std::nullopt;
+	_vimKeymapTextCursorRect = std::nullopt;
 	_vimKeymapTextCursorViewSize = {};
+	_vimKeymapTextVisualMode = false;
 	_widget->update();
 }
 
@@ -1341,13 +1343,17 @@ void HistoryInner::clearTextSelection() {
 		_selectedTextItem = nullptr;
 		_selectedTextSelection = MessageSelection();
 		_selectedText = TextForMimeData();
+		_vimKeymapTextCursorRect = std::nullopt;
+		_vimKeymapTextCursorViewSize = {};
+		_vimKeymapTextVisualMode = false;
 		_widget->update();
 	}
 }
 
 void HistoryInner::setTextSelection(
 		not_null<Element*> view,
-		MessageSelection selection) {
+		MessageSelection selection,
+		bool vimVisualMode) {
 	vimKeymapClearTextCursor();
 	if (!selection.empty()) {
 		ClickHandler::unpressed();
@@ -1367,6 +1373,17 @@ void HistoryInner::setTextSelection(
 	_selectedText = !selection.empty()
 		? view->selectedText(selection)
 		: TextForMimeData();
+	_vimKeymapTextVisualMode = vimVisualMode;
+	if (vimVisualMode && selection.focus.isFlat()) {
+		const auto endpoint = HistoryView::MessageSelectionFlatEndpoint{
+			.symbol = selection.focus.flat.symbol,
+			.afterSymbol = false,
+		};
+		_vimKeymapTextCursorRect = _keyboardTextSelection.cursorRect(
+			view,
+			endpoint);
+		_vimKeymapTextCursorViewSize = QSize(view->width(), view->height());
+	}
 	repaintItem(view);
 	if (!_wasSelectedText && !_selectedText.empty()) {
 		_wasSelectedText = true;
@@ -1393,10 +1410,11 @@ void HistoryInner::vimKeymapSetTextCursor(
 	}
 	_vimKeymapTextCursorItem = view->data();
 	_vimKeymapTextCursor = cursor;
-	_vimKeymapTextCursorPoint = _keyboardTextSelection.cursorPoint(
+	_vimKeymapTextCursorRect = _keyboardTextSelection.cursorRect(
 		view,
 		cursor);
 	_vimKeymapTextCursorViewSize = QSize(view->width(), view->height());
+	_vimKeymapTextVisualMode = false;
 	repaintItem(view);
 	_widget->update();
 }
@@ -1416,10 +1434,17 @@ bool HistoryInner::vimKeymapBeginTextSelection(not_null<Element*> view) {
 }
 
 void HistoryInner::vimKeymapPaintTextCursor(Painter &p) {
-	if (!_vimKeymapTextCursorItem || hasSelectedText()) {
+	const auto visual = _vimKeymapTextVisualMode
+		&& hasSelectedText()
+		&& _selectedTextItem
+		&& _selectedTextSelection.focus.isFlat();
+	if (!_vimKeymapTextCursorItem && !visual) {
 		return;
 	}
-	const auto view = viewByItem(_vimKeymapTextCursorItem);
+	const auto item = visual
+		? _selectedTextItem
+		: _vimKeymapTextCursorItem;
+	const auto view = viewByItem(item);
 	if (!view) {
 		return;
 	}
@@ -1429,15 +1454,21 @@ void HistoryInner::vimKeymapPaintTextCursor(Painter &p) {
 		|| top > _visibleAreaBottom) {
 		return;
 	}
+	const auto endpoint = visual
+		? HistoryView::MessageSelectionFlatEndpoint{
+			.symbol = _selectedTextSelection.focus.flat.symbol,
+			.afterSymbol = false,
+		}
+		: _vimKeymapTextCursor;
 	const auto size = QSize(view->width(), view->height());
-	if (!_vimKeymapTextCursorPoint
+	if (!_vimKeymapTextCursorRect
 		|| _vimKeymapTextCursorViewSize != size) {
-		_vimKeymapTextCursorPoint = _keyboardTextSelection.cursorPoint(
+		_vimKeymapTextCursorRect = _keyboardTextSelection.cursorRect(
 			view,
-			_vimKeymapTextCursor);
+			endpoint);
 		_vimKeymapTextCursorViewSize = size;
 	}
-	if (!_vimKeymapTextCursorPoint) {
+	if (!_vimKeymapTextCursorRect) {
 		return;
 	}
 	const auto lineHeight = st::messageTextStyle.font->height;
@@ -1447,24 +1478,21 @@ void HistoryInner::vimKeymapPaintTextCursor(Painter &p) {
 		1,
 		lineHeight);
 	const auto inner = view->innerGeometry().translated(0, top);
-	auto rect = QRect(
-		QPoint(
-			_vimKeymapTextCursorPoint->x(),
-			top + _vimKeymapTextCursorPoint->y() - cursorHeight / 2),
-		QSize(cursorWidth, cursorHeight));
-	rect.moveTop(std::clamp(
-		rect.top(),
-		inner.top(),
-		std::max(inner.top(), inner.bottom() - rect.height() + 1)));
-	rect.moveLeft(std::clamp(
-		rect.left(),
-		inner.left(),
-		std::max(inner.left(), inner.right() - rect.width() + 1)));
+	auto characterRect = _vimKeymapTextCursorRect->translated(0, top);
+	characterRect.setHeight(lineHeight);
+	auto rect = Core::VimKeymap::CursorPaintRect(
+		characterRect,
+		Core::VimKeymap::ComposeCursorStyle(),
+		cursorWidth,
+		cursorHeight).intersected(inner);
+	if (rect.isEmpty()) {
+		return;
+	}
 
 	p.save();
 	p.setPen(Qt::NoPen);
-	p.setBrush(QColor(218, 91, 166, 235));
-	p.drawRoundedRect(rect, rect.width() / 2, rect.width() / 2);
+	p.setBrush(QColor(218, 91, 166, 210));
+	p.drawRect(rect);
 	p.restore();
 }
 
@@ -2613,8 +2641,9 @@ void HistoryInner::itemRemoved(not_null<const HistoryItem*> item) {
 	if (_vimKeymapTextCursorItem == item) {
 		_vimKeymapTextCursorItem = nullptr;
 		_vimKeymapTextCursor = {};
-		_vimKeymapTextCursorPoint = std::nullopt;
+		_vimKeymapTextCursorRect = std::nullopt;
 		_vimKeymapTextCursorViewSize = {};
+		_vimKeymapTextVisualMode = false;
 		_widget->update();
 	}
 
@@ -4275,7 +4304,7 @@ bool HistoryInner::vimKeymapHandleTextSelectionKey(
 		if (!selection) {
 			return false;
 		}
-		setTextSelection(view, *selection);
+		setTextSelection(view, *selection, true);
 		Core::VimKeymap::TraceKey(e, u"message text visual"_q);
 		return true;
 	}
@@ -4342,7 +4371,7 @@ bool HistoryInner::vimKeymapHandleTextSelectionKey(
 		if (!next) {
 			return false;
 		}
-		setTextSelection(view, *next);
+		setTextSelection(view, *next, true);
 		Core::VimKeymap::TraceKey(e, u"extend message text selection"_q);
 	} else {
 		const auto next = _keyboardTextSelection.moveCursor(
@@ -4364,17 +4393,9 @@ bool HistoryInner::vimKeymapReplyToTarget() {
 	return view ? vimKeymapReplyToItem(view->data()) : false;
 }
 
-bool HistoryInner::vimKeymapEditTarget() {
-	const auto view = vimKeymapTargetView();
-	return view ? vimKeymapEditItem(view->data()) : false;
-}
-
 bool HistoryInner::vimKeymapHandleAction(Core::VimKeymap::Action action) {
-	if (action == Core::VimKeymap::Action::EditMessage
-		&& vimKeymapEditTarget()) {
-		return true;
-	}
-	return vimKeymapBeginHints(action);
+	return Core::VimKeymap::ActionUsesMessageHints(action)
+		&& vimKeymapBeginHints(action);
 }
 
 void HistoryInner::vimKeymapClearHints() {

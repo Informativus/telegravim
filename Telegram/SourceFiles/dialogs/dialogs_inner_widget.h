@@ -235,6 +235,7 @@ public:
 	[[nodiscard]] bool vimKeymapJumpToChat(bool next, int steps);
 	[[nodiscard]] bool vimKeymapShowChatPreview(RowDescriptor row = {});
 	[[nodiscard]] bool vimKeymapBeginChatHints(bool preview = false);
+	[[nodiscard]] bool vimKeymapCancelChatHintLabels();
 	[[nodiscard]] bool vimKeymapCancelChatHints();
 	[[nodiscard]] bool vimKeymapHandleChatHintKey(not_null<QKeyEvent*> e);
 

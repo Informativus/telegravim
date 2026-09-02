@@ -753,6 +753,15 @@ Widget::Widget(
 		}
 		return _inner->vimKeymapBeginChatHints(true);
 	});
+	Core::VimKeymap::RegisterPreLayerKeyHandler(this, [=](
+			not_null<QKeyEvent*> e) {
+		if (!isVisible() || !_inner->vimKeymapCancelChatHintLabels()) {
+			return false;
+		}
+		Core::VimKeymap::SetNormalMode(true);
+		Core::VimKeymap::TraceKey(e, u"cancel chat hint labels"_q);
+		return true;
+	});
 	Core::VimKeymap::RegisterKeyHandler(this, [=](
 			not_null<QKeyEvent*> e) {
 		if (!isActiveWindow()) {

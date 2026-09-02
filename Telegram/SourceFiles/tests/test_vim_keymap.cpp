@@ -6,6 +6,8 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "core/vim_keymap_bindings.h"
+#include "core/vim_keymap_geometry.h"
+#include "core/vim_keymap.h"
 
 #include <QtGui/QKeyEvent>
 
@@ -203,6 +205,14 @@ void TestVimKeymapActionBindings() {
 		0x0423,
 		Qt::NoModifier,
 		u"\u0443"_q);
+	Check(
+		Core::VimKeymap::ActionUsesMessageHints(
+			Core::VimKeymap::Action::EditMessage),
+		"edit action always uses message hints");
+	Check(
+		!Core::VimKeymap::ActionUsesMessageHints(
+			Core::VimKeymap::Action::ChatPreview),
+		"chat preview does not use message hints");
 	ExpectMatches(
 		"delete hint",
 		u"d, \u0432"_q,
@@ -221,6 +231,83 @@ void TestVimKeymapActionBindings() {
 		Qt::Key_O,
 		Qt::NoModifier,
 		u"o"_q);
+}
+
+void TestVimKeymapTransientUiKeys() {
+	auto enter = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_Return,
+		Qt::NoModifier);
+	Check(
+		Core::VimKeymap::Bindings::IsPlainEnter(&enter),
+		"chat preview accepts return");
+	auto keypadEnter = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_Enter,
+		Qt::KeypadModifier);
+	Check(
+		Core::VimKeymap::Bindings::IsPlainEnter(&keypadEnter),
+		"chat preview accepts keypad enter");
+	auto shiftedEnter = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_Return,
+		Qt::ShiftModifier);
+	Check(
+		!Core::VimKeymap::Bindings::IsPlainEnter(&shiftedEnter),
+		"chat preview ignores shifted return");
+	auto escape = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_Escape,
+		Qt::NoModifier);
+	Check(
+		Core::VimKeymap::Bindings::IsPlainEscape(&escape),
+		"chat hints accept escape before popup");
+	auto repeatedEscape = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_Escape,
+		Qt::NoModifier,
+		QString(),
+		true);
+	Check(
+		!Core::VimKeymap::Bindings::IsPlainEscape(&repeatedEscape),
+		"chat hints ignore repeated escape");
+	ExpectMatches(
+		"chat preview scroll down",
+		u"j, \u043E"_q,
+		Qt::Key_J,
+		Qt::NoModifier,
+		u"j"_q);
+	ExpectMatches(
+		"chat preview scroll up",
+		u"k, \u043B"_q,
+		Qt::Key_K,
+		Qt::NoModifier,
+		u"k"_q);
+}
+
+void TestVimKeymapCursorGeometry() {
+	const auto character = QRect(20, 30, 14, 24);
+	Check(
+		Core::VimKeymap::CursorPaintRect(
+			character,
+			u"block"_q,
+			5,
+			24) == QRect(20, 30, 14, 24),
+		"message block cursor follows character width");
+	Check(
+		Core::VimKeymap::CursorPaintRect(
+			character,
+			u"bar"_q,
+			5,
+			12) == QRect(20, 36, 5, 12),
+		"message bar cursor keeps configured width");
+	Check(
+		Core::VimKeymap::CursorPaintRect(
+			character,
+			u"underline"_q,
+			4,
+			24) == QRect(20, 50, 14, 4),
+		"message underline cursor follows character width");
 }
 
 void TestVimKeymapCommandBindings() {
@@ -285,6 +372,8 @@ int main(int, char *[]) {
 	TestVimKeymapNavigationBindings();
 	TestVimKeymapActionBindings();
 	TestVimKeymapCommandBindings();
+	TestVimKeymapTransientUiKeys();
+	TestVimKeymapCursorGeometry();
 
 	std::cout << (TotalChecks - FailedChecks) << "/" << TotalChecks
 		<< " checks passed." << std::endl;

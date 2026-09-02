@@ -135,6 +135,41 @@ constexpr auto kInvalidTextOffset = 0xFFFF;
 	return best;
 }
 
+[[nodiscard]] std::optional<QRect> FindCursorRect(
+		not_null<Element*> view,
+		MessageSelectionFlatEndpoint current) {
+	const auto point = FindCursorPoint(view, current);
+	const auto maxOffset = MaxTextOffset(view);
+	if (!point || !maxOffset) {
+		return std::nullopt;
+	}
+	const auto target = int(CursorAtOffset(
+		current.offset(),
+		*maxOffset).symbol);
+	const auto inner = view->innerGeometry();
+	const auto request = LookupSymbolRequest();
+	auto left = inner.right();
+	auto right = inner.left();
+	for (auto x = inner.left(); x <= inner.right(); ++x) {
+		const auto state = view->textState(QPoint(x, point->y()), request);
+		const auto endpoint = FlatEndpoint(state);
+		if (endpoint && int(endpoint->symbol) == target) {
+			left = std::min(left, x);
+			right = std::max(right, x);
+		}
+	}
+	if (right < left) {
+		left = point->x();
+		right = left;
+	}
+	const auto lineHeight = st::messageTextStyle.font->height;
+	return QRect(
+		left,
+		point->y() - lineHeight / 2,
+		right - left + 1,
+		lineHeight).intersected(inner);
+}
+
 [[nodiscard]] std::optional<MessageSelectionFlatEndpoint> EndpointAtLine(
 		not_null<Element*> view,
 		int x,
@@ -429,6 +464,12 @@ std::optional<QPoint> KeyboardTextSelection::cursorPoint(
 		not_null<Element*> view,
 		MessageSelectionFlatEndpoint current) const {
 	return FindCursorPoint(view, current);
+}
+
+std::optional<QRect> KeyboardTextSelection::cursorRect(
+		not_null<Element*> view,
+		MessageSelectionFlatEndpoint current) const {
+	return FindCursorRect(view, current);
 }
 
 } // namespace HistoryView

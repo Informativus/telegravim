@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_message_selection.h"
 
 #include <QtCore/QPoint>
+#include <QtCore/QRect>
 
 #include <optional>
 
@@ -41,6 +42,9 @@ public:
 		int key,
 		Qt::KeyboardModifiers modifiers);
 	[[nodiscard]] std::optional<QPoint> cursorPoint(
+		not_null<Element*> view,
+		MessageSelectionFlatEndpoint current) const;
+	[[nodiscard]] std::optional<QRect> cursorRect(
 		not_null<Element*> view,
 		MessageSelectionFlatEndpoint current) const;
 

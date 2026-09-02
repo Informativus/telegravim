@@ -266,6 +266,18 @@ struct KeyBinding {
 
 } // namespace
 
+bool IsPlainEnter(not_null<QKeyEvent*> e) {
+	return !e->isAutoRepeat()
+		&& (e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter)
+		&& CleanModifiers(e) == Qt::NoModifier;
+}
+
+bool IsPlainEscape(not_null<QKeyEvent*> e) {
+	return !e->isAutoRepeat()
+		&& e->key() == Qt::Key_Escape
+		&& CleanModifiers(e) == Qt::NoModifier;
+}
+
 Qt::KeyboardModifiers CleanModifiers(not_null<QKeyEvent*> e) {
 	return e->modifiers()
 		& ~(Qt::KeypadModifier | Qt::GroupSwitchModifier);
