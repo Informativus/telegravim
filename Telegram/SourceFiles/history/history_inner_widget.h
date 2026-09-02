@@ -186,6 +186,7 @@ public:
 	[[nodiscard]] Element *vimKeymapTargetView() const;
 	[[nodiscard]] bool vimKeymapCopyTarget();
 	[[nodiscard]] bool vimKeymapReplyToTarget();
+	[[nodiscard]] bool vimKeymapHandleAction(Core::VimKeymap::Action action);
 	[[nodiscard]] bool vimKeymapBeginHints(Core::VimKeymap::Action action);
 	[[nodiscard]] bool vimKeymapHandleHintKey(not_null<QKeyEvent*> e);
 	[[nodiscard]] bool vimKeymapTextSelectionActive() const;
@@ -618,6 +619,7 @@ private:
 	void vimKeymapPaintHints(Painter &p) const;
 	[[nodiscard]] bool vimKeymapCopyItem(not_null<HistoryItem*> item);
 	[[nodiscard]] bool vimKeymapReplyToItem(not_null<HistoryItem*> item);
+	[[nodiscard]] bool vimKeymapEditTarget();
 	[[nodiscard]] bool vimKeymapEditItem(not_null<HistoryItem*> item);
 	[[nodiscard]] bool vimKeymapDeleteItem(not_null<HistoryItem*> item);
 

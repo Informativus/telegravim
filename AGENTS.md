@@ -60,7 +60,17 @@ Telegram/build/docker/centos_env/build_debug.sh
 cmake --build "l:\Telegram\tx64\out" --config Debug --target Telegram
 ```
 
-**Never build Release** - it's extremely heavy and not needed for testing changes.
+**Never build Release** for ordinary verification - it's extremely heavy and
+not needed for testing changes. The exception is a final macOS user DMG.
+
+### macOS user DMG
+
+When code changes are intended for Ivan to install and test on macOS, finish
+with a fresh `Telegravim.dmg`; never report completion with an older DMG. To
+avoid the recurring post-update lag from Debug artifacts, build the macOS app
+from `Release`, strip the executable, re-sign the bundle with
+`Telegram/Telegram/Telegram.entitlements`, create `out/Telegravim.dmg`, and
+verify both `codesign --verify --deep --strict` and `hdiutil verify`.
 
 ## Platform-Specific Requirements
 

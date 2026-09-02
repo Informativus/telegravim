@@ -450,18 +450,7 @@ HistoryInner::HistoryInner(
 			|| !isVisible()) {
 			return false;
 		}
-		switch (action) {
-		case Core::VimKeymap::Action::CopyMessage:
-		case Core::VimKeymap::Action::ReplyToMessage:
-		case Core::VimKeymap::Action::EditMessage:
-		case Core::VimKeymap::Action::DeleteMessage:
-		case Core::VimKeymap::Action::SelectMessageText:
-		case Core::VimKeymap::Action::LinkHints:
-			return vimKeymapBeginHints(action);
-		case Core::VimKeymap::Action::ChatPreview:
-			break;
-		}
-		return false;
+		return vimKeymapHandleAction(action);
 	});
 	Core::VimKeymap::RegisterKeyHandler(this, [=](
 			not_null<QKeyEvent*> e) {
@@ -1431,9 +1420,11 @@ void HistoryInner::vimKeymapPaintTextCursor(Painter &p) {
 		return;
 	}
 	const auto view = viewByItem(_vimKeymapTextCursorItem);
+	if (!view) {
+		return;
+	}
 	const auto top = itemTop(view);
-	if (!view
-		|| top < 0
+	if (top < 0
 		|| top + view->height() < _visibleAreaTop
 		|| top > _visibleAreaBottom) {
 		return;
@@ -4371,6 +4362,19 @@ bool HistoryInner::vimKeymapHandleTextSelectionKey(
 bool HistoryInner::vimKeymapReplyToTarget() {
 	const auto view = vimKeymapTargetView();
 	return view ? vimKeymapReplyToItem(view->data()) : false;
+}
+
+bool HistoryInner::vimKeymapEditTarget() {
+	const auto view = vimKeymapTargetView();
+	return view ? vimKeymapEditItem(view->data()) : false;
+}
+
+bool HistoryInner::vimKeymapHandleAction(Core::VimKeymap::Action action) {
+	if (action == Core::VimKeymap::Action::EditMessage
+		&& vimKeymapEditTarget()) {
+		return true;
+	}
+	return vimKeymapBeginHints(action);
 }
 
 void HistoryInner::vimKeymapClearHints() {

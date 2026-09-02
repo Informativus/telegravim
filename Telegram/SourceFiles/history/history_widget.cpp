@@ -9614,7 +9614,7 @@ void HistoryWidget::keyPressEvent(QKeyEvent *e) {
 			&& !_kbScroll->isHidden()
 			&& _keyboard->vimKeymapBeginHints()) {
 			e->accept();
-		} else if (_list && _list->vimKeymapBeginHints(*vimAction)) {
+		} else if (_list && _list->vimKeymapHandleAction(*vimAction)) {
 			e->accept();
 		} else {
 			e->ignore();

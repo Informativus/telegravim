@@ -101,6 +101,11 @@ void TestVimKeymapNavigationBindings() {
 		"jump bottom requires ctrl",
 		u"Ctrl+G, Ctrl+\u043F"_q,
 		Qt::Key_G);
+	ExpectDoesNotMatch(
+		"jump bottom ignores ctrl shift",
+		u"Ctrl+G, Ctrl+\u043F"_q,
+		Qt::Key_G,
+		Qt::ControlModifier | Qt::ShiftModifier);
 
 	ExpectMatches(
 		"next chat",
@@ -192,6 +197,12 @@ void TestVimKeymapActionBindings() {
 		Qt::Key_E,
 		Qt::NoModifier,
 		u"e"_q);
+	ExpectMatches(
+		"edit hint cyrillic",
+		u"e, \u0443"_q,
+		0x0423,
+		Qt::NoModifier,
+		u"\u0443"_q);
 	ExpectMatches(
 		"delete hint",
 		u"d, \u0432"_q,
