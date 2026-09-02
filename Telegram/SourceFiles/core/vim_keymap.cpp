@@ -70,7 +70,7 @@ constexpr auto kComposeCursorStyleUnderline = "underline";
 constexpr auto kHoldScrollTickMs = 16;
 constexpr auto kHoldScrollStartDelayMs = 90;
 constexpr auto kSingleScrollDurationMs = 190;
-constexpr auto kTelegraVimBuild = "2026.09.02-75";
+constexpr auto kTelegraVimBuild = "2026.09.02-77";
 constexpr auto kKeyLogLimit = 200;
 
 base::options::toggle VimKeymapOption({
@@ -2319,6 +2319,13 @@ std::optional<TextMotion> TextMotionKey(not_null<QKeyEvent*> e) {
 	const auto modifiers = CleanModifiers(e);
 	if (modifiers != Qt::NoModifier && modifiers != Qt::ShiftModifier) {
 		return std::nullopt;
+	} else if (modifiers == Qt::ShiftModifier
+		&& KeyIs(e, Qt::Key_J, u"j"_q, u"\u043E"_q)) {
+		return TextMotion::LineDown;
+	} else if (modifiers == Qt::ShiftModifier
+		&& (KeyIs(e, Qt::Key_H, u"h"_q, u"\u0440"_q)
+			|| KeyIs(e, Qt::Key_K, u"k"_q, u"\u043B"_q))) {
+		return TextMotion::LineUp;
 	} else if (KeyIs(e, Qt::Key_H, u"h"_q, u"\u0440"_q)) {
 		return TextMotion::CharacterLeft;
 	} else if (KeyIs(e, Qt::Key_L, u"l"_q, u"\u0434"_q)) {
@@ -2336,6 +2343,13 @@ std::optional<TextMotion> TextMotionKey(not_null<QKeyEvent*> e) {
 		return TextMotion::LineEnd;
 	}
 	return std::nullopt;
+}
+
+bool TextVisualKey(not_null<QKeyEvent*> e) {
+	return NormalMode()
+		&& !e->isAutoRepeat()
+		&& CleanModifiers(e) == Qt::NoModifier
+		&& KeyIs(e, Qt::Key_V, u"v"_q, u"\u043C"_q);
 }
 
 bool IsJumpToBottomKey(not_null<QKeyEvent*> e) {

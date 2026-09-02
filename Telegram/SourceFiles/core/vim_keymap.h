@@ -80,6 +80,8 @@ enum class TextMotion {
 	WordRight,
 	LineStart,
 	LineEnd,
+	LineUp,
+	LineDown,
 };
 
 enum class ChatNavigation {
@@ -150,6 +152,7 @@ void TraceKey(not_null<QKeyEvent*> e, const QString &status);
 [[nodiscard]] std::optional<Qt::Key> NavigationKey(not_null<QKeyEvent*> e);
 [[nodiscard]] std::optional<Action> ActionKey(not_null<QKeyEvent*> e);
 [[nodiscard]] std::optional<TextMotion> TextMotionKey(not_null<QKeyEvent*> e);
+[[nodiscard]] bool TextVisualKey(not_null<QKeyEvent*> e);
 [[nodiscard]] bool IsJumpToBottomKey(not_null<QKeyEvent*> e);
 [[nodiscard]] QString HintLabel(int index, int total);
 [[nodiscard]] QString HintInput(not_null<QKeyEvent*> e);

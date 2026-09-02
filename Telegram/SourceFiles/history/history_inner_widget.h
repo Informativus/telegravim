@@ -25,6 +25,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_top_bar_widget.h"
 
 #include <QtGui/QPainterPath>
+#include <QtCore/QSize>
 
 struct ClickContext;
 struct ClickHandlerContext;
@@ -476,6 +477,11 @@ private:
 	void setTextSelection(
 		not_null<Element*> view,
 		MessageSelection selection);
+	void vimKeymapClearTextCursor();
+	void vimKeymapSetTextCursor(
+		not_null<Element*> view,
+		HistoryView::MessageSelectionFlatEndpoint cursor);
+	void vimKeymapPaintTextCursor(Painter &p);
 	[[nodiscard]] bool vimKeymapBeginTextSelection(not_null<Element*> view);
 	[[nodiscard]] bool vimKeymapHandleTextSelectionKey(
 		not_null<QKeyEvent*> e);
@@ -672,6 +678,10 @@ private:
 	MessageSelection _selectedTextSelection;
 	TextForMimeData _selectedText;
 	HistoryView::KeyboardTextSelection _keyboardTextSelection;
+	HistoryItem *_vimKeymapTextCursorItem = nullptr;
+	HistoryView::MessageSelectionFlatEndpoint _vimKeymapTextCursor;
+	std::optional<QPoint> _vimKeymapTextCursorPoint;
+	QSize _vimKeymapTextCursorViewSize;
 	std::optional<Data::ReportInput> _chooseForReportReason;
 
 	const std::unique_ptr<Ui::PathShiftGradient> _pathGradient;

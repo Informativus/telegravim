@@ -1330,6 +1330,20 @@ bool HistoryInner::vimKeymapTextSelectionActive() const {
 	return hasSelectedText();
 }
 
+void HistoryInner::vimKeymapClearTextCursor() {
+	if (!_vimKeymapTextCursorItem) {
+		return;
+	}
+	if (const auto view = viewByItem(_vimKeymapTextCursorItem)) {
+		repaintItem(view);
+	}
+	_vimKeymapTextCursorItem = nullptr;
+	_vimKeymapTextCursor = {};
+	_vimKeymapTextCursorPoint = std::nullopt;
+	_vimKeymapTextCursorViewSize = {};
+	_widget->update();
+}
+
 void HistoryInner::clearTextSelection() {
 	if (_selectedTextItem) {
 		if (const auto view = viewByItem(_selectedTextItem)) {
@@ -1345,6 +1359,7 @@ void HistoryInner::clearTextSelection() {
 void HistoryInner::setTextSelection(
 		not_null<Element*> view,
 		MessageSelection selection) {
+	vimKeymapClearTextCursor();
 	if (!selection.empty()) {
 		ClickHandler::unpressed();
 	}
@@ -1371,18 +1386,95 @@ void HistoryInner::setTextSelection(
 	_widget->update();
 }
 
+void HistoryInner::vimKeymapSetTextCursor(
+		not_null<Element*> view,
+		HistoryView::MessageSelectionFlatEndpoint cursor) {
+	if (!_selected.empty()) {
+		_selected.clear();
+		_accessibilitySelectionAnchor = nullptr;
+		_widget->updateTopBarSelection();
+		_widget->update();
+	}
+	clearTextSelection();
+	if (_vimKeymapTextCursorItem
+		&& _vimKeymapTextCursorItem != view->data().get()) {
+		if (const auto oldView = viewByItem(_vimKeymapTextCursorItem)) {
+			repaintItem(oldView);
+		}
+	}
+	_vimKeymapTextCursorItem = view->data();
+	_vimKeymapTextCursor = cursor;
+	_vimKeymapTextCursorPoint = _keyboardTextSelection.cursorPoint(
+		view,
+		cursor);
+	_vimKeymapTextCursorViewSize = QSize(view->width(), view->height());
+	repaintItem(view);
+	_widget->update();
+}
+
 bool HistoryInner::vimKeymapBeginTextSelection(not_null<Element*> view) {
 	if (showCopyRestriction(view->data())) {
 		return true;
 	}
-	const auto selection = _keyboardTextSelection.begin(view);
-	if (!selection) {
+	const auto cursor = _keyboardTextSelection.beginCursor(view);
+	if (!cursor) {
 		return false;
 	}
-	setTextSelection(view, *selection);
+	vimKeymapSetTextCursor(view, *cursor);
 	Core::VimKeymap::SetNormalMode(true);
 	setFocus(Qt::ShortcutFocusReason);
 	return true;
+}
+
+void HistoryInner::vimKeymapPaintTextCursor(Painter &p) {
+	if (!_vimKeymapTextCursorItem || hasSelectedText()) {
+		return;
+	}
+	const auto view = viewByItem(_vimKeymapTextCursorItem);
+	const auto top = itemTop(view);
+	if (!view
+		|| top < 0
+		|| top + view->height() < _visibleAreaTop
+		|| top > _visibleAreaBottom) {
+		return;
+	}
+	const auto size = QSize(view->width(), view->height());
+	if (!_vimKeymapTextCursorPoint
+		|| _vimKeymapTextCursorViewSize != size) {
+		_vimKeymapTextCursorPoint = _keyboardTextSelection.cursorPoint(
+			view,
+			_vimKeymapTextCursor);
+		_vimKeymapTextCursorViewSize = size;
+	}
+	if (!_vimKeymapTextCursorPoint) {
+		return;
+	}
+	const auto lineHeight = st::messageTextStyle.font->height;
+	const auto cursorWidth = Core::VimKeymap::ComposeCursorWidth();
+	const auto cursorHeight = std::clamp(
+		lineHeight * Core::VimKeymap::ComposeCursorHeight() / 100,
+		1,
+		lineHeight);
+	const auto inner = view->innerGeometry().translated(0, top);
+	auto rect = QRect(
+		QPoint(
+			_vimKeymapTextCursorPoint->x(),
+			top + _vimKeymapTextCursorPoint->y() - cursorHeight / 2),
+		QSize(cursorWidth, cursorHeight));
+	rect.moveTop(std::clamp(
+		rect.top(),
+		inner.top(),
+		std::max(inner.top(), inner.bottom() - rect.height() + 1)));
+	rect.moveLeft(std::clamp(
+		rect.left(),
+		inner.left(),
+		std::max(inner.left(), inner.right() - rect.width() + 1)));
+
+	p.save();
+	p.setPen(Qt::NoPen);
+	p.setBrush(QColor(218, 91, 166, 235));
+	p.drawRoundedRect(rect, rect.width() / 2, rect.width() / 2);
+	p.restore();
 }
 
 TextSelection HistoryInner::getSelectedTextRange(
@@ -1899,6 +1991,7 @@ void HistoryInner::paintEvent(QPaintEvent *e) {
 
 	_replyButtonManager->paint(p, context);
 	_reactionsManager->paint(p, context);
+	vimKeymapPaintTextCursor(p);
 	vimKeymapPaintHints(p);
 }
 
@@ -2525,6 +2618,13 @@ void HistoryInner::itemRemoved(not_null<const HistoryItem*> item) {
 	if (_selectedTextItem == item) {
 		clearTextSelection();
 		_widget->updateTopBarSelection();
+	}
+	if (_vimKeymapTextCursorItem == item) {
+		_vimKeymapTextCursorItem = nullptr;
+		_vimKeymapTextCursor = {};
+		_vimKeymapTextCursorPoint = std::nullopt;
+		_vimKeymapTextCursorViewSize = {};
+		_widget->update();
 	}
 
 	auto i = _selected.find(item);
@@ -4137,30 +4237,75 @@ bool HistoryInner::vimKeymapCopyTarget() {
 
 bool HistoryInner::vimKeymapHandleTextSelectionKey(
 		not_null<QKeyEvent*> e) {
-	if (!hasSelectedText() || !_selectedTextItem) {
+	const auto selectionActive = hasSelectedText() && _selectedTextItem;
+	const auto cursorActive = (_vimKeymapTextCursorItem != nullptr);
+	if (!selectionActive && !cursorActive) {
 		return false;
 	}
 	if (Core::VimKeymap::ActionKey(e)
 		== Core::VimKeymap::Action::CopyMessage) {
-		copySelectedText();
-		Core::VimKeymap::TraceKey(e, u"copy selected message text"_q);
+		if (selectionActive) {
+			copySelectedText();
+			Core::VimKeymap::TraceKey(e, u"copy selected message text"_q);
+		} else {
+			Core::VimKeymap::TraceKey(e, u"message text cursor copy ignored"_q);
+		}
 		return true;
 	} else if (e->key() == Qt::Key_Escape) {
-		clearTextSelection();
+		if (selectionActive) {
+			const auto view = viewByItem(_selectedTextItem);
+			const auto focus = _selectedTextSelection.focus;
+			const auto cursor = focus.isFlat()
+				? HistoryView::MessageSelectionFlatEndpoint{
+					.symbol = focus.flat.symbol,
+					.afterSymbol = false,
+				}
+				: HistoryView::MessageSelectionFlatEndpoint();
+			clearTextSelection();
+			if (view && focus.isFlat()) {
+				vimKeymapSetTextCursor(view, cursor);
+			}
+			Core::VimKeymap::TraceKey(e, u"message text visual off"_q);
+		} else {
+			vimKeymapClearTextCursor();
+			Core::VimKeymap::TraceKey(e, u"cancel message text cursor"_q);
+		}
 		Core::VimKeymap::SetNormalMode(true);
-		Core::VimKeymap::TraceKey(e, u"cancel message text selection"_q);
+		return true;
+	} else if (!selectionActive && Core::VimKeymap::TextVisualKey(e)) {
+		const auto view = viewByItem(_vimKeymapTextCursorItem);
+		if (!view) {
+			vimKeymapClearTextCursor();
+			return true;
+		}
+		const auto selection = _keyboardTextSelection.startSelection(
+			view,
+			_vimKeymapTextCursor);
+		if (!selection) {
+			return false;
+		}
+		setTextSelection(view, *selection);
+		Core::VimKeymap::TraceKey(e, u"message text visual"_q);
 		return true;
 	}
 	const auto motion = Core::VimKeymap::TextMotionKey(e);
 	if (!motion) {
 		return false;
 	}
-	const auto view = viewByItem(_selectedTextItem);
+	const auto item = selectionActive
+		? _selectedTextItem
+		: _vimKeymapTextCursorItem;
+	const auto view = viewByItem(item);
 	if (!view) {
+		if (cursorActive) {
+			vimKeymapClearTextCursor();
+		}
 		return false;
 	}
 	auto key = Qt::Key_unknown;
-	auto modifiers = Qt::KeyboardModifiers(Qt::ShiftModifier);
+	auto modifiers = selectionActive
+		? Qt::KeyboardModifiers(Qt::ShiftModifier)
+		: Qt::KeyboardModifiers();
 	switch (*motion) {
 	case Core::VimKeymap::TextMotion::CharacterLeft:
 		key = Qt::Key_Left;
@@ -4190,17 +4335,36 @@ bool HistoryInner::vimKeymapHandleTextSelectionKey(
 	case Core::VimKeymap::TextMotion::LineEnd:
 		key = Qt::Key_End;
 		break;
+	case Core::VimKeymap::TextMotion::LineUp:
+		key = Qt::Key_Up;
+		break;
+	case Core::VimKeymap::TextMotion::LineDown:
+		key = Qt::Key_Down;
+		break;
 	}
-	const auto next = _keyboardTextSelection.extend(
-		view,
-		_selectedTextSelection,
-		key,
-		modifiers);
-	if (!next) {
-		return false;
+	if (selectionActive) {
+		const auto next = _keyboardTextSelection.extend(
+			view,
+			_selectedTextSelection,
+			key,
+			modifiers);
+		if (!next) {
+			return false;
+		}
+		setTextSelection(view, *next);
+		Core::VimKeymap::TraceKey(e, u"extend message text selection"_q);
+	} else {
+		const auto next = _keyboardTextSelection.moveCursor(
+			view,
+			_vimKeymapTextCursor,
+			key,
+			modifiers);
+		if (!next) {
+			return false;
+		}
+		vimKeymapSetTextCursor(view, *next);
+		Core::VimKeymap::TraceKey(e, u"move message text cursor"_q);
 	}
-	setTextSelection(view, *next);
-	Core::VimKeymap::TraceKey(e, u"extend message text selection"_q);
 	return true;
 }
 
@@ -5999,6 +6163,10 @@ void HistoryInner::clearSelected(bool onlyTextSelection) {
 	}
 	if (_selectedTextItem) {
 		clearTextSelection();
+		changed = true;
+	}
+	if (_vimKeymapTextCursorItem) {
+		vimKeymapClearTextCursor();
 		changed = true;
 	}
 	if (changed) {

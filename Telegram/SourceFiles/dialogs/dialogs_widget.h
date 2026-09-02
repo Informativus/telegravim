@@ -403,6 +403,7 @@ private:
 	bool _searchSuggestionsLocked = false;
 	bool _searchHasFocus = false;
 	bool _searchEngaged = false;
+	bool _vimKeymapSearchInputMode = false;
 	bool _processingSearch = false;
 
 	rpl::event_stream<rpl::producer<Stories::Content>> _storiesContents;

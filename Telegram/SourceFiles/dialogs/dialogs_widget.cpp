@@ -758,6 +758,7 @@ Widget::Widget(
 		if (!isActiveWindow()) {
 			return false;
 		}
+		const auto searchInputMode = vimKeymapSearchInputHasFocus();
 		if (!e->isAutoRepeat() && e->key() == Qt::Key_Escape) {
 			if (_inner->vimKeymapCancelChatHints()) {
 				Core::VimKeymap::SetNormalMode(true);
@@ -770,8 +771,13 @@ Widget::Widget(
 				Core::VimKeymap::TraceKey(e, u"close search and view mode"_q);
 				return true;
 			}
+			if (searchInputMode) {
+				vimKeymapReturnToViewMode();
+				Core::VimKeymap::TraceKey(e, u"search view mode"_q);
+				return true;
+			}
 		}
-		if (!_searchHasFocus && Core::VimKeymap::HandleSearch(e)) {
+		if (!searchInputMode && Core::VimKeymap::HandleSearch(e)) {
 			vimKeymapEnterSearchInputMode();
 			crl::on_main(this, [=] {
 				if (!isActiveWindow()) {
@@ -798,12 +804,10 @@ Widget::Widget(
 		if (Core::VimKeymap::ChatPreviewKey(e)) {
 			return _inner->vimKeymapBeginChatHints(true);
 		}
-		const auto subsectionSearchFocused = _subsectionTopBar
-			&& _subsectionTopBar->searchHasFocus();
 		const auto searchOpen = _searchHasFocus
 			|| _searchEngaged
 			|| _searchSuggestionsLocked
-			|| subsectionSearchFocused
+			|| searchInputMode
 			|| _searchState.inChat
 			|| !_searchState.query.isEmpty()
 			|| !currentSearchQuery().trimmed().isEmpty();
@@ -817,7 +821,9 @@ Widget::Widget(
 			Core::VimKeymap::TraceKey(e, u"search result open"_q);
 			return true;
 		} else if (searchOpen) {
-			if (const auto key = SearchResultNavigationKey(e, !_searchHasFocus)) {
+			if (const auto key = SearchResultNavigationKey(
+					e,
+					!searchInputMode)) {
 				if (_suggestions) {
 					_suggestions->selectJump(*key);
 					Core::VimKeymap::TraceKey(
@@ -2183,6 +2189,10 @@ void Widget::updateHasFocus(not_null<QWidget*> focused) {
 		|| (focused == _search->rawTextEdit());
 	if (_searchHasFocus != has) {
 		_searchHasFocus = has;
+		if (has) {
+			_vimKeymapSearchInputMode = true;
+			Core::VimKeymap::SetNormalMode(false);
+		}
 		if (_postponeProcessSearchFocusChange) {
 			return;
 		} else if (has) {
@@ -2397,6 +2407,7 @@ void Widget::updateSuggestions(anim::type animated) {
 void Widget::closeSuggestions() {
 	_searchSuggestionsLocked = false;
 	_searchHasFocus = false;
+	_vimKeymapSearchInputMode = false;
 	setFocus();
 	updateForceDisplayWide();
 	updateCancelSearch();
@@ -2746,6 +2757,9 @@ void Widget::checkUpdateStatus() {
 }
 
 void Widget::setInnerFocus(bool unfocusSearch) {
+	if (unfocusSearch) {
+		_vimKeymapSearchInputMode = false;
+	}
 	if (_childList) {
 		_childList->setInnerFocus();
 	} else if (_subsectionTopBar && _subsectionTopBar->searchSetFocus()) {
@@ -3469,27 +3483,19 @@ void Widget::searchMessages(SearchState state) {
 	session().local().saveRecentSearchHashtags(_searchState.query);
 
 	if (_childList) {
+		_vimKeymapSearchInputMode = false;
 		_childList->setInnerFocus();
-	} else if (_subsectionTopBar) {
-		if (!_subsectionTopBar->searchSetFocus()
-			&& !_subsectionTopBar->searchHasFocus()) {
-			_subsectionTopBar->toggleSearch(true, anim::type::normal);
-		}
 	} else {
-		_search->setFocus();
+		vimKeymapEnterSearchInputMode();
 	}
 }
 
 void Widget::focusSearch() {
 	if (_childList) {
+		_vimKeymapSearchInputMode = false;
 		_childList->setInnerFocus();
-	} else if (_subsectionTopBar) {
-		if (!_subsectionTopBar->searchSetFocus()
-			&& !_subsectionTopBar->searchHasFocus()) {
-			_subsectionTopBar->toggleSearch(true, anim::type::normal);
-		}
 	} else {
-		_search->setFocusFast();
+		vimKeymapEnterSearchInputMode();
 	}
 }
 
@@ -4877,6 +4883,7 @@ RowDescriptor Widget::resolveChatPrevious(RowDescriptor from) const {
 }
 
 void Widget::keyPressEvent(QKeyEvent *e) {
+	const auto searchInputFocused = vimKeymapSearchInputHasFocus();
 	if (e->key() == Qt::Key_Escape) {
 		escape();
 		//if (_openedForum) {
@@ -4906,9 +4913,9 @@ void Widget::keyPressEvent(QKeyEvent *e) {
 		_suggestions->selectJump(
 			(e->key() == Qt::Key_PageDown) ? Qt::Key_Down : Qt::Key_Up,
 			_scroll->height());
-	} else if (!_searchHasFocus && Core::VimKeymap::HandleHelp(e)) {
-	} else if (!_searchHasFocus && Core::VimKeymap::HandleSearch(e)) {
-	} else if (const auto vimNavigation = !_searchHasFocus
+	} else if (!searchInputFocused && Core::VimKeymap::HandleHelp(e)) {
+	} else if (!searchInputFocused && Core::VimKeymap::HandleSearch(e)) {
+	} else if (const auto vimNavigation = !searchInputFocused
 			? Core::VimKeymap::NavigationKey(e)
 			: std::optional<Qt::Key>()) {
 		if (_suggestions) {
@@ -5115,31 +5122,37 @@ int Widget::currentSearchQueryCursorPosition() const {
 }
 
 bool Widget::vimKeymapSearchInputHasFocus() const {
-	return (_search && (_search->hasFocus() || _search->rawTextEdit()->hasFocus()))
+	return _vimKeymapSearchInputMode
+		|| _searchHasFocus
+		|| (_search && (_search->hasFocus() || _search->rawTextEdit()->hasFocus()))
 		|| (_subsectionTopBar && _subsectionTopBar->searchHasFocus());
 }
 
 void Widget::vimKeymapEnterSearchInputMode() {
+	_vimKeymapSearchInputMode = true;
 	Core::VimKeymap::SetNormalMode(false);
-	if (_subsectionTopBar && _subsectionTopBar->searchSetFocus()) {
+	if (_subsectionTopBar) {
+		if (!_subsectionTopBar->searchSetFocus()
+			&& !_subsectionTopBar->searchHasFocus()) {
+			_subsectionTopBar->toggleSearch(true, anim::type::normal);
+		}
 		return;
 	}
 	_search->setFocusFast();
 }
 
 bool Widget::vimKeymapSearchOpen() const {
-	const auto subsectionSearchFocused = _subsectionTopBar
-		&& _subsectionTopBar->searchHasFocus();
 	return _searchHasFocus
 		|| _searchEngaged
 		|| _searchSuggestionsLocked
-		|| subsectionSearchFocused
+		|| vimKeymapSearchInputHasFocus()
 		|| _searchState.inChat
 		|| !_searchState.query.isEmpty()
 		|| !currentSearchQuery().trimmed().isEmpty();
 }
 
 void Widget::vimKeymapReturnToViewMode() {
+	_vimKeymapSearchInputMode = false;
 	Core::VimKeymap::SetNormalMode(true);
 	crl::on_main(this, [=] {
 		if (!isActiveWindow()) {
@@ -5231,7 +5244,7 @@ bool Widget::cancelSearch(CancelSearchOptions options) {
 		updatedState.community = nullptr;
 	}
 	const auto clearSearchFocus = (forceFullCancel || !updatedState.inChat)
-		&& (_searchHasFocus || _searchSuggestionsLocked);
+		&& (vimKeymapSearchInputHasFocus() || _searchSuggestionsLocked);
 	if (!updatedState.inChat && _suggestions) {
 		_suggestions->clearPersistance();
 		_searchSuggestionsLocked = false;
@@ -5254,6 +5267,9 @@ bool Widget::cancelSearch(CancelSearchOptions options) {
 		if (clearLockedFocus) {
 			processSearchFocusChange();
 		}
+	}
+	if (clearingInChat || clearSearchFocus || forceFullCancel) {
+		_vimKeymapSearchInputMode = false;
 	}
 	updateForceDisplayWide();
 	if (clearingInChat) {
