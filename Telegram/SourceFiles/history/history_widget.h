@@ -732,6 +732,7 @@ private:
 	void vimKeymapStopScroll();
 	void vimKeymapScrollTick();
 	bool vimKeymapHandleEscapeFieldState(not_null<QKeyEvent*> e);
+	bool vimKeymapJumpToBottom();
 	bool vimKeymapHandleScrollKey(not_null<QKeyEvent*> e);
 	bool vimKeymapScrollBy(int direction, int delta, bool animated = false);
 	void vimKeymapRefreshComposeCursor();

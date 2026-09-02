@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "core/vim_keymap.h"
 
+#include "core/vim_keymap_bindings.h"
 #include "base/options.h"
 #include "core/application.h"
 #include "core/shortcuts.h"
@@ -386,54 +387,6 @@ std::vector<QPointer<QWidget>> ModeIndicatorWidgets;
 	return e->text().toCaseFolded();
 }
 
-[[nodiscard]] bool TextIs(not_null<QKeyEvent*> e, const QString &latin) {
-	return PlainText(e) == latin;
-}
-
-[[nodiscard]] bool TextIs(
-		not_null<QKeyEvent*> e,
-		const QString &latin,
-		const QString &cyrillic) {
-	const auto text = PlainText(e);
-	return text == latin || text == cyrillic;
-}
-
-[[nodiscard]] bool MacVirtualKeyIs(not_null<QKeyEvent*> e, Qt::Key key) {
-#ifdef Q_OS_MAC
-	switch (key) {
-	case Qt::Key_A: return e->nativeVirtualKey() == 0;
-	case Qt::Key_B: return e->nativeVirtualKey() == 11;
-	case Qt::Key_C: return e->nativeVirtualKey() == 8;
-	case Qt::Key_D: return e->nativeVirtualKey() == 2;
-	case Qt::Key_E: return e->nativeVirtualKey() == 14;
-	case Qt::Key_F: return e->nativeVirtualKey() == 3;
-	case Qt::Key_G: return e->nativeVirtualKey() == 5;
-	case Qt::Key_H: return e->nativeVirtualKey() == 4;
-	case Qt::Key_I: return e->nativeVirtualKey() == 34;
-	case Qt::Key_J: return e->nativeVirtualKey() == 38;
-	case Qt::Key_K: return e->nativeVirtualKey() == 40;
-	case Qt::Key_L: return e->nativeVirtualKey() == 37;
-	case Qt::Key_M: return e->nativeVirtualKey() == 46;
-	case Qt::Key_N: return e->nativeVirtualKey() == 45;
-	case Qt::Key_O: return e->nativeVirtualKey() == 31;
-	case Qt::Key_P: return e->nativeVirtualKey() == 35;
-	case Qt::Key_Q: return e->nativeVirtualKey() == 12;
-	case Qt::Key_R: return e->nativeVirtualKey() == 15;
-	case Qt::Key_S: return e->nativeVirtualKey() == 1;
-	case Qt::Key_T: return e->nativeVirtualKey() == 17;
-	case Qt::Key_U: return e->nativeVirtualKey() == 32;
-	case Qt::Key_V: return e->nativeVirtualKey() == 9;
-	case Qt::Key_W: return e->nativeVirtualKey() == 13;
-	case Qt::Key_X: return e->nativeVirtualKey() == 7;
-	case Qt::Key_Y: return e->nativeVirtualKey() == 16;
-	case Qt::Key_Z: return e->nativeVirtualKey() == 6;
-	default: return false;
-	}
-#else // Q_OS_MAC
-	return false;
-#endif // Q_OS_MAC
-}
-
 [[nodiscard]] QString MacPhysicalLatinKey(not_null<QKeyEvent*> e) {
 #ifdef Q_OS_MAC
 	switch (e->nativeVirtualKey()) {
@@ -590,251 +543,18 @@ void RecordKeyEvent(
 	++KeyLogGeneration;
 }
 
-[[nodiscard]] bool KeyIs(
-		not_null<QKeyEvent*> e,
-		Qt::Key key,
-		const QString &latin,
-		const QString &cyrillic) {
-	return (e->key() == key)
-		|| MacVirtualKeyIs(e, key)
-		|| (!cyrillic.isEmpty()
-			&& (e->key() == cyrillic.front().unicode()
-				|| e->key() == cyrillic.front().toUpper().unicode()))
-		|| TextIs(e, latin, cyrillic);
-}
-
-[[nodiscard]] bool IsPlainKey(not_null<QKeyEvent*> e) {
-	return CleanModifiers(e) == Qt::NoModifier;
-}
-
-[[nodiscard]] bool IsPlainOrShiftKey(not_null<QKeyEvent*> e) {
-	const auto modifiers = CleanModifiers(e);
-	return modifiers == Qt::NoModifier || modifiers == Qt::ShiftModifier;
-}
-
-[[nodiscard]] Qt::KeyboardModifier PhysicalControlModifier() {
-#ifdef Q_OS_MAC
-	return Qt::MetaModifier;
-#else // Q_OS_MAC
-	return Qt::ControlModifier;
-#endif // Q_OS_MAC
-}
-
-[[nodiscard]] bool HasOnlyPhysicalControl(not_null<QKeyEvent*> e) {
-	return CleanModifiers(e) == PhysicalControlModifier();
-}
-
-[[nodiscard]] bool HasPhysicalControlWithOptionalShift(
-		not_null<QKeyEvent*> e) {
-	const auto control = Qt::KeyboardModifiers(PhysicalControlModifier());
-	const auto modifiers = CleanModifiers(e);
-	return modifiers == control || modifiers == (control | Qt::ShiftModifier);
-}
-
-struct KeyBinding {
-	Qt::KeyboardModifiers modifiers = Qt::NoModifier;
-	Qt::Key key = Qt::Key_unknown;
-	QString text;
-};
-
-[[nodiscard]] std::optional<Qt::KeyboardModifier> ModifierFromToken(
-		const QString &token,
-		bool realMacModifiers = false) {
-	if (token == u"ctrl"_q || token == u"control"_q) {
-#ifdef Q_OS_MAC
-		return realMacModifiers ? Qt::ControlModifier : PhysicalControlModifier();
-#else // Q_OS_MAC
-		return Qt::ControlModifier;
-#endif // Q_OS_MAC
-	} else if (token == u"cmd"_q
-		|| token == u"command"_q
-		|| token == u"meta"_q) {
-#ifdef Q_OS_MAC
-		return realMacModifiers ? Qt::MetaModifier : PhysicalControlModifier();
-#else // Q_OS_MAC
-		return PhysicalControlModifier();
-#endif // Q_OS_MAC
-	} else if (token == u"shift"_q) {
-		return Qt::ShiftModifier;
-	} else if (token == u"alt"_q || token == u"option"_q) {
-		return Qt::AltModifier;
-	}
-	return std::nullopt;
-}
-
-[[nodiscard]] std::optional<Qt::Key> SpecialKeyFromToken(
-		const QString &token) {
-	if (token == u"esc"_q || token == u"escape"_q) {
-		return Qt::Key_Escape;
-	} else if (token == u"tab"_q) {
-		return Qt::Key_Tab;
-	} else if (token == u"backtab"_q) {
-		return Qt::Key_Backtab;
-	} else if (token == u"enter"_q || token == u"return"_q) {
-		return Qt::Key_Return;
-	} else if (token == u"space"_q) {
-		return Qt::Key_Space;
-	} else if (token == u"backspace"_q) {
-		return Qt::Key_Backspace;
-	} else if (token == u"delete"_q) {
-		return Qt::Key_Delete;
-	} else if (token == u"up"_q) {
-		return Qt::Key_Up;
-	} else if (token == u"down"_q) {
-		return Qt::Key_Down;
-	} else if (token == u"left"_q) {
-		return Qt::Key_Left;
-	} else if (token == u"right"_q) {
-		return Qt::Key_Right;
-	} else if (token == u"home"_q) {
-		return Qt::Key_Home;
-	} else if (token == u"end"_q) {
-		return Qt::Key_End;
-	} else if (token == u"pageup"_q) {
-		return Qt::Key_PageUp;
-	} else if (token == u"pagedown"_q) {
-		return Qt::Key_PageDown;
-	}
-	return std::nullopt;
-}
-
-[[nodiscard]] Qt::Key KeyFromCharacter(QChar ch) {
-	const auto lower = ch.toCaseFolded();
-	const auto unicode = lower.unicode();
-	if (unicode >= 'a' && unicode <= 'z') {
-		return Qt::Key(Qt::Key_A + unicode - 'a');
-	} else if (unicode >= '0' && unicode <= '9') {
-		return Qt::Key(Qt::Key_0 + unicode - '0');
-	}
-	switch (unicode) {
-	case '/': return Qt::Key_Slash;
-	case '?': return Qt::Key_Question;
-	case '.': return Qt::Key_Period;
-	case ',': return Qt::Key_Comma;
-	case ';': return Qt::Key_Semicolon;
-	case ':': return Qt::Key_Colon;
-	case '-': return Qt::Key_Minus;
-	case '_': return Qt::Key_Underscore;
-	case '=': return Qt::Key_Equal;
-	default: return Qt::Key(unicode);
-	}
-}
-
-[[nodiscard]] std::optional<KeyBinding> ParseBinding(
-		QString token,
-		bool realMacModifiers = false) {
-	token = token.trimmed().toCaseFolded();
-	token.remove(QChar(' '));
-	if (token.isEmpty()) {
-		return std::nullopt;
-	}
-	const auto parts = token.split('+', Qt::SkipEmptyParts);
-	if (parts.isEmpty()) {
-		return std::nullopt;
-	}
-	auto binding = KeyBinding();
-	for (auto i = qsizetype(0), count = parts.size() - 1; i != count; ++i) {
-		if (const auto modifier = ModifierFromToken(
-				parts[i],
-				realMacModifiers)) {
-			binding.modifiers |= *modifier;
-		} else {
-			return std::nullopt;
-		}
-	}
-	const auto key = parts.back();
-	if (ModifierFromToken(key, realMacModifiers)) {
-		return std::nullopt;
-	} else if (const auto special = SpecialKeyFromToken(key)) {
-		binding.key = *special;
-		if (*special == Qt::Key_Space) {
-			binding.text = u" "_q;
-		}
-		return binding;
-	} else if (key.size() == 1) {
-		binding.key = KeyFromCharacter(key.front());
-		binding.text = key;
-		return binding;
-	}
-	return std::nullopt;
-}
-
-[[nodiscard]] bool KeyMatches(
-		const KeyBinding &binding,
-		not_null<QKeyEvent*> e) {
-	if (binding.key != Qt::Key_unknown) {
-		if (e->key() == binding.key || MacVirtualKeyIs(e, binding.key)) {
-			return true;
-		} else if (binding.key == Qt::Key_Tab
-			&& e->key() == Qt::Key_Backtab) {
-			return true;
-		} else if (binding.key == Qt::Key_Backtab
-			&& e->key() == Qt::Key_Tab) {
-			return true;
-		}
-	}
-	return !binding.text.isEmpty() && PlainText(e) == binding.text;
-}
-
-[[nodiscard]] bool ModifiersMatch(
-		const KeyBinding &binding,
-		not_null<QKeyEvent*> e,
-		bool allowExtraShift,
-		bool allowMacControlCommandEquivalent = true) {
-	const auto modifiers = CleanModifiers(e);
-	const auto matches = [](Qt::KeyboardModifiers expected, auto actual) {
-		if (actual == expected) {
-			return true;
-		}
-#ifdef Q_OS_MAC
-		const auto controlOrCommand
-			= Qt::KeyboardModifiers(Qt::ControlModifier | Qt::MetaModifier);
-		const auto expectedControl = expected & controlOrCommand;
-		const auto actualControl = actual & controlOrCommand;
-		const auto expectedControlValue = int(expectedControl);
-		const auto actualControlValue = int(actualControl);
-		if ((expected & ~controlOrCommand) == (actual & ~controlOrCommand)
-			&& expectedControlValue
-			&& actualControlValue
-			&& !(expectedControlValue & (expectedControlValue - 1))
-			&& !(actualControlValue & (actualControlValue - 1))) {
-			return true;
-		}
-#endif // Q_OS_MAC
-		return false;
-	};
-	const auto strictMatches = [&](Qt::KeyboardModifiers expected) {
-		return allowMacControlCommandEquivalent
-			? matches(expected, modifiers)
-			: (expected == modifiers);
-	};
-	if (strictMatches(binding.modifiers)) {
-		return true;
-	} else if (!allowExtraShift || (binding.modifiers & Qt::ShiftModifier)) {
-		return false;
-	}
-	return strictMatches(binding.modifiers | Qt::ShiftModifier);
-}
-
 [[nodiscard]] bool MatchesBindings(
 		base::options::option<QString> &option,
 		not_null<QKeyEvent*> e,
 		bool allowExtraShift = false,
 		bool realMacModifiers = false,
 		bool allowMacControlCommandEquivalent = true) {
-	for (const auto &part : option.value().split(',', Qt::SkipEmptyParts)) {
-		const auto binding = ParseBinding(part, realMacModifiers);
-		if (binding
-			&& ModifiersMatch(
-				*binding,
-				e,
-				allowExtraShift,
-				allowMacControlCommandEquivalent)
-			&& KeyMatches(*binding, e)) {
-			return true;
-		}
-	}
-	return false;
+	return Bindings::Matches(option.value(), e, {
+		.allowExtraShift = allowExtraShift,
+		.realMacModifiers = realMacModifiers,
+		.allowMacControlCommandEquivalent
+			= allowMacControlCommandEquivalent,
+	});
 }
 
 [[nodiscard]] QString BindingLabel(base::options::option<QString> &option) {
@@ -2320,20 +2040,20 @@ std::optional<TextMotion> TextMotionKey(not_null<QKeyEvent*> e) {
 	if (modifiers != Qt::NoModifier && modifiers != Qt::ShiftModifier) {
 		return std::nullopt;
 	} else if (modifiers == Qt::ShiftModifier
-		&& KeyIs(e, Qt::Key_J, u"j"_q, u"\u043E"_q)) {
+		&& Bindings::KeyIs(e, Qt::Key_J, u"j"_q, u"\u043E"_q)) {
 		return TextMotion::LineDown;
 	} else if (modifiers == Qt::ShiftModifier
-		&& (KeyIs(e, Qt::Key_H, u"h"_q, u"\u0440"_q)
-			|| KeyIs(e, Qt::Key_K, u"k"_q, u"\u043B"_q))) {
+		&& (Bindings::KeyIs(e, Qt::Key_H, u"h"_q, u"\u0440"_q)
+			|| Bindings::KeyIs(e, Qt::Key_K, u"k"_q, u"\u043B"_q))) {
 		return TextMotion::LineUp;
-	} else if (KeyIs(e, Qt::Key_H, u"h"_q, u"\u0440"_q)) {
+	} else if (Bindings::KeyIs(e, Qt::Key_H, u"h"_q, u"\u0440"_q)) {
 		return TextMotion::CharacterLeft;
-	} else if (KeyIs(e, Qt::Key_L, u"l"_q, u"\u0434"_q)) {
+	} else if (Bindings::KeyIs(e, Qt::Key_L, u"l"_q, u"\u0434"_q)) {
 		return TextMotion::CharacterRight;
-	} else if (KeyIs(e, Qt::Key_B, u"b"_q, u"\u0438"_q)) {
+	} else if (Bindings::KeyIs(e, Qt::Key_B, u"b"_q, u"\u0438"_q)) {
 		return TextMotion::WordLeft;
-	} else if (KeyIs(e, Qt::Key_W, u"w"_q, u"\u0446"_q)
-		|| KeyIs(e, Qt::Key_E, u"e"_q, u"\u0443"_q)) {
+	} else if (Bindings::KeyIs(e, Qt::Key_W, u"w"_q, u"\u0446"_q)
+		|| Bindings::KeyIs(e, Qt::Key_E, u"e"_q, u"\u0443"_q)) {
 		return TextMotion::WordRight;
 	}
 	const auto text = PlainText(e);
@@ -2349,7 +2069,7 @@ bool TextVisualKey(not_null<QKeyEvent*> e) {
 	return NormalMode()
 		&& !e->isAutoRepeat()
 		&& CleanModifiers(e) == Qt::NoModifier
-		&& KeyIs(e, Qt::Key_V, u"v"_q, u"\u043C"_q);
+		&& Bindings::KeyIs(e, Qt::Key_V, u"v"_q, u"\u043C"_q);
 }
 
 bool IsJumpToBottomKey(not_null<QKeyEvent*> e) {

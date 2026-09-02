@@ -58,6 +58,7 @@ generate_update_keys(Telegram ${res_loc}/update)
 
 if (DESKTOP_APP_TEST_APPS OR DESKTOP_APP_SPECIAL_TARGET)
     include(cmake/test_update_verify.cmake)
+    include(cmake/test_vim_keymap.cmake)
 endif()
 
 set_target_properties(Telegram PROPERTIES AUTOMOC ON)
@@ -604,6 +605,8 @@ PRIVATE
     core/update_verify.h
     core/vim_keymap.cpp
     core/vim_keymap.h
+    core/vim_keymap_bindings.cpp
+    core/vim_keymap_bindings.h
     core/utils.cpp
     core/utils.h
     core/version.h

@@ -841,6 +841,15 @@ HistoryWidget::HistoryWidget(
 				}
 			});
 			return true;
+		} else if (!_vimKeymapSearchInputMode
+			&& !selectorOpen
+			&& !_vimKeymapComposeOperator
+			&& !_vimKeymapComposeVisualMode
+			&& !_vimKeymapComposePending
+			&& Core::VimKeymap::IsJumpToBottomKey(e)
+			&& vimKeymapJumpToBottom()) {
+			Core::VimKeymap::TraceKey(e, u"jump bottom"_q);
+			return true;
 		} else if (_keyboard->vimKeymapHandleHintKey(e)) {
 			Core::VimKeymap::TraceKey(e, u"bot hint key"_q);
 			return true;
@@ -7098,6 +7107,15 @@ bool HistoryWidget::eventFilter(QObject *obj, QEvent *e) {
 			&& !_vimKeymapComposeOperator
 			&& !_vimKeymapComposeVisualMode
 			&& !_vimKeymapComposePending
+			&& Core::VimKeymap::IsJumpToBottomKey(k)
+			&& vimKeymapJumpToBottom()) {
+			Core::VimKeymap::TraceKey(k, u"jump bottom"_q);
+			return true;
+		} else if (!_vimKeymapSearchInputMode
+			&& !selectorOpen
+			&& !_vimKeymapComposeOperator
+			&& !_vimKeymapComposeVisualMode
+			&& !_vimKeymapComposePending
 			&& vimKeymapHandleScrollKey(k)) {
 			Core::VimKeymap::TraceKey(k, u"chat scroll"_q);
 			return true;
@@ -9585,8 +9603,11 @@ void HistoryWidget::keyPressEvent(QKeyEvent *e) {
 	} else if (Core::VimKeymap::HandleHelp(e)) {
 	} else if (Core::VimKeymap::HandleSearch(e)) {
 	} else if (Core::VimKeymap::IsJumpToBottomKey(e)) {
-		_cornerButtons.downClick();
-		e->accept();
+		if (vimKeymapJumpToBottom()) {
+			e->accept();
+		} else {
+			e->ignore();
+		}
 	} else if (const auto vimAction = Core::VimKeymap::ActionKey(e)) {
 		if (*vimAction == Core::VimKeymap::Action::LinkHints
 			&& _kbShown
@@ -9738,6 +9759,16 @@ bool HistoryWidget::vimKeymapHandleEscapeFieldState(not_null<QKeyEvent*> e) {
 	Core::VimKeymap::SetNormalMode(true);
 	setInnerFocus();
 	Core::VimKeymap::TraceKey(e, u"escape composer state"_q);
+	return true;
+}
+
+bool HistoryWidget::vimKeymapJumpToBottom() {
+	if (!_scroll) {
+		return false;
+	}
+	vimKeymapStopScroll();
+	_scrollToAnimation.stop();
+	synteticScrollToY(_scroll->scrollTopMax());
 	return true;
 }
 

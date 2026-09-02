@@ -3780,7 +3780,10 @@ void ListWidget::keyPressEvent(QKeyEvent *e) {
 	} else if (Core::VimKeymap::HandleSearch(e)) {
 		return;
 	} else if (Core::VimKeymap::IsJumpToBottomKey(e)) {
-		_delegate->listScrollTo(height(), false);
+		const auto visible = _visibleBottom - _visibleTop;
+		const auto bottom = std::max(0, height() - visible);
+		_scrollToAnimation.stop();
+		_delegate->listScrollTo(bottom, false);
 		e->accept();
 		return;
 	} else if (const auto vimAction = Core::VimKeymap::ActionKey(e)) {
