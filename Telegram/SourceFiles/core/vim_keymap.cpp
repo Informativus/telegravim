@@ -70,13 +70,20 @@ constexpr auto kComposeCursorStyleUnderline = "underline";
 constexpr auto kHoldScrollTickMs = 16;
 constexpr auto kHoldScrollStartDelayMs = 90;
 constexpr auto kSingleScrollDurationMs = 190;
-constexpr auto kTelegraVimBuild = "2026.08.31-61";
+constexpr auto kTelegraVimBuild = "2026.09.02-75";
 constexpr auto kKeyLogLimit = 200;
 
 base::options::toggle VimKeymapOption({
 	.id = kOptionVimKeymap,
 	.name = "Vim keymap",
 	.description = "Enable Vim-style navigation outside text fields.",
+	.defaultValue = true,
+});
+
+base::options::toggle VimKeymapEscapeClosesComposerOption({
+	.id = kOptionVimKeymapEscapeClosesComposer,
+	.name = "Vim Esc closes composer state",
+	.description = "Let Esc close reply, edit, forward and similar composer state before changing Vim mode.",
 	.defaultValue = true,
 });
 
@@ -194,6 +201,13 @@ base::options::option<QString> VimKeymapKeyCopyMessageOption({
 	.name = "Vim key: copy message hints",
 	.description = kBindingDescription,
 	.defaultValue = u"y, \u043D"_q,
+});
+
+base::options::option<QString> VimKeymapKeySelectMessageTextOption({
+	.id = kOptionVimKeymapKeySelectMessageText,
+	.name = "Vim key: select message text hints",
+	.description = kBindingDescription,
+	.defaultValue = u"Ctrl+Shift+V, Ctrl+Shift+\u043C"_q,
 });
 
 base::options::option<QString> VimKeymapKeyReplyToMessageOption({
@@ -833,6 +847,12 @@ struct KeyBinding {
 	MigrateLegacyDefaults();
 	return !e->isAutoRepeat()
 		&& MatchesBindings(VimKeymapKeyToggleModeOption, e);
+}
+
+[[nodiscard]] bool IsPlainEscapeKey(not_null<QKeyEvent*> e) {
+	return !e->isAutoRepeat()
+		&& e->key() == Qt::Key_Escape
+		&& CleanModifiers(e) == Qt::NoModifier;
 }
 
 [[nodiscard]] bool IsSearchKey(not_null<QKeyEvent*> e) {
@@ -1541,6 +1561,8 @@ void ShowHelpBox() {
 	const auto scrollUp = BindingLabel(VimKeymapKeyScrollUpOption);
 	const auto jumpBottom = BindingLabel(VimKeymapKeyJumpBottomOption);
 	const auto copy = BindingLabel(VimKeymapKeyCopyMessageOption);
+	const auto selectMessageText = BindingLabel(
+		VimKeymapKeySelectMessageTextOption);
 	const auto reply = BindingLabel(VimKeymapKeyReplyToMessageOption);
 	const auto edit = BindingLabel(VimKeymapKeyEditMessageOption);
 	const auto deleteMessage = BindingLabel(VimKeymapKeyDeleteMessageOption);
@@ -1572,30 +1594,34 @@ void ShowHelpBox() {
 			result += toggle
 				+ u" - режим ввода / навигации, если не открыт слой Telegram\n"_q;
 			result += u"Если открыто фото, меню или окно - Esc сначала закрывает его.\n\n"_q;
-				result += cancelReply
-					+ u" - снять активный reply у сообщения\n\n"_q;
-				if (cancelEditEnabled) {
-					result += cancelEdit
-						+ u" - отменить редактирование сообщения\n\n"_q;
-				}
+			result += cancelReply
+				+ u" - снять активный reply у сообщения\n\n"_q;
+			if (cancelEditEnabled) {
+				result += cancelEdit
+					+ u" - отменить редактирование сообщения\n\n"_q;
+			}
 			result += u"Индикатор режима:\n"_q;
 			result += u"\U0001F7E2 ввод\n"_q;
-			result += u"\U0001F7E1 навигация\n\n"_q;
+			result += u"\U0001F7E1 навигация\n"_q;
+			result += u"\U0001F7E3 visual selection\n\n"_q;
 			result += u"Режим навигации:\n"_q;
 			result += scrollDown + u" - скролл вниз\n"_q;
 			result += scrollUp + u" - скролл вверх\n"_q;
 			result += jumpBottom + u" - перейти вниз\n"_q;
 			result += copy + u" - подсказки для копирования сообщений\n"_q;
-				result += reply + u" - подсказки для ответа на сообщение\n"_q;
-				result += edit + u" - подсказки для редактирования своих сообщений\n"_q;
-				result += deleteMessage
-					+ u" - подсказки для удаления сообщений\n"_q;
-				result += focus
-					+ u" - подсказки для медиа, ссылок, голосований, ответов и пересланных авторов\n"_q;
+			result += selectMessageText
+				+ u" - подсказки для visual-выделения текста сообщения\n"_q;
+			result += reply + u" - подсказки для ответа на сообщение\n"_q;
+			result += edit
+				+ u" - подсказки для редактирования своих сообщений\n"_q;
+			result += deleteMessage
+				+ u" - подсказки для удаления сообщений\n"_q;
+			result += focus
+				+ u" - подсказки для медиа, ссылок, голосований, ответов и пересланных авторов\n"_q;
 			result += openChats + u" - подсказки для открытия чатов\n"_q;
 			result += preview
 				+ u" - буквы для предпросмотра чата без прочтения\n"_q;
-			result += u"Cmd+V остается обычной вставкой текста, preview только на реальный Ctrl\n"_q;
+			result += u"Ctrl+V - preview чата в view mode, без открытия и прочтения\n"_q;
 			result += search + u" - поиск\n"_q;
 			result += undo + u" - откатить последнее изменение текста\n"_q;
 			result += redo + u" - вернуть откатанное изменение текста\n"_q;
@@ -1620,9 +1646,9 @@ void ShowHelpBox() {
 			if (emojiPanelEnabled) {
 				result += emojiPanel + u" - открыть и сфокусировать панель\n"_q;
 			}
-				result += focusEmoji + u" - открыть и сфокусировать панель\n"_q;
-				result += focusChat + u" - фокус обратно в чат\n\n"_q;
-				result += u"h/j/k/l или р/о/л/д - выбор emoji/sticker/gif\n"_q;
+			result += focusEmoji + u" - открыть и сфокусировать панель\n"_q;
+			result += focusChat + u" - фокус обратно в чат\n\n"_q;
+			result += u"h/j/k/l или р/о/л/д - выбор emoji/sticker/gif\n"_q;
 			result += u"Enter или Space - отправить выбранное\n"_q;
 			result += u"Tab / Shift+Tab - emoji, stickers, GIFs\n"_q;
 			result += u"Ctrl+J/K - скролл внутри панели\n"_q;
@@ -1634,26 +1660,29 @@ void ShowHelpBox() {
 				+ u" - input / navigation mode when no Telegram layer is open\n"_q;
 			result += u"If a photo, menu or dialog is open, Esc closes it first.\n\n"_q;
 			result += cancelReply + u" - clear the active message reply\n\n"_q;
-				if (cancelEditEnabled) {
-					result += cancelEdit + u" - cancel message editing\n\n"_q;
-				}
+			if (cancelEditEnabled) {
+				result += cancelEdit + u" - cancel message editing\n\n"_q;
+			}
 			result += u"Mode indicator:\n"_q;
 			result += u"\U0001F7E2 input\n"_q;
-			result += u"\U0001F7E1 navigation\n\n"_q;
+			result += u"\U0001F7E1 navigation\n"_q;
+			result += u"\U0001F7E3 visual selection\n\n"_q;
 			result += u"Navigation mode:\n"_q;
 			result += scrollDown + u" - scroll down\n"_q;
 			result += scrollUp + u" - scroll up\n"_q;
 			result += jumpBottom + u" - jump to bottom\n"_q;
 			result += copy + u" - show copy message hints\n"_q;
-				result += reply + u" - show reply message hints\n"_q;
-				result += edit + u" - show edit message hints\n"_q;
-				result += deleteMessage + u" - show delete message hints\n"_q;
-				result += focus
+			result += selectMessageText
+				+ u" - show message text visual selection hints\n"_q;
+			result += reply + u" - show reply message hints\n"_q;
+			result += edit + u" - show edit message hints\n"_q;
+			result += deleteMessage + u" - show delete message hints\n"_q;
+			result += focus
 				+ u" - show media, link, poll, reply and forwarded-source hints\n"_q;
 			result += openChats + u" - show chat open hints\n"_q;
 			result += preview
 				+ u" - show chat preview hints without marking read\n"_q;
-			result += u"Cmd+V stays normal paste; preview uses real Control only\n"_q;
+			result += u"Ctrl+V - chat preview in view mode, without opening or marking read\n"_q;
 			result += search + u" - focus search\n"_q;
 			result += undo + u" - undo the last compose text change\n"_q;
 			result += redo + u" - redo the last compose text change\n"_q;
@@ -1678,9 +1707,9 @@ void ShowHelpBox() {
 			if (emojiPanelEnabled) {
 				result += emojiPanel + u" - open and focus the panel\n"_q;
 			}
-				result += focusEmoji + u" - open and focus the panel\n"_q;
-				result += focusChat + u" - focus back to chat\n\n"_q;
-				result += u"h/j/k/l or р/о/л/д - select emoji/sticker/gif\n"_q;
+			result += focusEmoji + u" - open and focus the panel\n"_q;
+			result += focusChat + u" - focus back to chat\n\n"_q;
+			result += u"h/j/k/l or р/о/л/д - select emoji/sticker/gif\n"_q;
 			result += u"Enter or Space - send selected item\n"_q;
 			result += u"Tab / Shift+Tab - emoji, stickers, GIFs\n"_q;
 			result += u"Ctrl+J/K - scroll inside the panel\n"_q;
@@ -1716,6 +1745,8 @@ void ShowHelpBox() {
 } // namespace
 
 const char kOptionVimKeymap[] = "vim-keymap";
+const char kOptionVimKeymapEscapeClosesComposer[] =
+	"vim-keymap-escape-closes-composer";
 const char kOptionVimKeymapScrollStep[] = "vim-keymap-scroll-step";
 const char kOptionVimKeymapHoldScrollSpeed[] = "vim-keymap-hold-scroll-speed";
 const char kOptionVimKeymapHintSize[] = "vim-keymap-hint-size";
@@ -1736,6 +1767,8 @@ const char kOptionVimKeymapKeyScrollDown[] = "vim-keymap-key-scroll-down";
 const char kOptionVimKeymapKeyScrollUp[] = "vim-keymap-key-scroll-up";
 const char kOptionVimKeymapKeyJumpBottom[] = "vim-keymap-key-jump-bottom";
 const char kOptionVimKeymapKeyCopyMessage[] = "vim-keymap-key-copy-message";
+const char kOptionVimKeymapKeySelectMessageText[] =
+	"vim-keymap-key-select-message-text";
 const char kOptionVimKeymapKeyReplyToMessage[] =
 	"vim-keymap-key-reply-to-message";
 const char kOptionVimKeymapKeyEditMessage[] =
@@ -1819,6 +1852,11 @@ bool Enabled() {
 bool NormalMode() {
 	MigrateLegacyDefaults();
 	return Enabled() && (NormalModeEnabled || ForcedNormalMode());
+}
+
+bool EscapeClosesComposer() {
+	MigrateLegacyDefaults();
+	return Enabled() && VimKeymapEscapeClosesComposerOption.value();
 }
 
 void MigrateLegacyDefaults() {
@@ -1984,6 +2022,16 @@ bool HandleApplicationKeyPress(
 		return false;
 	}
 	const auto forcedNormalMode = ForcedNormalMode();
+	if (const auto action = ActionKey(e)) {
+		if (HandleRegisteredAction(*action)) {
+			RecordKeyEvent(e, u"action handler"_q, true);
+			e->accept();
+			return true;
+		}
+		RecordKeyEvent(e, u"action without target"_q, true);
+		e->accept();
+		return true;
+	}
 	if (forcedNormalMode && IsTextInputObject(object.get())) {
 		RecordKeyEvent(e, u"text input in forced view mode"_q, false);
 		return false;
@@ -2017,15 +2065,6 @@ bool HandleApplicationKeyPress(
 		RecordKeyEvent(e, u"input mode ignored"_q, false);
 		return false;
 	} else if (HandleHelp(e) || HandleSearch(e)) {
-		return true;
-	} else if (const auto action = ActionKey(e)) {
-		if (HandleRegisteredAction(*action)) {
-			RecordKeyEvent(e, u"action handler"_q, true);
-			e->accept();
-			return true;
-		}
-		RecordKeyEvent(e, u"action without target"_q, true);
-		e->accept();
 		return true;
 	} else if (ScrollGenericArea(object, e)) {
 		RecordKeyEvent(e, u"generic scroll"_q, true);
@@ -2169,12 +2208,7 @@ int ChatNavigationSteps(not_null<QKeyEvent*> e) {
 
 bool ChatPreviewKey(not_null<QKeyEvent*> e) {
 	return NormalMode()
-		&& MatchesBindings(
-			VimKeymapKeyChatPreviewOption,
-			e,
-			false,
-			true,
-			false);
+		&& MatchesBindings(VimKeymapKeyChatPreviewOption, e);
 }
 
 bool ChatHintsKey(not_null<QKeyEvent*> e) {
@@ -2188,13 +2222,16 @@ bool FocusHintsKey(not_null<QKeyEvent*> e) {
 }
 
 bool CancelReplyKey(not_null<QKeyEvent*> e) {
-	return !e->isAutoRepeat()
+	return Enabled()
+		&& !e->isAutoRepeat()
+		&& (!IsPlainEscapeKey(e) || EscapeClosesComposer())
 		&& MatchesBindings(VimKeymapKeyCancelReplyOption, e);
 }
 
 bool CancelEditKey(not_null<QKeyEvent*> e) {
 	return Enabled()
 		&& !e->isAutoRepeat()
+		&& (!IsPlainEscapeKey(e) || EscapeClosesComposer())
 		&& MatchesBindings(VimKeymapKeyCancelEditOption, e);
 }
 
@@ -2259,6 +2296,10 @@ std::optional<Action> ActionKey(not_null<QKeyEvent*> e) {
 		return std::nullopt;
 	} else if (MatchesBindings(VimKeymapKeyCopyMessageOption, e, true)) {
 		return Action::CopyMessage;
+	} else if (ChatPreviewKey(e)) {
+		return Action::ChatPreview;
+	} else if (MatchesBindings(VimKeymapKeySelectMessageTextOption, e)) {
+		return Action::SelectMessageText;
 	} else if (MatchesBindings(VimKeymapKeyReplyToMessageOption, e, true)) {
 		return Action::ReplyToMessage;
 	} else if (MatchesBindings(VimKeymapKeyEditMessageOption, e, true)) {
@@ -2267,6 +2308,32 @@ std::optional<Action> ActionKey(not_null<QKeyEvent*> e) {
 		return Action::DeleteMessage;
 	} else if (MatchesBindings(VimKeymapKeyFocusHintsOption, e, true)) {
 		return Action::LinkHints;
+	}
+	return std::nullopt;
+}
+
+std::optional<TextMotion> TextMotionKey(not_null<QKeyEvent*> e) {
+	if (!NormalMode() || e->isAutoRepeat()) {
+		return std::nullopt;
+	}
+	const auto modifiers = CleanModifiers(e);
+	if (modifiers != Qt::NoModifier && modifiers != Qt::ShiftModifier) {
+		return std::nullopt;
+	} else if (KeyIs(e, Qt::Key_H, u"h"_q, u"\u0440"_q)) {
+		return TextMotion::CharacterLeft;
+	} else if (KeyIs(e, Qt::Key_L, u"l"_q, u"\u0434"_q)) {
+		return TextMotion::CharacterRight;
+	} else if (KeyIs(e, Qt::Key_B, u"b"_q, u"\u0438"_q)) {
+		return TextMotion::WordLeft;
+	} else if (KeyIs(e, Qt::Key_W, u"w"_q, u"\u0446"_q)
+		|| KeyIs(e, Qt::Key_E, u"e"_q, u"\u0443"_q)) {
+		return TextMotion::WordRight;
+	}
+	const auto text = PlainText(e);
+	if (text == u"0"_q || text == u"^"_q) {
+		return TextMotion::LineStart;
+	} else if (text == u"$"_q) {
+		return TextMotion::LineEnd;
 	}
 	return std::nullopt;
 }

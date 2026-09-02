@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "history/view/history_view_element.h"
 #include "history/history_item.h"
+#include "layout/layout_selection.h"
 #include "ui/text/text.h"
 
 namespace HistoryView {
@@ -18,6 +19,43 @@ bool KeyboardTextSelection::IsExtendKey(int key) {
 		|| (key == Qt::Key_Right)
 		|| (key == Qt::Key_Home)
 		|| (key == Qt::Key_End);
+}
+
+std::optional<MessageSelection> KeyboardTextSelection::begin(
+		not_null<Element*> view) {
+	const auto whole = view->adjustSelection(
+		TextSelection(0, 0xFFFF),
+		TextSelectType::Letters);
+	const auto maxOffset = int(whole.to);
+	if (maxOffset <= 0 || maxOffset >= 0xFFFF) {
+		return std::nullopt;
+	}
+	for (auto from = 0; from != maxOffset; ++from) {
+		const auto adjusted = view->adjustSelection(
+			TextSelection(uint16(from), uint16(from + 1)),
+			TextSelectType::Letters);
+		if (adjusted.empty()
+			|| adjusted == FullSelection
+			|| view->selectedText(adjusted).empty()) {
+			continue;
+		}
+		const auto anchor = MessageSelectionFlatEndpoint{
+			.symbol = adjusted.from,
+			.afterSymbol = false,
+		};
+		const auto focus = MessageSelectionFlatEndpoint{
+			.symbol = uint16(adjusted.to - 1),
+			.afterSymbol = true,
+		};
+		auto result = MessageSelection::Flat(adjusted, anchor, focus);
+		_item = view->data().get();
+		_produced = result.flatSelection();
+		_has = true;
+		_anchor = anchor;
+		_focus = focus;
+		return result;
+	}
+	return std::nullopt;
 }
 
 std::optional<MessageSelection> KeyboardTextSelection::extend(

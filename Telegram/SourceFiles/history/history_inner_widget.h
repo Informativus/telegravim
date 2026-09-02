@@ -187,6 +187,7 @@ public:
 	[[nodiscard]] bool vimKeymapReplyToTarget();
 	[[nodiscard]] bool vimKeymapBeginHints(Core::VimKeymap::Action action);
 	[[nodiscard]] bool vimKeymapHandleHintKey(not_null<QKeyEvent*> e);
+	[[nodiscard]] bool vimKeymapTextSelectionActive() const;
 
 	[[nodiscard]] auto getSelectionState() const
 		-> HistoryView::TopBarWidget::SelectedState;
@@ -475,6 +476,9 @@ private:
 	void setTextSelection(
 		not_null<Element*> view,
 		MessageSelection selection);
+	[[nodiscard]] bool vimKeymapBeginTextSelection(not_null<Element*> view);
+	[[nodiscard]] bool vimKeymapHandleTextSelectionKey(
+		not_null<QKeyEvent*> e);
 	[[nodiscard]] TextSelection getSelectedTextRange(
 		not_null<HistoryItem*> item) const;
 	[[nodiscard]] MessageSelection getSelectedTextSelection(
@@ -580,12 +584,13 @@ private:
 
 	enum class VimKeymapHintMode {
 		None,
-				CopyMessage,
-				ReplyToMessage,
-				EditMessage,
-				DeleteMessage,
-				PickMessageLinks,
-				ActivateLink,
+		CopyMessage,
+		ReplyToMessage,
+		EditMessage,
+		DeleteMessage,
+		SelectMessageText,
+		PickMessageLinks,
+		ActivateLink,
 	};
 	struct VimKeymapHint {
 		QString label;
@@ -605,10 +610,10 @@ private:
 	void vimKeymapAssignHintLabels();
 	[[nodiscard]] bool vimKeymapTriggerHint(const VimKeymapHint &hint);
 	void vimKeymapPaintHints(Painter &p) const;
-			[[nodiscard]] bool vimKeymapCopyItem(not_null<HistoryItem*> item);
-			[[nodiscard]] bool vimKeymapReplyToItem(not_null<HistoryItem*> item);
-			[[nodiscard]] bool vimKeymapEditItem(not_null<HistoryItem*> item);
-			[[nodiscard]] bool vimKeymapDeleteItem(not_null<HistoryItem*> item);
+	[[nodiscard]] bool vimKeymapCopyItem(not_null<HistoryItem*> item);
+	[[nodiscard]] bool vimKeymapReplyToItem(not_null<HistoryItem*> item);
+	[[nodiscard]] bool vimKeymapEditItem(not_null<HistoryItem*> item);
+	[[nodiscard]] bool vimKeymapDeleteItem(not_null<HistoryItem*> item);
 
 	int _accessibilityFocusedIndex = -1;
 	HistoryItem *_accessibilityFocusedItem = nullptr;

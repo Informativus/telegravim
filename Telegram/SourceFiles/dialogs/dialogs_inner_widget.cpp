@@ -4653,6 +4653,10 @@ rpl::producer<Ui::ScrollToRequest> InnerWidget::mustScrollTo() const {
 	return _mustScrollTo.events();
 }
 
+rpl::producer<Ui::ScrollToRequest> InnerWidget::vimKeymapMustScrollTo() const {
+	return _vimKeymapMustScrollTo.events();
+}
+
 rpl::producer<Ui::ScrollToRequest> InnerWidget::dialogMoved() const {
 	return _dialogMoved.events();
 }
@@ -5569,6 +5573,10 @@ void InnerWidget::scrollToItem(int top, int height) {
 	_mustScrollTo.fire({ top, top + height });
 }
 
+void InnerWidget::vimKeymapScrollToItem(int top, int height) {
+	_vimKeymapMustScrollTo.fire({ top, top + height });
+}
+
 void InnerWidget::scrollToDefaultSelected() {
 	Expects(_state == WidgetState::Default);
 
@@ -5578,6 +5586,37 @@ void InnerWidget::scrollToDefaultSelected() {
 	} else if (_selected) {
 		const auto from = dialogsOffset() + _selected->top();
 		scrollToItem(from, _selected->height());
+	}
+}
+
+void InnerWidget::vimKeymapScrollToEntry(const RowDescriptor &entry) {
+	if (_state == WidgetState::Default) {
+		if (auto row = _shownList->getRow(entry.key)) {
+			vimKeymapScrollToItem(dialogsOffset() + row->top(), row->height());
+		}
+	} else if (_state == WidgetState::Filtered) {
+		for (auto i = 0, c = int(_previewResults.size()); i != c; ++i) {
+			if (isSearchResultActive(_previewResults[i].get(), entry)) {
+				const auto from = previewOffset() + i * _st->height;
+				vimKeymapScrollToItem(from, _st->height);
+				return;
+			}
+		}
+		for (auto i = 0, c = int(_searchResults.size()); i != c; ++i) {
+			if (isSearchResultActive(_searchResults[i].get(), entry)) {
+				const auto from = searchedOffset() + i * _st->height;
+				vimKeymapScrollToItem(from, _st->height);
+				return;
+			}
+		}
+		for (auto i = 0, c = int(_filterResults.size()); i != c; ++i) {
+			const auto &result = _filterResults[i];
+			if (result.key() == entry.key) {
+				const auto from = filteredOffset() + result.top;
+				vimKeymapScrollToItem(from, result.row->height());
+				return;
+			}
+		}
 	}
 }
 
@@ -6393,6 +6432,7 @@ void InnerWidget::vimKeymapContinuePendingChatNavigation() {
 	if (jumpToDialogRow(target)) {
 		setFocus(Qt::ShortcutFocusReason);
 		vimKeymapSelectChat(target);
+		vimKeymapScrollToEntry(target);
 		_vimKeymapChatNavigationRow = target;
 		_vimKeymapChatNavigationNeedsFirst = false;
 	}
@@ -6465,6 +6505,7 @@ bool InnerWidget::vimKeymapJumpToChat(bool next, int steps) {
 	if (jumpToDialogRow(target)) {
 		setFocus(Qt::ShortcutFocusReason);
 		vimKeymapSelectChat(target);
+		vimKeymapScrollToEntry(target);
 		_vimKeymapChatNavigationRow = target;
 		_vimKeymapChatNavigationNeedsFirst = false;
 		return true;

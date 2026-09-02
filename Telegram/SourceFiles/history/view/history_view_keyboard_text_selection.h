@@ -19,6 +19,8 @@ class KeyboardTextSelection final {
 public:
 	[[nodiscard]] static bool IsExtendKey(int key);
 
+	[[nodiscard]] std::optional<MessageSelection> begin(
+		not_null<Element*> view);
 	[[nodiscard]] std::optional<MessageSelection> extend(
 		not_null<Element*> view,
 		const MessageSelection &current,

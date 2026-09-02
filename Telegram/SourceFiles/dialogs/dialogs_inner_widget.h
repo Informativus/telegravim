@@ -223,6 +223,8 @@ public:
 
 	[[nodiscard]] rpl::producer<int> scrollByDeltaRequests() const;
 	[[nodiscard]] rpl::producer<Ui::ScrollToRequest> mustScrollTo() const;
+	[[nodiscard]] rpl::producer<Ui::ScrollToRequest> vimKeymapMustScrollTo()
+		const;
 	[[nodiscard]] rpl::producer<Ui::ScrollToRequest> dialogMoved() const;
 	[[nodiscard]] rpl::producer<SearchRequestDelay> searchRequests() const;
 	[[nodiscard]] rpl::producer<QString> completeHashtagRequests() const;
@@ -375,8 +377,10 @@ private:
 	void selectByMouse(QPoint globalPosition);
 	void preloadRowsData();
 	void scrollToItem(int top, int height);
+	void vimKeymapScrollToItem(int top, int height);
 	void scrollToDefaultSelected();
 	void scrollToFilteredSelected();
+	void vimKeymapScrollToEntry(const RowDescriptor &entry);
 	bool selectChildByIndex(int index);
 	void clearSecondaryMouseState();
 	void setCollapsedPressed(int pressed);
@@ -823,6 +827,7 @@ private:
 	rpl::event_stream<> _updated;
 
 	rpl::event_stream<Ui::ScrollToRequest> _mustScrollTo;
+	rpl::event_stream<Ui::ScrollToRequest> _vimKeymapMustScrollTo;
 	rpl::event_stream<Ui::ScrollToRequest> _dialogMoved;
 	rpl::event_stream<SearchRequestDelay> _searchRequests;
 	rpl::event_stream<QString> _completeHashtagRequests;

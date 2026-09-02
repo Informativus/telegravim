@@ -190,7 +190,11 @@ protected:
 		const auto cursorX = textRect.left()
 			+ metrics.horizontalAdvance(prefix);
 		const auto cursorTop = baseline - metrics.ascent();
+		const auto cursorText = suffix.left(1);
 		const auto requestedWidth = Core::VimKeymap::ComposeCursorWidth();
+		const auto characterWidth = std::max(
+			requestedWidth,
+			metrics.horizontalAdvance(cursorText));
 		const auto requestedHeight = std::clamp(
 			lineHeight * Core::VimKeymap::ComposeCursorHeight() / 100,
 			1,
@@ -199,21 +203,18 @@ protected:
 		auto cursor = QRect();
 
 		if (style == u"underline"_q) {
-			const auto charWidth = std::max(
-				requestedWidth,
-				metrics.horizontalAdvance(u"m"_q));
 			const auto thickness = std::clamp(requestedWidth, 1, lineHeight);
 			cursor = QRect(
 				cursorX,
 				cursorTop + lineHeight - thickness,
-				charWidth,
+				characterWidth,
 				thickness);
 		} else {
 			const auto top = cursorTop + (lineHeight - requestedHeight) / 2;
 			cursor = QRect(
 				cursorX,
 				top,
-				requestedWidth,
+				(style == u"block"_q) ? characterWidth : requestedWidth,
 				requestedHeight);
 		}
 		cursor = cursor.intersected(field.adjusted(6, 4, -6, -4));
@@ -227,15 +228,18 @@ protected:
 		}
 		p.fillRect(cursor, cursorColor);
 		if (style == u"block"_q) {
+			p.save();
+			p.setClipRect(cursor);
 			p.setPen(base);
 			p.drawText(
 				QRect(
 					cursorX,
 					field.top(),
-					metrics.horizontalAdvance(u"c"_q),
+					characterWidth,
 					field.height()),
 				Qt::AlignLeft | Qt::AlignVCenter,
-				u"c"_q);
+				cursorText);
+			p.restore();
 		}
 	}
 
@@ -1083,6 +1087,9 @@ void SetupExperimental(
 		searchable.push_back(addOption(
 			inner,
 			Core::VimKeymap::kOptionVimKeymap));
+		searchable.push_back(addOption(
+			inner,
+			Core::VimKeymap::kOptionVimKeymapEscapeClosesComposer));
 		searchable.push_back(addIntegerOption(
 			inner,
 			Core::VimKeymap::kOptionVimKeymapScrollStep,
@@ -1138,16 +1145,19 @@ void SetupExperimental(
 			Core::VimKeymap::kOptionVimKeymapKeyCopyMessage));
 		searchable.push_back(addStringOption(
 			inner,
+			Core::VimKeymap::kOptionVimKeymapKeySelectMessageText));
+		searchable.push_back(addStringOption(
+			inner,
 			Core::VimKeymap::kOptionVimKeymapKeyReplyToMessage));
-			searchable.push_back(addStringOption(
-				inner,
-				Core::VimKeymap::kOptionVimKeymapKeyEditMessage));
-			searchable.push_back(addStringOption(
-				inner,
-				Core::VimKeymap::kOptionVimKeymapKeyDeleteMessage));
-			searchable.push_back(addStringOption(
-				inner,
-				Core::VimKeymap::kOptionVimKeymapKeyFocusHints));
+		searchable.push_back(addStringOption(
+			inner,
+			Core::VimKeymap::kOptionVimKeymapKeyEditMessage));
+		searchable.push_back(addStringOption(
+			inner,
+			Core::VimKeymap::kOptionVimKeymapKeyDeleteMessage));
+		searchable.push_back(addStringOption(
+			inner,
+			Core::VimKeymap::kOptionVimKeymapKeyFocusHints));
 		searchable.push_back(addStringOption(
 			inner,
 			Core::VimKeymap::kOptionVimKeymapKeyOpenChatHints));
@@ -1210,6 +1220,15 @@ void SetupVimKeymapOptions(
 		window,
 		container,
 		base::options::lookup<bool>(Core::VimKeymap::kOptionVimKeymap),
+		rpl::producer<>(),
+		rpl::producer<>(),
+		rpl::producer<QString>(),
+		nullptr);
+	AddOption(
+		window,
+		container,
+		base::options::lookup<bool>(
+			Core::VimKeymap::kOptionVimKeymapEscapeClosesComposer),
 		rpl::producer<>(),
 		rpl::producer<>(),
 		rpl::producer<QString>(),
@@ -1311,6 +1330,7 @@ void SetupVimKeymapOptions(
 	addStringOption(Core::VimKeymap::kOptionVimKeymapKeyScrollUp);
 	addStringOption(Core::VimKeymap::kOptionVimKeymapKeyJumpBottom);
 	addStringOption(Core::VimKeymap::kOptionVimKeymapKeyCopyMessage);
+	addStringOption(Core::VimKeymap::kOptionVimKeymapKeySelectMessageText);
 	addStringOption(Core::VimKeymap::kOptionVimKeymapKeyReplyToMessage);
 	addStringOption(Core::VimKeymap::kOptionVimKeymapKeyEditMessage);
 	addStringOption(Core::VimKeymap::kOptionVimKeymapKeyDeleteMessage);

@@ -21,6 +21,7 @@ class QWidget;
 namespace Core::VimKeymap {
 
 extern const char kOptionVimKeymap[];
+extern const char kOptionVimKeymapEscapeClosesComposer[];
 extern const char kOptionVimKeymapScrollStep[];
 extern const char kOptionVimKeymapHoldScrollSpeed[];
 extern const char kOptionVimKeymapHintSize[];
@@ -37,6 +38,7 @@ extern const char kOptionVimKeymapKeyScrollDown[];
 extern const char kOptionVimKeymapKeyScrollUp[];
 extern const char kOptionVimKeymapKeyJumpBottom[];
 extern const char kOptionVimKeymapKeyCopyMessage[];
+extern const char kOptionVimKeymapKeySelectMessageText[];
 extern const char kOptionVimKeymapKeyReplyToMessage[];
 extern const char kOptionVimKeymapKeyEditMessage[];
 extern const char kOptionVimKeymapKeyDeleteMessage[];
@@ -63,10 +65,21 @@ struct IntOptionBounds {
 
 enum class Action {
 	CopyMessage,
+	ChatPreview,
+	SelectMessageText,
 	ReplyToMessage,
 	EditMessage,
 	DeleteMessage,
 	LinkHints,
+};
+
+enum class TextMotion {
+	CharacterLeft,
+	CharacterRight,
+	WordLeft,
+	WordRight,
+	LineStart,
+	LineEnd,
 };
 
 enum class ChatNavigation {
@@ -76,6 +89,7 @@ enum class ChatNavigation {
 
 [[nodiscard]] bool Enabled();
 [[nodiscard]] bool NormalMode();
+[[nodiscard]] bool EscapeClosesComposer();
 void MigrateLegacyDefaults();
 void SetNormalMode(bool enabled);
 [[nodiscard]] IntOptionBounds ScrollStepBounds();
@@ -135,6 +149,7 @@ void TraceKey(not_null<QKeyEvent*> e, const QString &status);
 [[nodiscard]] bool RedoKey(not_null<QKeyEvent*> e);
 [[nodiscard]] std::optional<Qt::Key> NavigationKey(not_null<QKeyEvent*> e);
 [[nodiscard]] std::optional<Action> ActionKey(not_null<QKeyEvent*> e);
+[[nodiscard]] std::optional<TextMotion> TextMotionKey(not_null<QKeyEvent*> e);
 [[nodiscard]] bool IsJumpToBottomKey(not_null<QKeyEvent*> e);
 [[nodiscard]] QString HintLabel(int index, int total);
 [[nodiscard]] QString HintInput(not_null<QKeyEvent*> e);

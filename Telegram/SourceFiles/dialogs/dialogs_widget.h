@@ -54,6 +54,7 @@ class RequestsBar;
 class MoreChatsBar;
 class JumpDownButton;
 class ElasticScroll;
+struct ScrollToRequest;
 template <typename Widget>
 class FadeWrapScaled;
 template <typename Widget>
@@ -225,6 +226,7 @@ private:
 #ifdef _DEBUG
 	void setupTopBarSuggestionTestHotkeys();
 #endif // _DEBUG
+	void vimKeymapScrollTo(Ui::ScrollToRequest request);
 	void storiesExplicitCollapse();
 	void collectStoriesUserpicsViews(Data::StorySourcesList list);
 	void storiesToggleExplicitExpand(bool expand);

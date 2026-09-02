@@ -559,6 +559,10 @@ Widget::Widget(
 			_scroll->scrollToY(data.ymin, data.ymax);
 		}
 	}, lifetime());
+	_inner->vimKeymapMustScrollTo(
+	) | rpl::on_next([=](const Ui::ScrollToRequest &data) {
+		vimKeymapScrollTo(data);
+	}, lifetime());
 	_inner->dialogMoved(
 	) | rpl::on_next([=](const Ui::ScrollToRequest &data) {
 		const auto movedFrom = data.ymin;
@@ -741,6 +745,14 @@ Widget::Widget(
 
 	setupMainMenuToggle();
 	setupShortcuts();
+	Core::VimKeymap::RegisterActionHandler(this, [=](
+			Core::VimKeymap::Action action) {
+		if (!isActiveWindow()
+			|| action != Core::VimKeymap::Action::ChatPreview) {
+			return false;
+		}
+		return _inner->vimKeymapBeginChatHints(true);
+	});
 	Core::VimKeymap::RegisterKeyHandler(this, [=](
 			not_null<QKeyEvent*> e) {
 		if (!isActiveWindow()) {
@@ -2834,6 +2846,29 @@ void Widget::scrollToDefault(bool verytop) {
 		scrollTop,
 		scrollTo,
 		st::slideDuration,
+		anim::sineInOut);
+}
+
+void Widget::vimKeymapScrollTo(Ui::ScrollToRequest request) {
+	if (!_scroll) {
+		return;
+	}
+	const auto from = _scroll->scrollTop();
+	const auto to = _scroll->computeScrollToY(request.ymin, request.ymax);
+	if (from == to) {
+		return;
+	}
+	_scrollToAnimation.stop();
+	_scrollAnimationTo = to;
+	_scrollToAnimation.start(
+		[=] {
+			if (_scroll) {
+				_scroll->scrollToY(qRound(_scrollToAnimation.value(to)));
+			}
+		},
+		from,
+		to,
+		Core::VimKeymap::SingleScrollDurationMs(),
 		anim::sineInOut);
 }
 
@@ -5238,6 +5273,7 @@ bool Widget::cancelSearch(CancelSearchOptions options) {
 }
 
 Widget::~Widget() {
+	Core::VimKeymap::UnregisterActionHandler(this);
 	Core::VimKeymap::UnregisterKeyHandler(this);
 	Core::VimKeymap::UnregisterTextInputPassthroughHandler(this);
 	cancelSearchRequest();

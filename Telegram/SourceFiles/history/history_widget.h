@@ -731,6 +731,8 @@ private:
 	void vimKeymapStartScroll(int direction);
 	void vimKeymapStopScroll();
 	void vimKeymapScrollTick();
+	bool vimKeymapHandleEscapeFieldState(not_null<QKeyEvent*> e);
+	bool vimKeymapHandleScrollKey(not_null<QKeyEvent*> e);
 	bool vimKeymapScrollBy(int direction, int delta, bool animated = false);
 	void vimKeymapRefreshComposeCursor();
 	bool vimKeymapHandleComposeTextKey(not_null<QKeyEvent*> e);
@@ -963,6 +965,7 @@ private:
 	bool _vimKeymapSearchInputMode = false;
 	int _vimKeymapComposeOperator = 0;
 	int _vimKeymapComposeVisualMode = 0;
+	int _vimKeymapComposeVisualAnchor = -1;
 	int _vimKeymapComposePending = 0;
 	std::unique_ptr<HistoryView::SubsectionTabs> _subsectionTabs;
 	rpl::lifetime _subsectionTabsLifetime;
