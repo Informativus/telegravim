@@ -72,7 +72,7 @@ constexpr auto kComposeCursorStyleUnderline = "underline";
 constexpr auto kHoldScrollTickMs = 16;
 constexpr auto kHoldScrollStartDelayMs = 90;
 constexpr auto kSingleScrollDurationMs = 190;
-constexpr auto kTelegraVimBuild = "2026.09.04-83";
+constexpr auto kTelegraVimBuild = "2026.09.04-84";
 constexpr auto kKeyLogLimit = 200;
 
 base::options::toggle VimKeymapOption({
@@ -1744,7 +1744,7 @@ bool HandleApplicationKeyPress(
 	if (IsModifierOnlyKey(e)) {
 		return false;
 	}
-	if (Bindings::IsPlainEscape(e) && HandlePreLayerKey(e)) {
+	if (HandlePreLayerKey(e)) {
 		RecordKeyEvent(e, u"pre-layer handler"_q, true);
 		e->accept();
 		return true;
@@ -2111,7 +2111,7 @@ std::optional<TextMotion> TextMotionKey(not_null<QKeyEvent*> e) {
 	const auto text = PlainText(e);
 	if (text == u"0"_q || text == u"^"_q) {
 		return TextMotion::LineStart;
-	} else if (text == u"$"_q) {
+	} else if (Bindings::IsLineEnd(e)) {
 		return TextMotion::LineEnd;
 	}
 	return std::nullopt;
@@ -2141,7 +2141,7 @@ QString HintLabel(int index, int total) {
 }
 
 QString HintInput(not_null<QKeyEvent*> e) {
-	const auto text = PlainText(e);
+	const auto text = Bindings::HintCharacter(e);
 	if (text.isEmpty()) {
 		return QString();
 	}

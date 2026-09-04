@@ -293,6 +293,43 @@ QString PlainText(not_null<QKeyEvent*> e) {
 	return e->text().toCaseFolded();
 }
 
+QString HintCharacter(not_null<QKeyEvent*> e) {
+	const auto text = PlainText(e);
+	if (!text.isEmpty()) {
+		return text.left(1);
+	}
+	if (e->key() >= Qt::Key_A && e->key() <= Qt::Key_Z) {
+		return QString(QChar('a' + e->key() - Qt::Key_A));
+	}
+	switch (e->key()) {
+	case Qt::Key_Comma: return u","_q;
+	case Qt::Key_Period: return u"."_q;
+	default: break;
+	}
+#ifdef Q_OS_MAC
+	for (auto key = Qt::Key_A; key <= Qt::Key_Z; key = Qt::Key(key + 1)) {
+		if (MacVirtualKeyIs(e, key)) {
+			return QString(QChar('a' + key - Qt::Key_A));
+		}
+	}
+	if (e->nativeVirtualKey() == 43) {
+		return u","_q;
+	} else if (e->nativeVirtualKey() == 47) {
+		return u"."_q;
+	}
+#endif // Q_OS_MAC
+	return QString();
+}
+
+bool IsLineEnd(not_null<QKeyEvent*> e) {
+	const auto modifiers = CleanModifiers(e);
+	return !e->isAutoRepeat()
+		&& (modifiers == Qt::NoModifier || modifiers == Qt::ShiftModifier)
+		&& (PlainText(e) == u"$"_q
+			|| e->key() == Qt::Key_Dollar
+			|| (modifiers == Qt::ShiftModifier && e->key() == Qt::Key_4));
+}
+
 QString NormalizeToken(QString value) {
 	value = value.trimmed().toCaseFolded();
 	value.remove(QChar(' '));

@@ -234,6 +234,27 @@ void TestVimKeymapActionBindings() {
 }
 
 void TestVimKeymapTransientUiKeys() {
+	auto textlessHint = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_G,
+		Qt::NoModifier);
+	Check(
+		Core::VimKeymap::Bindings::HintCharacter(&textlessHint) == u"g"_q,
+		"textless g selects an active chat hint");
+	auto dollar = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_Dollar,
+		Qt::ShiftModifier);
+	Check(
+		Core::VimKeymap::Bindings::IsLineEnd(&dollar),
+		"textless dollar moves to the line end");
+	auto shiftedFour = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_4,
+		Qt::ShiftModifier);
+	Check(
+		Core::VimKeymap::Bindings::IsLineEnd(&shiftedFour),
+		"textless shift four moves to the line end");
 	auto yank = QKeyEvent(
 		QEvent::KeyPress,
 		Qt::Key_Y,

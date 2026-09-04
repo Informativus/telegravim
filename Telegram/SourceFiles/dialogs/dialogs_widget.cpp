@@ -755,11 +755,15 @@ Widget::Widget(
 	});
 	Core::VimKeymap::RegisterPreLayerKeyHandler(this, [=](
 			not_null<QKeyEvent*> e) {
-		if (!isVisible() || !_inner->vimKeymapCancelChatHintLabels()) {
+		if (!isActiveWindow() || !_inner->vimKeymapHandleChatHintKey(e)) {
 			return false;
 		}
-		Core::VimKeymap::SetNormalMode(true);
-		Core::VimKeymap::TraceKey(e, u"cancel chat hint labels"_q);
+		if (e->key() == Qt::Key_Escape) {
+			Core::VimKeymap::SetNormalMode(true);
+			Core::VimKeymap::TraceKey(e, u"cancel chat hints"_q);
+		} else {
+			Core::VimKeymap::TraceKey(e, u"chat hint input"_q);
+		}
 		return true;
 	});
 	Core::VimKeymap::RegisterKeyHandler(this, [=](
@@ -802,9 +806,6 @@ Widget::Widget(
 			&& _inner->vimKeymapOpenChatPreview()) {
 			Core::VimKeymap::SetNormalMode(true);
 			Core::VimKeymap::TraceKey(e, u"open chat preview"_q);
-			return true;
-		}
-		if (_inner->vimKeymapHandleChatHintKey(e)) {
 			return true;
 		}
 		if (Core::VimKeymap::ChatHintsKey(e)) {
