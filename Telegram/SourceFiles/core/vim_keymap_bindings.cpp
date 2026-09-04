@@ -278,6 +278,16 @@ bool IsPlainEscape(not_null<QKeyEvent*> e) {
 		&& CleanModifiers(e) == Qt::NoModifier;
 }
 
+bool IsSystemPaste(not_null<QKeyEvent*> e) {
+#ifdef Q_OS_MAC
+	return !e->isAutoRepeat()
+		&& CleanModifiers(e) == Qt::ControlModifier
+		&& KeyIs(e, Qt::Key_V, u"v"_q, u"\u043C"_q);
+#else // Q_OS_MAC
+	return false;
+#endif // Q_OS_MAC
+}
+
 bool IsTextYank(not_null<QKeyEvent*> e) {
 	return !e->isAutoRepeat()
 		&& CleanModifiers(e) == Qt::NoModifier

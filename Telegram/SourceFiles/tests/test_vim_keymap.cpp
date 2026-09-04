@@ -151,6 +151,60 @@ void TestVimKeymapActionBindings() {
 		Qt::Key_V,
 		Qt::ControlModifier | Qt::ShiftModifier);
 
+#ifdef Q_OS_MAC
+	const auto strictPhysicalModifiers = MatchOptions{
+		.allowMacControlCommandEquivalent = false,
+	};
+	ExpectMatches(
+		"chat preview accepts physical ctrl v",
+		u"Ctrl+V, Ctrl+\u043C"_q,
+		Qt::Key_V,
+		Qt::MetaModifier,
+		u"v"_q,
+		strictPhysicalModifiers);
+	ExpectDoesNotMatch(
+		"chat preview rejects command v",
+		u"Ctrl+V, Ctrl+\u043C"_q,
+		Qt::Key_V,
+		Qt::ControlModifier,
+		u"v"_q,
+		strictPhysicalModifiers);
+	auto commandPaste = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_V,
+		Qt::ControlModifier,
+		u"v"_q);
+	Check(
+		Core::VimKeymap::Bindings::IsSystemPaste(&commandPaste),
+		"command v is system paste");
+	auto commandCyrillicPaste = QKeyEvent(
+		QEvent::KeyPress,
+		0x041C,
+		Qt::ControlModifier,
+		u"\u043C"_q);
+	Check(
+		Core::VimKeymap::Bindings::IsSystemPaste(&commandCyrillicPaste),
+		"command cyrillic v position is system paste");
+	auto commandPhysicalPaste = QKeyEvent(
+		QEvent::KeyPress,
+		0,
+		Qt::ControlModifier,
+		0,
+		9,
+		0);
+	Check(
+		Core::VimKeymap::Bindings::IsSystemPaste(&commandPhysicalPaste),
+		"command physical v is system paste with empty text");
+	auto controlPaste = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_V,
+		Qt::MetaModifier,
+		u"v"_q);
+	Check(
+		!Core::VimKeymap::Bindings::IsSystemPaste(&controlPaste),
+		"physical ctrl v is not system paste");
+#endif // Q_OS_MAC
+
 	ExpectMatches(
 		"select message text ctrl shift v",
 		u"Ctrl+Shift+V, Ctrl+Shift+\u043C"_q,

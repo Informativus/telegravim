@@ -66,6 +66,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/update_checker.h"
 #include "core/shortcuts.h"
 #include "core/vim_keymap.h"
+#include "core/vim_keymap_bindings.h"
 #include "window/window_controller.h"
 #include "window/window_session_controller.h"
 #include "window/window_slide_animation.h"
@@ -755,7 +756,16 @@ Widget::Widget(
 	});
 	Core::VimKeymap::RegisterPreLayerKeyHandler(this, [=](
 			not_null<QKeyEvent*> e) {
-		if (!isActiveWindow() || !_inner->vimKeymapHandleChatHintKey(e)) {
+		if (!isActiveWindow()) {
+			return false;
+		}
+		if (Core::VimKeymap::Bindings::IsSystemPaste(e)) {
+			if (_inner->vimKeymapCancelChatHints()) {
+				Core::VimKeymap::TraceKey(e, u"cancel chat hints for paste"_q);
+			}
+			return false;
+		}
+		if (!_inner->vimKeymapHandleChatHintKey(e)) {
 			return false;
 		}
 		if (e->key() == Qt::Key_Escape) {

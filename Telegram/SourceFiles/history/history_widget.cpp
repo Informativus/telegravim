@@ -202,6 +202,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/emoji_suggestions_widget.h"
 #include "core/shortcuts.h"
 #include "core/ui_integration.h"
+#include "core/vim_keymap_bindings.h"
 #include "support/support_common.h"
 #include "support/support_autocomplete.h"
 #include "support/support_helper.h"
@@ -221,6 +222,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QMimeData>
 #include <QtCore/QStringList>
 #include <QtCore/QTimer>
+#include <QtWidgets/QApplication>
 #include <QtWidgets/QTextEdit>
 
 namespace {
@@ -797,6 +799,9 @@ HistoryWidget::HistoryWidget(
 			not_null<QKeyEvent*> e) {
 		if (!window() || !window()->isActiveWindow()) {
 			return false;
+		}
+		if (vimKeymapPasteIntoComposer(e)) {
+			return true;
 		}
 		const auto selector = controller->tabbedSelector();
 		const auto selectorOpen = !selector->isHidden()
@@ -9847,6 +9852,38 @@ void HistoryWidget::vimKeymapRefreshComposeCursor() {
 		-st::lineWidth,
 		st::lineWidth,
 		st::lineWidth));
+}
+
+bool HistoryWidget::vimKeymapPasteIntoComposer(not_null<QKeyEvent*> e) {
+	if (!Core::VimKeymap::Bindings::IsSystemPaste(e)
+		|| !Core::VimKeymap::NormalMode()
+		|| !_canSendTexts
+		|| !_field
+		|| _field->isHidden()
+		|| !_field->isVisible()
+		|| _vimKeymapSearchInputMode
+		|| controller()->isLayerShown()
+		|| controller()->window().locked()
+		|| QApplication::activeModalWidget()
+		|| QApplication::activePopupWidget()) {
+		return false;
+	}
+	const auto selector = controller()->tabbedSelector();
+	if (!selector->isHidden() && selector->isVisible()) {
+		return false;
+	}
+	_vimKeymapComposeOperator = 0;
+	_vimKeymapComposeVisualMode = 0;
+	_vimKeymapComposeVisualAnchor = -1;
+	_vimKeymapComposePending = 0;
+	Core::VimKeymap::SetNormalMode(false);
+	_field->setFocusFast();
+	_field->rawTextEdit()->paste();
+	_field->ensureCursorVisible();
+	saveDraftDelayed();
+	vimKeymapRefreshComposeCursor();
+	Core::VimKeymap::TraceKey(e, u"paste into composer"_q);
+	return true;
 }
 
 bool HistoryWidget::vimKeymapHandleComposeTextKey(not_null<QKeyEvent*> e) {

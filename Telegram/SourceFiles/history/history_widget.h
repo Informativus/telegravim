@@ -736,6 +736,7 @@ private:
 	bool vimKeymapHandleScrollKey(not_null<QKeyEvent*> e);
 	bool vimKeymapScrollBy(int direction, int delta, bool animated = false);
 	void vimKeymapRefreshComposeCursor();
+	bool vimKeymapPasteIntoComposer(not_null<QKeyEvent*> e);
 	bool vimKeymapHandleComposeTextKey(not_null<QKeyEvent*> e);
 	bool vimKeymapFocusEmojiPanel();
 	bool vimKeymapFocusChat();
