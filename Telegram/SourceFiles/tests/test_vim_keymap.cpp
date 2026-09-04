@@ -241,6 +241,49 @@ void TestVimKeymapTransientUiKeys() {
 	Check(
 		Core::VimKeymap::Bindings::HintCharacter(&textlessHint) == u"g"_q,
 		"textless g selects an active chat hint");
+	auto pipe = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_Bar,
+		Qt::ShiftModifier);
+	Check(
+		Core::VimKeymap::Bindings::IsLineStart(&pipe),
+		"textless pipe moves to the line start");
+	auto shiftedBackslash = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_Backslash,
+		Qt::ShiftModifier);
+	Check(
+		Core::VimKeymap::Bindings::IsLineStart(&shiftedBackslash),
+		"textless shifted backslash moves to the line start");
+	auto slash = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_Slash,
+		Qt::NoModifier);
+	Check(
+		Core::VimKeymap::Bindings::IsLineStart(&slash),
+		"slash moves to the line start");
+#ifdef Q_OS_MAC
+	auto physicalPipe = QKeyEvent(
+		QEvent::KeyPress,
+		0,
+		Qt::ShiftModifier,
+		0,
+		42,
+		0);
+	Check(
+		Core::VimKeymap::Bindings::IsLineStart(&physicalPipe),
+		"physical pipe moves to the line start with empty text");
+	auto physicalSlash = QKeyEvent(
+		QEvent::KeyPress,
+		0,
+		Qt::NoModifier,
+		0,
+		44,
+		0);
+	Check(
+		Core::VimKeymap::Bindings::IsLineStart(&physicalSlash),
+		"physical slash moves to the line start with empty text");
+#endif // Q_OS_MAC
 	auto dollar = QKeyEvent(
 		QEvent::KeyPress,
 		Qt::Key_Dollar,
@@ -255,6 +298,25 @@ void TestVimKeymapTransientUiKeys() {
 	Check(
 		Core::VimKeymap::Bindings::IsLineEnd(&shiftedFour),
 		"textless shift four moves to the line end");
+	auto semicolon = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_Semicolon,
+		Qt::NoModifier);
+	Check(
+		Core::VimKeymap::Bindings::IsLineEnd(&semicolon),
+		"semicolon moves to the line end");
+#ifdef Q_OS_MAC
+	auto physicalSemicolon = QKeyEvent(
+		QEvent::KeyPress,
+		0,
+		Qt::NoModifier,
+		0,
+		41,
+		0);
+	Check(
+		Core::VimKeymap::Bindings::IsLineEnd(&physicalSemicolon),
+		"physical semicolon moves to the line end with empty text");
+#endif // Q_OS_MAC
 	auto yank = QKeyEvent(
 		QEvent::KeyPress,
 		Qt::Key_Y,

@@ -72,7 +72,7 @@ constexpr auto kComposeCursorStyleUnderline = "underline";
 constexpr auto kHoldScrollTickMs = 16;
 constexpr auto kHoldScrollStartDelayMs = 90;
 constexpr auto kSingleScrollDurationMs = 190;
-constexpr auto kTelegraVimBuild = "2026.09.04-84";
+constexpr auto kTelegraVimBuild = "2026.09.04-85";
 constexpr auto kKeyLogLimit = 200;
 
 base::options::toggle VimKeymapOption({
@@ -2108,8 +2108,7 @@ std::optional<TextMotion> TextMotionKey(not_null<QKeyEvent*> e) {
 		|| Bindings::KeyIs(e, Qt::Key_E, u"e"_q, u"\u0443"_q)) {
 		return TextMotion::WordRight;
 	}
-	const auto text = PlainText(e);
-	if (text == u"0"_q || text == u"^"_q) {
+	if (Bindings::IsLineStart(e)) {
 		return TextMotion::LineStart;
 	} else if (Bindings::IsLineEnd(e)) {
 		return TextMotion::LineEnd;

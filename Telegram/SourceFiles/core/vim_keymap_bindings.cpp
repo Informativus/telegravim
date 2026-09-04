@@ -321,13 +321,54 @@ QString HintCharacter(not_null<QKeyEvent*> e) {
 	return QString();
 }
 
+bool IsLineStart(not_null<QKeyEvent*> e) {
+	const auto modifiers = CleanModifiers(e);
+	if (e->isAutoRepeat()
+		|| (modifiers != Qt::NoModifier && modifiers != Qt::ShiftModifier)) {
+		return false;
+	}
+	const auto text = PlainText(e);
+	if (text == u"0"_q
+		|| text == u"^"_q
+		|| text == u"|"_q
+		|| text == u"/"_q) {
+		return true;
+	}
+	const auto matched = (modifiers == Qt::NoModifier
+			&& (e->key() == Qt::Key_0 || e->key() == Qt::Key_Slash))
+		|| e->key() == Qt::Key_AsciiCircum
+		|| e->key() == Qt::Key_Bar
+		|| (modifiers == Qt::ShiftModifier
+			&& (e->key() == Qt::Key_6
+				|| e->key() == Qt::Key_Backslash));
+#ifdef Q_OS_MAC
+	return matched
+		|| (modifiers == Qt::NoModifier && e->nativeVirtualKey() == 44)
+		|| (modifiers == Qt::ShiftModifier && e->nativeVirtualKey() == 42);
+#else // Q_OS_MAC
+	return matched;
+#endif // Q_OS_MAC
+}
+
 bool IsLineEnd(not_null<QKeyEvent*> e) {
 	const auto modifiers = CleanModifiers(e);
-	return !e->isAutoRepeat()
-		&& (modifiers == Qt::NoModifier || modifiers == Qt::ShiftModifier)
-		&& (PlainText(e) == u"$"_q
-			|| e->key() == Qt::Key_Dollar
-			|| (modifiers == Qt::ShiftModifier && e->key() == Qt::Key_4));
+	if (e->isAutoRepeat()
+		|| (modifiers != Qt::NoModifier && modifiers != Qt::ShiftModifier)) {
+		return false;
+	}
+	const auto text = PlainText(e);
+	const auto matched = text == u"$"_q
+		|| text == u";"_q
+		|| e->key() == Qt::Key_Dollar
+		|| (modifiers == Qt::ShiftModifier && e->key() == Qt::Key_4)
+		|| (modifiers == Qt::NoModifier && e->key() == Qt::Key_Semicolon);
+#ifdef Q_OS_MAC
+	return matched
+		|| (modifiers == Qt::ShiftModifier && e->nativeVirtualKey() == 21)
+		|| (modifiers == Qt::NoModifier && e->nativeVirtualKey() == 41);
+#else // Q_OS_MAC
+	return matched;
+#endif // Q_OS_MAC
 }
 
 QString NormalizeToken(QString value) {
