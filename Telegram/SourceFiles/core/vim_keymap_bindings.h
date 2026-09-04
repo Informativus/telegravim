@@ -26,6 +26,7 @@ struct MatchOptions {
 [[nodiscard]] QString PlainText(not_null<QKeyEvent*> e);
 [[nodiscard]] bool IsPlainEnter(not_null<QKeyEvent*> e);
 [[nodiscard]] bool IsPlainEscape(not_null<QKeyEvent*> e);
+[[nodiscard]] bool IsTextYank(not_null<QKeyEvent*> e);
 [[nodiscard]] QString NormalizeToken(QString value);
 [[nodiscard]] bool KeyIs(
 	not_null<QKeyEvent*> e,

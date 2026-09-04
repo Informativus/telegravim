@@ -234,6 +234,40 @@ void TestVimKeymapActionBindings() {
 }
 
 void TestVimKeymapTransientUiKeys() {
+	auto yank = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_Y,
+		Qt::NoModifier,
+		u"y"_q);
+	Check(
+		Core::VimKeymap::Bindings::IsTextYank(&yank),
+		"plain y yanks a visual text selection");
+	auto cyrillicYank = QKeyEvent(
+		QEvent::KeyPress,
+		0x041D,
+		Qt::NoModifier,
+		u"\u043D"_q);
+	Check(
+		Core::VimKeymap::Bindings::IsTextYank(&cyrillicYank),
+		"cyrillic y key yanks a visual text selection");
+	auto modifiedYank = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_Y,
+		Qt::ControlModifier,
+		u"y"_q);
+	Check(
+		!Core::VimKeymap::Bindings::IsTextYank(&modifiedYank),
+		"modified y does not yank a visual text selection");
+	auto repeatedYank = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_Y,
+		Qt::NoModifier,
+		u"y"_q,
+		true);
+	Check(
+		!Core::VimKeymap::Bindings::IsTextYank(&repeatedYank),
+		"repeated y does not rewrite the clipboard");
+
 	Check(
 		Core::VimKeymap::TextVisualModeConsumesKey(true, true),
 		"repeated visual key stays in visual mode");
@@ -360,6 +394,26 @@ void TestVimKeymapCursorGeometry() {
 			QPoint(80, 70),
 			900) == QRect(380, 1370, 120, 90),
 		"grouped media hint uses the visible item origin");
+
+	const auto actualTextLength = 13;
+	const auto layoutTextLength = 14;
+	const auto selectable = [=](int offset) {
+		return offset >= 0 && offset < actualTextLength;
+	};
+	Check(
+		Core::VimKeymap::ResolveTextCursorOffset(
+			layoutTextLength - 1,
+			1,
+			layoutTextLength,
+			selectable) == actualTextLength - 1,
+		"message cursor ignores a trailing layout placeholder");
+	Check(
+		Core::VimKeymap::ResolveTextCursorOffset(
+			0,
+			1,
+			layoutTextLength,
+			selectable) == 0,
+		"message cursor keeps a selectable character");
 }
 
 void TestVimKeymapMediaNavigation() {

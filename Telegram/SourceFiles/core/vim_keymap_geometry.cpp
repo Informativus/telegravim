@@ -70,4 +70,34 @@ QRect GroupedMediaHintRect(
 		itemInnerTopLeft + QPoint(0, itemTop));
 }
 
+int ResolveTextCursorOffset(
+		int wanted,
+		int direction,
+		int textLength,
+		Fn<bool(int)> isSelectable) {
+	if (textLength <= 0) {
+		return -1;
+	}
+	wanted = std::clamp(wanted, 0, textLength - 1);
+	direction = (direction < 0) ? -1 : 1;
+	if (isSelectable(wanted)) {
+		return wanted;
+	}
+	for (auto offset = wanted + direction;
+			offset >= 0 && offset < textLength;
+			offset += direction) {
+		if (isSelectable(offset)) {
+			return offset;
+		}
+	}
+	for (auto offset = wanted - direction;
+			offset >= 0 && offset < textLength;
+			offset -= direction) {
+		if (isSelectable(offset)) {
+			return offset;
+		}
+	}
+	return -1;
+}
+
 } // namespace Core::VimKeymap

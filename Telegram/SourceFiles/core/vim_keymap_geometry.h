@@ -42,5 +42,10 @@ struct VisualSelectionRange {
 	QRect groupItemRect,
 	QPoint itemInnerTopLeft,
 	int itemTop);
+[[nodiscard]] int ResolveTextCursorOffset(
+	int wanted,
+	int direction,
+	int textLength,
+	Fn<bool(int)> isSelectable);
 
 } // namespace Core::VimKeymap

@@ -43,6 +43,31 @@ constexpr auto kInvalidTextOffset = 0xFFFF;
 	};
 }
 
+[[nodiscard]] bool IsSelectableOffset(
+		not_null<Element*> view,
+		int offset) {
+	return !view->selectedText(TextSelection(
+		uint16(offset),
+		uint16(offset + 1))).empty();
+}
+
+[[nodiscard]] std::optional<MessageSelectionFlatEndpoint>
+SelectableCursorAtOffset(
+		not_null<Element*> view,
+		int wanted,
+		int direction,
+		int maxOffset) {
+	const auto offset = Core::VimKeymap::ResolveTextCursorOffset(
+		wanted,
+		direction,
+		maxOffset,
+		[=](int value) { return IsSelectableOffset(view, value); });
+	return (offset >= 0)
+		? std::optional<MessageSelectionFlatEndpoint>(
+			CursorAtOffset(offset, maxOffset))
+		: std::nullopt;
+}
+
 [[nodiscard]] StateRequest LookupSymbolRequest() {
 	auto request = StateRequest();
 	request.flags = Ui::Text::StateRequest::Flag::LookupSymbol;
@@ -66,9 +91,15 @@ constexpr auto kInvalidTextOffset = 0xFFFF;
 	if (!maxOffset) {
 		return std::nullopt;
 	}
-	const auto target = int(CursorAtOffset(
+	const auto normalized = SelectableCursorAtOffset(
+		view,
 		current.offset(),
-		*maxOffset).symbol);
+		1,
+		*maxOffset);
+	if (!normalized) {
+		return std::nullopt;
+	}
+	const auto target = int(normalized->symbol);
 	const auto inner = view->innerGeometry();
 	if (inner.width() <= 0 || inner.height() <= 0) {
 		return std::nullopt;
@@ -144,9 +175,15 @@ constexpr auto kInvalidTextOffset = 0xFFFF;
 	if (!point || !maxOffset) {
 		return std::nullopt;
 	}
-	const auto target = int(CursorAtOffset(
+	const auto normalized = SelectableCursorAtOffset(
+		view,
 		current.offset(),
-		*maxOffset).symbol);
+		1,
+		*maxOffset);
+	if (!normalized) {
+		return std::nullopt;
+	}
+	const auto target = int(normalized->symbol);
 	const auto inner = view->innerGeometry();
 	const auto request = LookupSymbolRequest();
 	auto left = inner.right();
@@ -316,7 +353,16 @@ std::optional<MessageSelectionFlatEndpoint> KeyboardTextSelection::moveCursor(
 	} else {
 		wanted = position + (forward ? 1 : -1);
 	}
-	return CursorAtOffset(wanted, *maxOffset);
+	const auto direction = (key == Qt::Key_Home)
+		? 1
+		: (key == Qt::Key_End)
+		? -1
+		: (forward ? 1 : -1);
+	return SelectableCursorAtOffset(
+		view,
+		wanted,
+		direction,
+		*maxOffset);
 }
 
 std::optional<MessageSelection> KeyboardTextSelection::startSelection(
@@ -462,10 +508,20 @@ std::optional<MessageSelection> KeyboardTextSelection::extend(
 	} else {
 		wanted = position + (forward ? 1 : -1);
 	}
-	_focus = {
-		uint16(std::clamp(wanted, 0, *maxOffset - 1)),
-		false,
-	};
+	const auto direction = (key == Qt::Key_Home)
+		? 1
+		: (key == Qt::Key_End)
+		? -1
+		: (forward ? 1 : -1);
+	const auto focus = SelectableCursorAtOffset(
+		view,
+		wanted,
+		direction,
+		*maxOffset);
+	if (!focus) {
+		return std::nullopt;
+	}
+	_focus = *focus;
 
 	auto result = makeResult();
 	_has = true;

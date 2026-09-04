@@ -278,6 +278,12 @@ bool IsPlainEscape(not_null<QKeyEvent*> e) {
 		&& CleanModifiers(e) == Qt::NoModifier;
 }
 
+bool IsTextYank(not_null<QKeyEvent*> e) {
+	return !e->isAutoRepeat()
+		&& CleanModifiers(e) == Qt::NoModifier
+		&& KeyIs(e, Qt::Key_Y, u"y"_q, u"\u043D"_q);
+}
+
 Qt::KeyboardModifiers CleanModifiers(not_null<QKeyEvent*> e) {
 	return e->modifiers()
 		& ~(Qt::KeypadModifier | Qt::GroupSwitchModifier);

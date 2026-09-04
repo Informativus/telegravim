@@ -14,6 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/click_handler_types.h"
 #include "core/phone_click_handler.h"
 #include "core/vim_keymap.h"
+#include "core/vim_keymap_bindings.h"
 #include "core/vim_keymap_geometry.h"
 #include "data/data_chat_participant_status.h"
 #include "history/history_item_helpers.h"
@@ -4262,8 +4263,9 @@ bool HistoryInner::vimKeymapHandleTextSelectionKey(
 	if (!selectionActive && !cursorActive) {
 		return false;
 	}
-	if (Core::VimKeymap::ActionKey(e)
-		== Core::VimKeymap::Action::CopyMessage) {
+	if (Core::VimKeymap::Bindings::IsTextYank(e)
+		|| Core::VimKeymap::ActionKey(e)
+			== Core::VimKeymap::Action::CopyMessage) {
 		if (selectionActive) {
 			copySelectedText();
 			Core::VimKeymap::TraceKey(e, u"copy selected message text"_q);
