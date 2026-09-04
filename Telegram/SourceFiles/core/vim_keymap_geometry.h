@@ -34,6 +34,9 @@ struct VisualSelectionRange {
 [[nodiscard]] bool TextVisualModeConsumesKey(
 	bool visualMode,
 	bool visualKey);
+[[nodiscard]] bool TextVisualYankCompletes(
+	bool selectionActive,
+	bool copied);
 [[nodiscard]] bool EmptyComposeDefersToMessageAction(
 	bool composeStateActive,
 	bool fieldEmpty,

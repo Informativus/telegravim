@@ -4139,18 +4139,19 @@ bool HistoryInner::showCopyRestrictionForSelected() {
 		&& showCopyRestriction(_selectedTextItem);
 }
 
-void HistoryInner::copySelectedText() {
+bool HistoryInner::copySelectedText() {
 	if (showCopyRestrictionForSelected()) {
-		return;
+		return false;
 	}
 	const auto text = getSelectedText();
 	if (text.empty()) {
-		return;
+		return false;
 	}
 	Iv::SetRichBlocksClipboard(
 		text,
 		getSelectedRichBlocks(),
 		&session());
+	return true;
 }
 
 HistoryInner::Element *HistoryInner::vimKeymapTargetView() const {
@@ -4267,8 +4268,21 @@ bool HistoryInner::vimKeymapHandleTextSelectionKey(
 		|| Core::VimKeymap::ActionKey(e)
 			== Core::VimKeymap::Action::CopyMessage) {
 		if (selectionActive) {
-			copySelectedText();
-			Core::VimKeymap::TraceKey(e, u"copy selected message text"_q);
+			const auto copied = copySelectedText();
+			if (Core::VimKeymap::TextVisualYankCompletes(
+					selectionActive,
+					copied)) {
+				clearTextSelection();
+				Core::VimKeymap::SetNormalMode(true);
+				_controller->showToast(tr::lng_text_copied(tr::now));
+				Core::VimKeymap::TraceKey(
+					e,
+					u"copy selected message text and exit visual"_q);
+			} else {
+				Core::VimKeymap::TraceKey(
+					e,
+					u"copy selected message text failed"_q);
+			}
 		} else {
 			Core::VimKeymap::TraceKey(e, u"message text cursor copy ignored"_q);
 		}

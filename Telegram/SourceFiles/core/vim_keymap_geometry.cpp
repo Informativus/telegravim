@@ -55,6 +55,10 @@ bool TextVisualModeConsumesKey(bool visualMode, bool visualKey) {
 	return visualMode && visualKey;
 }
 
+bool TextVisualYankCompletes(bool selectionActive, bool copied) {
+	return selectionActive && copied;
+}
+
 bool EmptyComposeDefersToMessageAction(
 		bool composeStateActive,
 		bool fieldEmpty,

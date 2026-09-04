@@ -558,7 +558,7 @@ private:
 	void reportAsGroup(FullMsgId itemId);
 	void blockSenderItem(FullMsgId itemId);
 	void blockSenderAsGroup(FullMsgId itemId);
-	void copySelectedText();
+	bool copySelectedText();
 	void editCaptionUploadLayer(not_null<HistoryItem*> item);
 
 	[[nodiscard]] auto reactionButtonParameters(

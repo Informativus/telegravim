@@ -267,6 +267,15 @@ void TestVimKeymapTransientUiKeys() {
 	Check(
 		!Core::VimKeymap::Bindings::IsTextYank(&repeatedYank),
 		"repeated y does not rewrite the clipboard");
+	Check(
+		Core::VimKeymap::TextVisualYankCompletes(true, true),
+		"successful visual yank exits message visual mode");
+	Check(
+		!Core::VimKeymap::TextVisualYankCompletes(true, false),
+		"failed visual yank keeps the selection active");
+	Check(
+		!Core::VimKeymap::TextVisualYankCompletes(false, true),
+		"cursor-only yank does not exit through visual selection state");
 
 	Check(
 		Core::VimKeymap::TextVisualModeConsumesKey(true, true),
