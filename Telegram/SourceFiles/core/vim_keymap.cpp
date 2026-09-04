@@ -10,13 +10,16 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/vim_keymap_bindings.h"
 #include "core/vim_keymap_geometry.h"
 #include "base/options.h"
+#include "base/qt/qt_tab_key.h"
 #include "core/application.h"
 #include "core/shortcuts.h"
 #include "core/version.h"
 #include "lang/lang_keys.h"
 #include "mainwidget.h"
+#include "ui/abstract_button.h"
 #include "ui/boxes/confirm_box.h"
 #include "ui/effects/animations.h"
+#include "ui/layers/box_layer_widget.h"
 #include "ui/layers/generic_box.h"
 #include "ui/widgets/elastic_scroll.h"
 #include "ui/widgets/discrete_sliders.h"
@@ -72,7 +75,7 @@ constexpr auto kComposeCursorStyleUnderline = "underline";
 constexpr auto kHoldScrollTickMs = 16;
 constexpr auto kHoldScrollStartDelayMs = 90;
 constexpr auto kSingleScrollDurationMs = 190;
-constexpr auto kTelegraVimBuild = "2026.09.04-86";
+constexpr auto kTelegraVimBuild = "2026.09.04-87";
 constexpr auto kKeyLogLimit = 200;
 
 base::options::toggle VimKeymapOption({
@@ -379,6 +382,7 @@ struct ForcedNormalModeHandler {
 
 std::vector<ForcedNormalModeHandler> ForcedNormalModeHandlers;
 std::vector<QPointer<QWidget>> ModeIndicatorWidgets;
+QPointer<Ui::AbstractButton> ModalKeyboardFocusedButton;
 
 [[nodiscard]] Qt::KeyboardModifiers CleanModifiers(not_null<QKeyEvent*> e) {
 	return e->modifiers()
@@ -1017,6 +1021,56 @@ void RefreshModeIndicator() {
 	}
 	const auto active = App().activeWindow();
 	return active && (active->locked() || active->isLayerShown());
+}
+
+[[nodiscard]] Ui::BoxLayerWidget *ActiveBoxLayer() {
+	const auto active = QApplication::activeWindow();
+	if (!active) {
+		return nullptr;
+	}
+	for (auto current = QApplication::focusWidget();
+		current;
+		current = current->parentWidget()) {
+		if (const auto box = dynamic_cast<Ui::BoxLayerWidget*>(current)) {
+			return box;
+		}
+	}
+	const auto widgets = active->findChildren<QWidget*>();
+	for (auto i = widgets.rbegin(); i != widgets.rend(); ++i) {
+		if (const auto box = dynamic_cast<Ui::BoxLayerWidget*>(*i);
+				box && box->isVisibleTo(active)) {
+			return box;
+		}
+	}
+	return dynamic_cast<Ui::BoxLayerWidget*>(active);
+}
+
+[[nodiscard]] bool HandleModalTabNavigation(not_null<QKeyEvent*> e) {
+	const auto delta = Bindings::TabNavigationDelta(e);
+	if (!delta) {
+		return false;
+	}
+	const auto box = ActiveBoxLayer();
+	if (!box) {
+		return false;
+	}
+	for (const auto widget : box->findChildren<QWidget*>()) {
+		if (const auto button = dynamic_cast<Ui::AbstractButton*>(widget)) {
+			button->setFocusPolicy(Qt::StrongFocus);
+		}
+	}
+	box->setVisualTabOrder(true);
+	if (ModalKeyboardFocusedButton) {
+		ModalKeyboardFocusedButton->setSynteticOver(false);
+		ModalKeyboardFocusedButton = nullptr;
+	}
+	base::FocusNextPrevChildBlocked(box, delta > 0);
+	if (const auto button = dynamic_cast<Ui::AbstractButton*>(
+			QApplication::focusWidget())) {
+		button->setSynteticOver(true);
+		ModalKeyboardFocusedButton = button;
+	}
+	return true;
 }
 
 void SetNormalModeValue(bool enabled) {
@@ -1746,6 +1800,11 @@ bool HandleApplicationKeyPress(
 	}
 	if (HandlePreLayerKey(e)) {
 		RecordKeyEvent(e, u"pre-layer handler"_q, true);
+		e->accept();
+		return true;
+	}
+	if (HandleModalTabNavigation(e)) {
+		RecordKeyEvent(e, u"modal tab navigation"_q, true);
 		e->accept();
 		return true;
 	}

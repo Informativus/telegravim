@@ -41,6 +41,10 @@ struct VisualSelectionRange {
 	bool composeStateActive,
 	bool fieldEmpty,
 	bool messageAction);
+[[nodiscard]] bool ShouldAddScannedLinkHint(
+	bool serviceMessage,
+	bool hasLink,
+	bool overMessageText);
 [[nodiscard]] QRect GroupedMediaHintRect(
 	QRect groupItemRect,
 	QPoint itemInnerTopLeft,

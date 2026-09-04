@@ -8,6 +8,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/boxes/time_picker_box.h"
 
 #include "base/event_filter.h"
+#include "core/vim_keymap.h"
+#include "core/vim_keymap_bindings.h"
 #include "lang/lang_keys.h"
 #include "ui/layers/generic_box.h"
 #include "ui/effects/animation_value.h"
@@ -124,6 +126,26 @@ Fn<TimeId()> TimePickerBox(
 			picker->handleKeyEvent(static_cast<QKeyEvent*>(e.get()));
 		}
 		return base::EventFilterResult::Continue;
+	});
+	Core::VimKeymap::RegisterPreLayerKeyHandler(box, [=](
+			not_null<QKeyEvent*> e) {
+		const auto window = box->window();
+		if (!box->isBoxShown()
+			|| !window
+			|| !window->isActiveWindow()
+			|| !picker->isVisibleTo(window)) {
+			return false;
+		}
+		const auto delta
+			= Core::VimKeymap::Bindings::PickerNavigationDelta(e);
+		if (!delta) {
+			return false;
+		}
+		picker->moveByItems(delta);
+		Core::VimKeymap::TraceKey(
+			e,
+			(delta > 0) ? u"picker next item"_q : u"picker previous item"_q);
+		return true;
 	});
 
 	return [=] { return values[picker->index()]; };

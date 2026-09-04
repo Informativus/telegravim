@@ -41,6 +41,8 @@ struct MatchOptions {
 	const QString &bindings,
 	not_null<QKeyEvent*> e,
 	MatchOptions options = {});
+[[nodiscard]] int TabNavigationDelta(not_null<QKeyEvent*> e);
+[[nodiscard]] int PickerNavigationDelta(not_null<QKeyEvent*> e);
 [[nodiscard]] int MediaNavigationDelta(not_null<QKeyEvent*> e);
 
 } // namespace Core::VimKeymap::Bindings

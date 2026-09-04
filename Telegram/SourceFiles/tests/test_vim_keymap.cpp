@@ -438,6 +438,18 @@ void TestVimKeymapTransientUiKeys() {
 			false,
 			true),
 		"nonempty composer keeps reply and edit keys");
+	Check(
+		Core::VimKeymap::ShouldAddScannedLinkHint(true, true, false),
+		"clickable service message is exposed as a link hint");
+	Check(
+		!Core::VimKeymap::ShouldAddScannedLinkHint(true, false, false),
+		"service message without a link has no hint");
+	Check(
+		Core::VimKeymap::ShouldAddScannedLinkHint(false, true, true),
+		"regular message text link keeps its hint");
+	Check(
+		!Core::VimKeymap::ShouldAddScannedLinkHint(false, true, false),
+		"regular non-text link is not added by the text scan");
 	auto enter = QKeyEvent(
 		QEvent::KeyPress,
 		Qt::Key_Return,
@@ -560,6 +572,112 @@ void TestVimKeymapCursorGeometry() {
 			layoutTextLength,
 			selectable) == 0,
 		"message cursor keeps a selectable character");
+}
+
+void TestVimKeymapPickerNavigation() {
+	auto tab = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_Tab,
+		Qt::NoModifier);
+	Check(
+		Core::VimKeymap::Bindings::TabNavigationDelta(&tab) == 1,
+		"tab advances modal focus");
+	auto backtab = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_Backtab,
+		Qt::ShiftModifier);
+	Check(
+		Core::VimKeymap::Bindings::TabNavigationDelta(&backtab) == -1,
+		"backtab reverses modal focus");
+	auto shiftedTab = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_Tab,
+		Qt::ShiftModifier);
+	Check(
+		Core::VimKeymap::Bindings::TabNavigationDelta(&shiftedTab) == -1,
+		"shift tab reverses modal focus");
+	auto modifiedTab = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_Tab,
+		Qt::ControlModifier);
+	Check(
+		Core::VimKeymap::Bindings::TabNavigationDelta(&modifiedTab) == 0,
+		"modified tab leaves modal focus unchanged");
+	auto repeatedTab = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_Tab,
+		Qt::NoModifier,
+		QString(),
+		true);
+	Check(
+		Core::VimKeymap::Bindings::TabNavigationDelta(&repeatedTab) == 0,
+		"repeated tab leaves modal focus unchanged");
+	auto next = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_J,
+		Qt::NoModifier,
+		u"j"_q);
+	Check(
+		Core::VimKeymap::Bindings::PickerNavigationDelta(&next) == 1,
+		"j advances the time picker");
+	auto previous = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_K,
+		Qt::NoModifier,
+		u"k"_q);
+	Check(
+		Core::VimKeymap::Bindings::PickerNavigationDelta(&previous) == -1,
+		"k reverses the time picker");
+	auto nextCyrillic = QKeyEvent(
+		QEvent::KeyPress,
+		0x041E,
+		Qt::NoModifier,
+		u"\u043E"_q);
+	Check(
+		Core::VimKeymap::Bindings::PickerNavigationDelta(
+			&nextCyrillic) == 1,
+		"cyrillic j position advances the time picker");
+	auto previousCyrillic = QKeyEvent(
+		QEvent::KeyPress,
+		0x041B,
+		Qt::NoModifier,
+		u"\u043B"_q);
+	Check(
+		Core::VimKeymap::Bindings::PickerNavigationDelta(
+			&previousCyrillic) == -1,
+		"cyrillic k position reverses the time picker");
+	auto modified = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_J,
+		Qt::ControlModifier,
+		u"j"_q);
+	Check(
+		Core::VimKeymap::Bindings::PickerNavigationDelta(&modified) == 0,
+		"modified j does not move the time picker");
+#ifdef Q_OS_MAC
+	auto physicalNext = QKeyEvent(
+		QEvent::KeyPress,
+		0,
+		Qt::NoModifier,
+		0,
+		38,
+		0);
+	Check(
+		Core::VimKeymap::Bindings::PickerNavigationDelta(
+			&physicalNext) == 1,
+		"physical j advances the time picker with empty text");
+	auto physicalPrevious = QKeyEvent(
+		QEvent::KeyPress,
+		0,
+		Qt::NoModifier,
+		0,
+		40,
+		0);
+	Check(
+		Core::VimKeymap::Bindings::PickerNavigationDelta(
+			&physicalPrevious) == -1,
+		"physical k reverses the time picker with empty text");
+#endif // Q_OS_MAC
 }
 
 void TestVimKeymapMediaNavigation() {
@@ -711,6 +829,7 @@ int main(int, char *[]) {
 	TestVimKeymapCommandBindings();
 	TestVimKeymapTransientUiKeys();
 	TestVimKeymapCursorGeometry();
+	TestVimKeymapPickerNavigation();
 	TestVimKeymapMediaNavigation();
 
 	std::cout << (TotalChecks - FailedChecks) << "/" << TotalChecks

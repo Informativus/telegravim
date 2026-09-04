@@ -58,6 +58,7 @@ public:
 	void handleWheelEvent(not_null<QWheelEvent*> e);
 	void handleMouseEvent(not_null<QMouseEvent*> e);
 	void handleKeyEvent(not_null<QKeyEvent*> e);
+	void moveByItems(int delta);
 
 	static PaintItemCallback DefaultPaintCallback(
 		const style::font &font,

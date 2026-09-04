@@ -415,6 +415,36 @@ bool Matches(
 	return false;
 }
 
+int TabNavigationDelta(not_null<QKeyEvent*> e) {
+	if (e->isAutoRepeat()) {
+		return 0;
+	}
+	const auto modifiers = CleanModifiers(e);
+	if (e->key() == Qt::Key_Backtab
+		&& (modifiers == Qt::NoModifier
+			|| modifiers == Qt::ShiftModifier)) {
+		return -1;
+	} else if (e->key() != Qt::Key_Tab) {
+		return 0;
+	} else if (modifiers == Qt::ShiftModifier) {
+		return -1;
+	} else if (modifiers == Qt::NoModifier) {
+		return 1;
+	}
+	return 0;
+}
+
+int PickerNavigationDelta(not_null<QKeyEvent*> e) {
+	if (CleanModifiers(e) != Qt::NoModifier) {
+		return 0;
+	} else if (KeyIs(e, Qt::Key_J, u"j"_q, u"\u043E"_q)) {
+		return 1;
+	} else if (KeyIs(e, Qt::Key_K, u"k"_q, u"\u043B"_q)) {
+		return -1;
+	}
+	return 0;
+}
+
 int MediaNavigationDelta(not_null<QKeyEvent*> e) {
 	const auto modifiers = CleanModifiers(e);
 	if (modifiers != Qt::ControlModifier

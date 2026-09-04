@@ -4726,13 +4726,16 @@ void HistoryInner::vimKeymapAddLinkHints(not_null<Element*> view) {
 		}
 	}
 	auto request = StateRequest();
-	request.onlyMessageText = true;
+	request.onlyMessageText = !item->isService();
 	const auto fromY = std::max(0, _visibleAreaTop - top);
 	const auto tillY = std::min(view->height(), _visibleAreaBottom - top);
 	for (auto y = fromY; y < tillY; y += 18) {
 		for (auto x = 0; x < width(); x += 24) {
 			const auto state = view->textState(QPoint(x, y), request);
-			if (state.link && state.overMessageText) {
+			if (Core::VimKeymap::ShouldAddScannedLinkHint(
+					item->isService(),
+					state.link != nullptr,
+					state.overMessageText)) {
 				add(state.link, QPoint(x, top + y));
 			}
 		}

@@ -223,14 +223,18 @@ void VerticalDrumPicker::handleWheelEvent(not_null<QWheelEvent*> e) {
 
 void VerticalDrumPicker::handleKeyEvent(not_null<QKeyEvent*> e) {
 	if (e->key() == Qt::Key_Left || e->key() == Qt::Key_Up) {
-		_animation.jumpToOffset(1);
+		moveByItems(-1);
 	} else if (e->key() == Qt::Key_PageUp && !e->isAutoRepeat()) {
-		_animation.jumpToOffset(_itemsVisible.count);
+		moveByItems(-_itemsVisible.count);
 	} else if (e->key() == Qt::Key_Right || e->key() == Qt::Key_Down) {
-		_animation.jumpToOffset(-1);
+		moveByItems(1);
 	} else if (e->key() == Qt::Key_PageDown && !e->isAutoRepeat()) {
-		_animation.jumpToOffset(-_itemsVisible.count);
+		moveByItems(_itemsVisible.count);
 	}
+}
+
+void VerticalDrumPicker::moveByItems(int delta) {
+	_animation.jumpToOffset(-delta);
 }
 
 void VerticalDrumPicker::handleMouseEvent(not_null<QMouseEvent*> e) {

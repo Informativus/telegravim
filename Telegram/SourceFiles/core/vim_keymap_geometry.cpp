@@ -66,6 +66,13 @@ bool EmptyComposeDefersToMessageAction(
 	return !composeStateActive && fieldEmpty && messageAction;
 }
 
+bool ShouldAddScannedLinkHint(
+		bool serviceMessage,
+		bool hasLink,
+		bool overMessageText) {
+	return hasLink && (serviceMessage || overMessageText);
+}
+
 QRect GroupedMediaHintRect(
 		QRect groupItemRect,
 		QPoint itemInnerTopLeft,
