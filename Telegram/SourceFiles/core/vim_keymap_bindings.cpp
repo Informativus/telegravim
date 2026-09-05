@@ -447,16 +447,22 @@ int PickerNavigationDelta(not_null<QKeyEvent*> e) {
 
 StickerGridAction StickerGridActionKey(not_null<QKeyEvent*> e) {
 	const auto modifiers = CleanModifiers(e);
-	const auto previous = KeyIs(e, Qt::Key_K, u"k"_q, u"\u043B"_q);
-	const auto next = KeyIs(e, Qt::Key_J, u"j"_q, u"\u043E"_q);
-	if (modifiers == Qt::ControlModifier && previous) {
+	const auto left = KeyIs(e, Qt::Key_H, u"h"_q, u"\u0440"_q);
+	const auto down = KeyIs(e, Qt::Key_J, u"j"_q, u"\u043E"_q);
+	const auto up = KeyIs(e, Qt::Key_K, u"k"_q, u"\u043B"_q);
+	const auto right = KeyIs(e, Qt::Key_L, u"l"_q, u"\u0434"_q);
+	if (modifiers == Qt::ControlModifier && up) {
 		return StickerGridAction::ScrollUp;
-	} else if (modifiers == Qt::ControlModifier && next) {
+	} else if (modifiers == Qt::ControlModifier && down) {
 		return StickerGridAction::ScrollDown;
-	} else if (modifiers == Qt::NoModifier && previous) {
-		return StickerGridAction::Previous;
-	} else if (modifiers == Qt::NoModifier && next) {
-		return StickerGridAction::Next;
+	} else if (modifiers == Qt::NoModifier && left) {
+		return StickerGridAction::MoveLeft;
+	} else if (modifiers == Qt::NoModifier && down) {
+		return StickerGridAction::MoveDown;
+	} else if (modifiers == Qt::NoModifier && up) {
+		return StickerGridAction::MoveUp;
+	} else if (modifiers == Qt::NoModifier && right) {
+		return StickerGridAction::MoveRight;
 	} else if (IsPlainEnter(e)) {
 		return StickerGridAction::Choose;
 	} else if (!e->isAutoRepeat()

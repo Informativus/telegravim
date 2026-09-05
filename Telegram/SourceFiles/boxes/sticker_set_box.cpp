@@ -322,7 +322,7 @@ public:
 
 	void install();
 	void showPreviewForDocument(DocumentId documentId);
-	[[nodiscard]] QRect moveKeyboardSelection(int delta);
+	[[nodiscard]] QRect moveKeyboardSelection(int dx, int dy);
 	[[nodiscard]] bool chooseKeyboardSelection();
 	[[nodiscard]] bool previewKeyboardSelection();
 	[[nodiscard]] rpl::producer<uint64> setInstalled() const;
@@ -517,6 +517,8 @@ private:
 	mtpRequestId _installRequest = 0;
 
 	int _selected = -1;
+	QPoint _lastMousePosition;
+	bool _vimKeymapSelection = false;
 	bool _addCellHovered = false;
 	bool _addCellPressed = false;
 
@@ -694,10 +696,22 @@ bool StickerSetBox::handleVimKey(not_null<QKeyEvent*> e) {
 		&& dynamic_cast<Ui::AbstractButton*>(QApplication::focusWidget())) {
 		return false;
 	}
-	if (action == Action::Previous || action == Action::Next) {
+	if (action == Action::MoveLeft
+		|| action == Action::MoveDown
+		|| action == Action::MoveUp
+		|| action == Action::MoveRight) {
 		_inner->setFocus(Qt::OtherFocusReason);
-		const auto rect = _inner->moveKeyboardSelection(
-			action == Action::Next ? 1 : -1);
+		const auto dx = (action == Action::MoveLeft)
+			? -1
+			: (action == Action::MoveRight)
+			? 1
+			: 0;
+		const auto dy = (action == Action::MoveUp)
+			? -1
+			: (action == Action::MoveDown)
+			? 1
+			: 0;
+		const auto rect = _inner->moveKeyboardSelection(dx, dy);
 		if (rect.isEmpty()) {
 			return false;
 		}
@@ -1476,6 +1490,8 @@ void StickerSetBox::Inner::installDone(
 }
 
 void StickerSetBox::Inner::mousePressEvent(QMouseEvent *e) {
+	_vimKeymapSelection = false;
+	_lastMousePosition = e->globalPos();
 	if (_previewLocked) {
 		_previewLocked = false;
 		_previewShown = -1;
@@ -1508,6 +1524,11 @@ void StickerSetBox::Inner::mousePressEvent(QMouseEvent *e) {
 }
 
 void StickerSetBox::Inner::mouseMoveEvent(QMouseEvent *e) {
+	if (_vimKeymapSelection && e->globalPos() == _lastMousePosition) {
+		return;
+	}
+	_vimKeymapSelection = false;
+	_lastMousePosition = e->globalPos();
 	updateSelected();
 	const auto draggedAnimating = isDraggedAnimating();
 	if (_selected >= 0 && !draggedAnimating) {
@@ -2073,10 +2094,11 @@ void StickerSetBox::Inner::setSelected(int selected) {
 	}
 }
 
-QRect StickerSetBox::Inner::moveKeyboardSelection(int delta) {
+QRect StickerSetBox::Inner::moveKeyboardSelection(int dx, int dy) {
 	if (_dragging.enabled) {
 		return {};
 	}
+	const auto delta = dy ? (dy * _perRow) : dx;
 	const auto selected = Core::VimKeymap::MoveStickerGridSelection(
 		_selected,
 		int(_elements.size()),
@@ -2084,7 +2106,10 @@ QRect StickerSetBox::Inner::moveKeyboardSelection(int delta) {
 	if (selected < 0) {
 		return {};
 	}
+	_vimKeymapSelection = true;
+	_lastMousePosition = QCursor::pos();
 	setSelected(selected);
+	update();
 	return QRect(posFromIndex(selected), _singleSize);
 }
 
@@ -2553,6 +2578,13 @@ void StickerSetBox::Inner::paintSticker(
 	}
 	if (hasShake) {
 		p.resetTransform();
+	}
+	if (_vimKeymapSelection && index == _selected) {
+		auto frame = QRect(position, _singleSize);
+		if (rtl()) {
+			frame.moveLeft(width() - frame.x() - frame.width());
+		}
+		ChatHelpers::PaintVimKeymapStickerSelectionFrame(p, frame);
 	}
 }
 

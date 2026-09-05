@@ -8,10 +8,23 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/vim_keymap_bindings.h"
 #include "core/vim_keymap_geometry.h"
 #include "core/vim_keymap.h"
+#include "ui/abstract_button.h"
+#include "ui/integration.h"
+
+#include <rpl/never.h>
 
 #include <QtGui/QKeyEvent>
+#include <QtWidgets/QApplication>
 
 #include <iostream>
+
+namespace crl {
+
+rpl::producer<> on_main_update_requests() {
+	return rpl::never<>();
+}
+
+} // namespace crl
 
 namespace {
 
@@ -19,6 +32,35 @@ using MatchOptions = Core::VimKeymap::Bindings::MatchOptions;
 
 int FailedChecks = 0;
 int TotalChecks = 0;
+
+class TestIntegration final : public Ui::Integration {
+public:
+	void postponeCall(FnMut<void()> &&callable) override {
+		callable();
+	}
+	void registerLeaveSubscription(not_null<QWidget*>) override {
+	}
+	void unregisterLeaveSubscription(not_null<QWidget*>) override {
+	}
+	QString emojiCacheFolder() override {
+		return {};
+	}
+	QString openglCheckFilePath() override {
+		return {};
+	}
+	QString angleBackendFilePath() override {
+		return {};
+	}
+	void touchCounterIncrement() override {
+		++_touchCounter;
+	}
+	int touchCounterNow() override {
+		return _touchCounter;
+	}
+
+private:
+	int _touchCounter = 0;
+};
 
 void Check(bool condition, const char *name) {
 	++TotalChecks;
@@ -732,11 +774,17 @@ void TestVimKeymapStickerSetNavigation() {
 		return Core::VimKeymap::Bindings::StickerGridActionKey(&event);
 	};
 	Check(
-		action(Qt::Key_J, Qt::NoModifier, u"j"_q) == Action::Next,
-		"j selects the next sticker");
+		action(Qt::Key_H, Qt::NoModifier, u"h"_q) == Action::MoveLeft,
+		"h selects the sticker to the left");
 	Check(
-		action(Qt::Key_K, Qt::NoModifier, u"k"_q) == Action::Previous,
-		"k selects the previous sticker");
+		action(Qt::Key_J, Qt::NoModifier, u"j"_q) == Action::MoveDown,
+		"j selects the sticker below");
+	Check(
+		action(Qt::Key_K, Qt::NoModifier, u"k"_q) == Action::MoveUp,
+		"k selects the sticker above");
+	Check(
+		action(Qt::Key_L, Qt::NoModifier, u"l"_q) == Action::MoveRight,
+		"l selects the sticker to the right");
 	Check(
 		action(Qt::Key_J, Qt::ControlModifier, u"j"_q)
 			== Action::ScrollDown,
@@ -756,12 +804,20 @@ void TestVimKeymapStickerSetNavigation() {
 		"modified w leaves the sticker preview unchanged");
 	Check(
 		action(Qt::Key_unknown, Qt::NoModifier, u"\u043E"_q)
-			== Action::Next,
-		"cyrillic j position selects the next sticker");
+			== Action::MoveDown,
+		"cyrillic j position selects the sticker below");
 	Check(
 		action(Qt::Key_unknown, Qt::NoModifier, u"\u043B"_q)
-			== Action::Previous,
-		"cyrillic k position selects the previous sticker");
+			== Action::MoveUp,
+		"cyrillic k position selects the sticker above");
+	Check(
+		action(Qt::Key_unknown, Qt::NoModifier, u"\u0440"_q)
+			== Action::MoveLeft,
+		"cyrillic h position selects the sticker to the left");
+	Check(
+		action(Qt::Key_unknown, Qt::NoModifier, u"\u0434"_q)
+			== Action::MoveRight,
+		"cyrillic l position selects the sticker to the right");
 	Check(
 		action(Qt::Key_unknown, Qt::NoModifier, u"\u0446"_q)
 			== Action::Preview,
@@ -770,14 +826,20 @@ void TestVimKeymapStickerSetNavigation() {
 		Core::VimKeymap::MoveStickerGridSelection(-1, 17, 1) == 0,
 		"next starts sticker selection at the first item");
 	Check(
-		Core::VimKeymap::MoveStickerGridSelection(-1, 17, -1) == 16,
-		"previous starts sticker selection at the last item");
+		Core::VimKeymap::MoveStickerGridSelection(-1, 17, -1) == 0,
+		"any direction starts sticker selection at the first item");
 	Check(
 		Core::VimKeymap::MoveStickerGridSelection(7, 17, 1) == 8,
 		"next advances sticker selection by one item");
 	Check(
 		Core::VimKeymap::MoveStickerGridSelection(16, 17, 1) == 16,
 		"sticker selection stops at the last item");
+	Check(
+		Core::VimKeymap::MoveStickerGridSelection(7, 17, 5) == 12,
+		"down advances sticker selection by one row");
+	Check(
+		Core::VimKeymap::MoveStickerGridSelection(7, 17, -5) == 2,
+		"up moves sticker selection by one row");
 	Check(
 		Core::VimKeymap::MoveStickerGridSelection(0, 17, -1) == 0,
 		"sticker selection stops at the first item");
@@ -871,6 +933,37 @@ void TestVimKeymapMediaNavigation() {
 		"plain l does not navigate media");
 }
 
+void TestAbstractButtonKeyboardActivation() {
+	auto button = Ui::AbstractButton(nullptr);
+	auto clicks = 0;
+	button.setClickedCallback([&] {
+		++clicks;
+	});
+	const auto pressEnter = [&] {
+		auto press = QKeyEvent(
+			QEvent::KeyPress,
+			Qt::Key_Return,
+			Qt::NoModifier);
+		QApplication::sendEvent(&button, &press);
+		auto release = QKeyEvent(
+			QEvent::KeyRelease,
+			Qt::Key_Return,
+			Qt::NoModifier);
+		QApplication::sendEvent(&button, &release);
+	};
+
+	button.setSynteticOver(true);
+	pressEnter();
+	Check(
+		clicks == 1,
+		"enter activates a synthetically hovered button exactly once");
+
+	button.setSynteticOver(false);
+	clicks = 0;
+	pressEnter();
+	Check(clicks == 1, "enter activates a normal button exactly once");
+}
+
 void TestVimKeymapCommandBindings() {
 	const auto allowExtraShift = MatchOptions{ .allowExtraShift = true };
 
@@ -929,7 +1022,14 @@ void TestVimKeymapCommandBindings() {
 
 } // namespace
 
-int main(int, char *[]) {
+int main(int argc, char *argv[]) {
+#ifndef Q_OS_MAC
+	qputenv("QT_QPA_PLATFORM", "offscreen");
+#endif // !Q_OS_MAC
+	auto application = QApplication(argc, argv);
+	auto integration = TestIntegration();
+	Ui::Integration::Set(&integration);
+
 	TestVimKeymapNavigationBindings();
 	TestVimKeymapActionBindings();
 	TestVimKeymapCommandBindings();
@@ -938,6 +1038,7 @@ int main(int, char *[]) {
 	TestVimKeymapPickerNavigation();
 	TestVimKeymapStickerSetNavigation();
 	TestVimKeymapMediaNavigation();
+	TestAbstractButtonKeyboardActivation();
 
 	std::cout << (TotalChecks - FailedChecks) << "/" << TotalChecks
 		<< " checks passed." << std::endl;

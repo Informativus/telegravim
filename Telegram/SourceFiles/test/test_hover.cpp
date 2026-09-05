@@ -243,6 +243,7 @@ void AppendClickHoverSelfTest(not_null<Runner*> runner) {
 		Fixture fixture;
 		QString control;
 		QString afterClick;
+		int keyboardClicks = 0;
 		bool built = false;
 	};
 	// Leaked on purpose, the way the harness's other self-tests leak theirs:
@@ -502,6 +503,35 @@ void AppendClickHoverSelfTest(not_null<Runner*> runner) {
 				u"the reading names both bands it judged and the reason "
 				"each one carries"_q,
 				text);
+		},
+	});
+
+	runner->add({
+		.name = u"click hover self-test: keyboard activation"_q,
+		.run = [=] {
+			if (!state->built) {
+				return;
+			}
+			const auto subject = state->fixture.subject;
+			state->keyboardClicks = 0;
+			subject->setClickedCallback([=] {
+				++state->keyboardClicks;
+			});
+			subject->setSynteticOver(true);
+			PressKey(subject, Qt::Key_Return);
+		},
+		.then = [=] {
+			if (!state->built) {
+				return;
+			}
+			const auto subject = state->fixture.subject;
+			Check(
+				state->keyboardClicks == 1,
+				u"Enter activates a synthetically hovered button "
+					u"exactly once"_q,
+				u"clicks=%1"_q.arg(state->keyboardClicks));
+			subject->setClickedCallback(nullptr);
+			subject->setSynteticOver(false);
 		},
 	});
 

@@ -43,7 +43,7 @@ class Runner;
 // It needs no session, no chats list, no network and no account fixture.
 // The only thing it asks of the process is a primary window to parent the
 // fixture to, and a missing one is reported as a named fixture gate instead
-// of crashing. It appends its own teardown as the last of its five stages,
+// of crashing. It appends its own teardown as the last of its six stages,
 // and it emits no deliberate failure - every stage is expected to PASS on a
 // healthy harness. Its before-leg, the failing reading this repair removed,
 // is produced by reverting the two DeliverPointerLeave calls in Test::Click

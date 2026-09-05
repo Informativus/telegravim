@@ -95,7 +95,7 @@ int MoveStickerGridSelection(int selected, int count, int delta) {
 	if (count <= 0 || !delta) {
 		return -1;
 	} else if (selected < 0 || selected >= count) {
-		return (delta > 0) ? 0 : (count - 1);
+		return 0;
 	}
 	return std::clamp(selected + delta, 0, count - 1);
 }

@@ -21,6 +21,8 @@ PRIVATE
 target_link_libraries(test_vim_keymap
 PRIVATE
     desktop-app::lib_base
+    desktop-app::lib_crl
+    desktop-app::lib_ui
     desktop-app::external_qt
 )
 

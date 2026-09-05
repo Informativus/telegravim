@@ -24,8 +24,10 @@ struct MatchOptions {
 
 enum class StickerGridAction {
 	None,
-	Previous,
-	Next,
+	MoveLeft,
+	MoveDown,
+	MoveUp,
+	MoveRight,
 	ScrollUp,
 	ScrollDown,
 	Choose,

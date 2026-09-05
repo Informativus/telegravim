@@ -96,17 +96,26 @@ base::options::toggle OptionUnlimitedRecentStickers({
 	.description = "Display as much recent stickers as the server provides",
 });
 
-void PaintVimKeymapSelectionFrame(Painter &p, QRect rect) {
-	constexpr auto kInset = 3;
-	constexpr auto kStroke = 2;
+[[nodiscard]] bool SetInMyList(Data::StickersSetFlags flags) {
+	return (flags & SetFlag::Installed) && !(flags & SetFlag::Archived);
+}
 
-	rect = rect.marginsRemoved(QMargins(kInset, kInset, kInset, kInset));
+} // namespace
+
+void PaintVimKeymapStickerSelectionFrame(Painter &p, QRect rect) {
+	rect = rect.marginsRemoved(QMargins(
+		st::vimKeymapStickerSelectionInset,
+		st::vimKeymapStickerSelectionInset,
+		st::vimKeymapStickerSelectionInset,
+		st::vimKeymapStickerSelectionInset));
 	if (rect.isEmpty()) {
 		return;
 	}
 
 	p.save();
-	auto pen = QPen(st::activeButtonBg->c, kStroke);
+	auto pen = QPen(
+		st::activeButtonBg->c,
+		st::vimKeymapStickerSelectionStroke);
 	pen.setJoinStyle(Qt::RoundJoin);
 	p.setPen(pen);
 	p.setBrush(Qt::NoBrush);
@@ -116,12 +125,6 @@ void PaintVimKeymapSelectionFrame(Painter &p, QRect rect) {
 		st::roundRadiusSmall);
 	p.restore();
 }
-
-[[nodiscard]] bool SetInMyList(Data::StickersSetFlags flags) {
-	return (flags & SetFlag::Installed) && !(flags & SetFlag::Archived);
-}
-
-} // namespace
 
 const char kOptionUnlimitedRecentStickers[] = "unlimited-recent-stickers";
 
@@ -2344,7 +2347,7 @@ void StickersListWidget::paintSticker(
 		if (rtl()) {
 			frame.moveLeft(width() - frame.x() - frame.width());
 		}
-		PaintVimKeymapSelectionFrame(p, frame);
+		PaintVimKeymapStickerSelectionFrame(p, frame);
 	}
 }
 
