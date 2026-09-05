@@ -57,6 +57,10 @@ public:
 	}
 
 	void setMoveByWheel(bool move);
+	[[nodiscard]] bool adjustByKeyboard(Qt::Key key);
+	[[nodiscard]] QPoint keyboardFocusPoint() const;
+	void beginKeyboardAdjustment();
+	void finishKeyboardAdjustment(bool cancel);
 
 	QAccessible::Role accessibilityRole() override {
 		return QAccessible::Role::Slider;
@@ -121,6 +125,8 @@ private:
 	Ui::Animations::Simple _overAnimation;
 
 	float64 _value = 0.;
+	std::optional<float64> _keyboardAdjustmentStart;
+	bool _keyboardAdjustmentChanged = false;
 	float64 _receivedTill = 0.;
 
 	bool _mouseDown = false;

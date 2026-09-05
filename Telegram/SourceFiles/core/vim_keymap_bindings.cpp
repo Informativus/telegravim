@@ -476,6 +476,17 @@ StickerGridAction StickerGridActionKey(not_null<QKeyEvent*> e) {
 	return StickerGridAction::None;
 }
 
+int InterfaceHistoryDelta(not_null<QKeyEvent*> e) {
+	if (CleanModifiers(e) != PhysicalControlModifier()) {
+		return 0;
+	} else if (KeyIs(e, Qt::Key_H, u"h"_q, u"\u0440"_q)) {
+		return -1;
+	} else if (KeyIs(e, Qt::Key_L, u"l"_q, u"\u0434"_q)) {
+		return 1;
+	}
+	return 0;
+}
+
 int MediaNavigationDelta(not_null<QKeyEvent*> e) {
 	const auto modifiers = CleanModifiers(e);
 	if (modifiers != Qt::ControlModifier

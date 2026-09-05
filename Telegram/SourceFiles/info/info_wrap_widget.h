@@ -187,7 +187,9 @@ private:
 	void showNewContent(not_null<ContentMemento*> memento);
 	void showNewContent(
 		not_null<ContentMemento*> memento,
-		const Window::SectionShow &params);
+		const Window::SectionShow &params,
+		bool fromHistory = false);
+	bool showForwardFromStack();
 	bool returnToFirstStackFrame(
 		not_null<ContentMemento*> memento,
 		const Window::SectionShow &params);
@@ -245,6 +247,7 @@ private:
 	base::unique_qptr<Ui::PopupMenu> _topBarMenu;
 
 	std::vector<StackItem> _historyStack;
+	std::vector<StackItem> _forwardStack;
 	rpl::event_stream<> _removeRequests;
 	bool _shortcutsSetup = false;
 

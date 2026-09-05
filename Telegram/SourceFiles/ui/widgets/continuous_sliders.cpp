@@ -14,6 +14,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/platform/base_platform_info.h"
 #include "styles/style_widgets.h"
 
+#include <crl/crl_on_main.h>
+
 namespace Ui {
 namespace {
 
@@ -141,6 +143,50 @@ void ContinuousSlider::wheelEvent(QWheelEvent *e) {
 }
 
 void ContinuousSlider::keyPressEvent(QKeyEvent *e) {
+	e->setAccepted(adjustByKeyboard(Qt::Key(e->key())));
+}
+
+QPoint ContinuousSlider::keyboardFocusPoint() const {
+	const auto seek = getSeekRect();
+	const auto value = std::clamp(getCurrentValue(), 0., 1.);
+	return isHorizontal()
+		? QPoint(seek.x() + qRound(value * seek.width()), height() / 2)
+		: QPoint(width() / 2, seek.y() + qRound((1. - value) * seek.height()));
+}
+
+void ContinuousSlider::beginKeyboardAdjustment() {
+	_keyboardAdjustmentStart = _value;
+	_keyboardAdjustmentChanged = false;
+}
+
+void ContinuousSlider::finishKeyboardAdjustment(bool cancel) {
+	const auto start = base::take(_keyboardAdjustmentStart);
+	const auto changed = base::take(_keyboardAdjustmentChanged);
+	if (!start || !changed) {
+		return;
+	}
+	const auto value = cancel ? *start : _value;
+	crl::on_main(this, [=] {
+		if (!isVisible()) {
+			return;
+		}
+		const auto weak = base::make_weak(this);
+		if (cancel) {
+			setValue(value);
+			if (_changeProgressCallback) {
+				_changeProgressCallback(value);
+			}
+		}
+		if (weak && _changeFinishedCallback) {
+			_changeFinishedCallback(value);
+		}
+	});
+}
+
+bool ContinuousSlider::adjustByKeyboard(Qt::Key key) {
+	if (_disabled || !isEnabled() || _mouseDown) {
+		return false;
+	}
 	const auto changeBy = [&](float64 step) {
 		Expects(step != 0.);
 
@@ -159,10 +205,10 @@ void ContinuousSlider::keyPressEvent(QKeyEvent *e) {
 		}
 	};
 
-	const auto newValue = [&] {
+	const auto newValue = [&]() -> std::optional<float64> {
 		constexpr auto kSmallStep = 0.01;
 		constexpr auto kLargeStep = 0.10;
-		switch (e->key()) {
+		switch (key) {
 		case Qt::Key_Right:
 		case Qt::Key_Up: return changeBy(kSmallStep);
 		case Qt::Key_Left:
@@ -171,26 +217,31 @@ void ContinuousSlider::keyPressEvent(QKeyEvent *e) {
 		case Qt::Key_PageDown: return changeBy(-kLargeStep);
 		case Qt::Key_Home: return changeBy(-1.);
 		case Qt::Key_End: return changeBy(1.);
-		default: e->ignore();
+		default: return std::nullopt;
 		}
-		return _value;
 	}();
 
-	if (_value == newValue) {
-		return;
+	if (!newValue) {
+		return false;
+	} else if (_value == *newValue) {
+		return true;
 	}
-	setValue(newValue);
+	setValue(*newValue);
+	if (_keyboardAdjustmentStart) {
+		_keyboardAdjustmentChanged = true;
+	}
 	const auto weak = base::make_weak(this);
 	if (_changeProgressCallback) {
 		_changeProgressCallback(_value);
 	}
-	if (weak && _changeFinishedCallback) {
+	if (weak && !_keyboardAdjustmentStart && _changeFinishedCallback) {
 		_changeFinishedCallback(_value);
 	}
 	if (!weak) {
-		return;
+		return true;
 	}
 	accessibilityValueChanged();
+	return true;
 }
 
 void ContinuousSlider::updateDownValueFromPos(const QPoint &pos) {

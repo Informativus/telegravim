@@ -11,8 +11,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/vim_keymap_geometry.h"
 
 #include <rpl/rpl.h>
+#include <crl/crl_on_main.h>
 
 #include "ui/abstract_button.h"
+#include "ui/widgets/buttons.h"
+#include "ui/widgets/continuous_sliders.h"
 #include "ui/layers/layer_widget.h"
 #include "ui/widgets/elastic_scroll.h"
 #include "ui/widgets/fields/input_field.h"
@@ -21,6 +24,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/popup_menu.h"
 #include "ui/widgets/scroll_area.h"
 #include "styles/style_widgets.h"
+#include "styles/style_vim_keymap.h"
 #include "styles/palette.h"
 
 #include <QApplication>
@@ -32,6 +36,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QVariant>
+#include <QAbstractSlider>
+#include <QSlider>
+#include <QStyleOptionSlider>
 
 #include <algorithm>
 #include <unordered_set>
@@ -68,7 +75,14 @@ bool KeyboardScopeHasTextInput(not_null<QWidget*> scope, QObject *receiver) {
 
 namespace {
 
-constexpr auto kCustomFocusFrame = "vim-keymap-custom-focus-frame";
+constexpr auto kExcludedFocusTarget = "vim-keymap-excluded-focus-target";
+constexpr auto kCircleFocusFrame = "vim-keymap-circle-focus-frame";
+
+[[nodiscard]] bool Adjustable(QWidget *widget) {
+	return dynamic_cast<Ui::ContinuousSlider*>(widget)
+		|| (qobject_cast<QAbstractSlider*>(widget)
+			&& !qobject_cast<QScrollBar*>(widget));
+}
 
 [[nodiscard]] bool Available(not_null<QWidget*> widget, QWidget *scope) {
 	if (!KeyHandlerInScope(widget, scope) || !widget->isEnabled()) {
@@ -84,17 +98,22 @@ constexpr auto kCustomFocusFrame = "vim-keymap-custom-focus-frame";
 		return item->isEnabled() && !item->action()->isSeparator();
 	} else if (const auto button = dynamic_cast<Ui::AbstractButton*>(widget.get())) {
 		return !button->isDisabled();
+	} else if (const auto slider = dynamic_cast<Ui::ContinuousSlider*>(widget.get())) {
+		return !slider->isDisabled();
 	}
 	return true;
 }
 
 [[nodiscard]] bool Focusable(not_null<QWidget*> widget) {
-	if (dynamic_cast<KeyboardNavigation*>(widget.get())) {
+	if (widget->property(kExcludedFocusTarget).toBool()
+		|| dynamic_cast<KeyboardNavigation*>(widget.get())) {
 		return false;
 	} else if (dynamic_cast<Ui::AbstractButton*>(widget.get())) {
 		return true;
 	} else if (const auto label = dynamic_cast<Ui::FlatLabel*>(widget.get())) {
 		return label->keyboardFocusAvailable();
+	} else if (Adjustable(widget)) {
+		return true;
 	} else if (widget->focusPolicy() & Qt::TabFocus) {
 		return true;
 	} else if (const auto rp = qobject_cast<Ui::RpWidget*>(widget.get())) {
@@ -155,6 +174,7 @@ std::vector<QPointer<QWidget>> KeyboardFocusTargets(not_null<QWidget*> scope) {
 					target = target->focusProxy();
 				}
 				if (Available(target, scope)
+					&& !target->property(kExcludedFocusTarget).toBool()
 					&& seen.emplace(target).second) {
 					result.push_back(target);
 				}
@@ -174,8 +194,22 @@ std::vector<QPointer<QWidget>> KeyboardFocusTargets(not_null<QWidget*> scope) {
 	return result;
 }
 
-void SetKeyboardFocusFrameEnabled(not_null<QWidget*> widget, bool enabled) {
-	widget->setProperty(kCustomFocusFrame, !enabled);
+void SetKeyboardFocusTargetEnabled(not_null<QWidget*> widget, bool enabled) {
+	widget->setProperty(kExcludedFocusTarget, !enabled);
+}
+
+void SetKeyboardFocusCircle(not_null<QWidget*> widget) {
+	widget->setProperty(kCircleFocusFrame, true);
+}
+
+bool HandleKeyboardControlKey(
+		not_null<QWidget*> scope,
+		not_null<QKeyEvent*> e) {
+	const auto focus = QApplication::focusWidget();
+	return focus
+		&& Adjustable(focus)
+		&& Available(focus, scope)
+		&& KeyboardNavigation::Get(scope)->handleControlKey(e);
 }
 
 void FocusModalNextPrevChild(not_null<QWidget*> scope, bool next) {
@@ -216,6 +250,7 @@ KeyboardNavigation::KeyboardNavigation(not_null<QWidget*> scope)
 void KeyboardNavigation::trackFocus(QWidget *widget) {
 	if (widget != _focused) {
 		clearHints();
+		_editingControl = nullptr;
 	}
 	if (const auto button = dynamic_cast<Ui::AbstractButton*>(_focused.data())) {
 		button->setSynteticOver(false);
@@ -243,7 +278,8 @@ void KeyboardNavigation::trackFocus(QWidget *widget) {
 }
 
 void KeyboardNavigation::focusTarget(not_null<QWidget*> target) {
-	if (!_scope || !Available(target, _scope)) {
+	if (!_scope || !Available(target, _scope)
+		|| target->property(kExcludedFocusTarget).toBool()) {
 		return;
 	}
 	if (!(target->focusPolicy() & Qt::TabFocus)) {
@@ -347,6 +383,7 @@ bool KeyboardNavigation::scroll(int delta, bool autoRepeat, int duration) {
 
 void KeyboardNavigation::focusNext(bool next) {
 	clearHints();
+	_editingControl = nullptr;
 	const auto targets = KeyboardFocusTargets(_scope);
 	if (targets.empty()) {
 		return;
@@ -404,6 +441,7 @@ bool KeyboardNavigation::hasHints() const {
 void KeyboardNavigation::clearHints() {
 	_hints.clear();
 	_prefix.clear();
+	finishControlEdit();
 	update();
 }
 
@@ -452,16 +490,155 @@ bool KeyboardNavigation::handleHintKey(not_null<QKeyEvent*> e, const QString &in
 	return true;
 }
 
+void KeyboardNavigation::finishControlEdit(bool cancel) {
+	const auto control = std::exchange(_editingControl, nullptr);
+	if (const auto slider = dynamic_cast<Ui::ContinuousSlider*>(control.data())) {
+		slider->finishKeyboardAdjustment(cancel);
+	} else if (const auto slider = qobject_cast<QAbstractSlider*>(control.data())) {
+		const auto value = _editingNativeValue;
+		const auto guard = QPointer<QAbstractSlider>(slider);
+		crl::on_main(slider, [=] {
+			if (cancel) {
+				slider->setValue(value);
+			}
+			if (guard) {
+				slider->setSliderDown(false);
+			}
+		});
+	}
+}
+
+bool KeyboardNavigation::handleControlKey(not_null<QKeyEvent*> e) {
+	const auto focus = QApplication::focusWidget();
+	if (!_scope || !focus || !Adjustable(focus) || !Available(focus, _scope)) {
+		_editingControl = nullptr;
+		return false;
+	}
+	if (const auto delta = Bindings::TabNavigationDelta(e)) {
+		focusNext(delta > 0);
+		return true;
+	} else if ((e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter)
+		&& Bindings::CleanModifiers(e) == Qt::NoModifier) {
+		if (!e->isAutoRepeat()) {
+			const auto weak = QPointer<KeyboardNavigation>(this);
+			if (_editingControl == focus) {
+				finishControlEdit();
+			} else {
+				_editingControl = focus;
+				if (const auto slider = dynamic_cast<Ui::ContinuousSlider*>(focus)) {
+					slider->beginKeyboardAdjustment();
+				} else if (const auto slider = qobject_cast<QAbstractSlider*>(focus)) {
+					_editingNativeValue = slider->value();
+					slider->setSliderDown(true);
+				}
+			}
+			if (weak) {
+				update();
+			}
+		}
+		return true;
+	} else if (_editingControl != focus) {
+		return false;
+	} else if (e->key() == Qt::Key_Escape
+		&& Bindings::CleanModifiers(e) == Qt::NoModifier) {
+		if (!e->isAutoRepeat()) {
+			finishControlEdit(true);
+			update();
+		}
+		return true;
+	} else if (Bindings::CleanModifiers(e) != Qt::NoModifier) {
+		return false;
+	}
+	const auto left = Bindings::KeyIs(e, Qt::Key_H, u"h"_q, u"\u0440"_q)
+		|| e->key() == Qt::Key_Left;
+	const auto right = Bindings::KeyIs(e, Qt::Key_L, u"l"_q, u"\u0434"_q)
+		|| e->key() == Qt::Key_Right;
+	if (!left && !right) {
+		return false;
+	}
+	const auto weak = QPointer<KeyboardNavigation>(this);
+	if (const auto slider = dynamic_cast<Ui::ContinuousSlider*>(focus)) {
+		if (!slider->adjustByKeyboard(left ? Qt::Key_Left : Qt::Key_Right)) {
+			return false;
+		}
+	} else if (const auto slider = qobject_cast<QAbstractSlider*>(focus)) {
+		slider->triggerAction(left
+			? QAbstractSlider::SliderSingleStepSub
+			: QAbstractSlider::SliderSingleStepAdd);
+	}
+	if (weak) {
+		update();
+	}
+	return true;
+}
+
 void KeyboardNavigation::paintEvent(QPaintEvent *e) {
 	auto p = QPainter(this);
-	if (_focused
-		&& Available(_focused, _scope)
-		&& !_focused->property(kCustomFocusFrame).toBool()) {
-		const auto rect = targetRect(_focused);
-		const auto border = st::lineWidth * 2;
-		p.setPen(QPen(st::windowBgActive->c, border));
-		p.setBrush(Qt::NoBrush);
-		p.drawRect(rect.marginsRemoved({ border, border, border, border }));
+	if (_focused && Available(_focused, _scope) && Focusable(_focused)) {
+		auto frame = QRectF(_focused->rect());
+		auto radius = float64(st::vimFocusRadius);
+		auto circle = _focused->property(kCircleFocusFrame).toBool();
+		if (const auto icon = dynamic_cast<Ui::IconButton*>(_focused.data())) {
+			const auto &style = icon->st();
+			if (style.rippleAreaSize > 0) {
+				frame = QRectF(style.rippleAreaPosition,
+					QSize(style.rippleAreaSize, style.rippleAreaSize));
+			} else {
+				const auto size = std::min(frame.width(), frame.height());
+				frame = QRectF(frame.center() - QPointF(size / 2, size / 2), QSizeF(size, size));
+			}
+			if (icon->isRightToLeft()) {
+				frame.moveLeft(icon->width() - frame.right());
+			}
+			circle = true;
+		} else if (dynamic_cast<Ui::CrossButton*>(_focused.data())) {
+			const auto size = std::min(frame.width(), frame.height());
+			frame = QRectF(frame.center() - QPointF(size / 2, size / 2), QSizeF(size, size));
+			circle = true;
+		} else if (const auto button = dynamic_cast<Ui::RoundButton*>(_focused.data())) {
+			radius = button->st().radius > 0
+				? button->st().radius : frame.height() / 2;
+		} else if (const auto slider = dynamic_cast<Ui::ContinuousSlider*>(_focused.data())) {
+			const auto size = st::vimFocusSliderSize;
+			frame = QRectF(slider->keyboardFocusPoint() - QPointF(size / 2., size / 2.),
+				QSizeF(size, size));
+			circle = true;
+		} else if (const auto slider = qobject_cast<QSlider*>(_focused.data())) {
+			auto option = QStyleOptionSlider();
+			option.initFrom(slider);
+			option.orientation = slider->orientation();
+			option.minimum = slider->minimum();
+			option.maximum = slider->maximum();
+			option.sliderPosition = slider->sliderPosition();
+			option.sliderValue = slider->value();
+			option.upsideDown = slider->invertedAppearance()
+				!= (slider->orientation() == Qt::Vertical || slider->isRightToLeft());
+			frame = slider->style()->subControlRect(
+				QStyle::CC_Slider, &option, QStyle::SC_SliderHandle, slider);
+			radius = frame.height() / 2;
+		}
+		const auto inset = float64(st::vimFocusInset);
+		frame.adjust(inset, inset, -inset, -inset);
+		frame.translate(_focused->mapTo(_scope, QPoint()));
+		auto clip = rect();
+		for (auto parent = _focused->parentWidget(); parent && parent != _scope;
+			parent = parent->parentWidget()) {
+			clip &= QRect(parent->mapTo(_scope, QPoint()), parent->size());
+		}
+		p.save();
+		p.setClipRect(clip);
+		p.setRenderHint(QPainter::Antialiasing);
+		const auto color = st::windowBgActive->c;
+		auto fill = color;
+		fill.setAlphaF(_editingControl ? 0.22 : 0.08);
+		p.setPen(QPen(color, st::vimFocusWidth));
+		p.setBrush(fill);
+		if (circle) {
+			p.drawEllipse(frame);
+		} else {
+			p.drawRoundedRect(frame, radius, radius);
+		}
+		p.restore();
 	}
 	auto badges = std::vector<HintBadge>();
 	for (const auto &hint : _hints) {
@@ -480,7 +657,10 @@ bool KeyboardNavigation::eventFilter(QObject *object, QEvent *event) {
 		setGeometry(_scope->rect());
 	} else if (event->type() == QEvent::Hide) {
 		clearHints();
+		_editingControl = nullptr;
 		_scrollAnimation.stop();
+	} else if (event->type() == QEvent::MouseMove || event->type() == QEvent::Wheel) {
+		update();
 	} else if (event->type() == QEvent::Move || event->type() == QEvent::Resize) {
 		update();
 	}

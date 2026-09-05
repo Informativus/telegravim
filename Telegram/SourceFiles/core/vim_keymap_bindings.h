@@ -57,6 +57,7 @@ enum class StickerGridAction {
 [[nodiscard]] int TabNavigationDelta(not_null<QKeyEvent*> e);
 [[nodiscard]] int PickerNavigationDelta(not_null<QKeyEvent*> e);
 [[nodiscard]] int MediaNavigationDelta(not_null<QKeyEvent*> e);
+[[nodiscard]] int InterfaceHistoryDelta(not_null<QKeyEvent*> e);
 [[nodiscard]] StickerGridAction StickerGridActionKey(
 	not_null<QKeyEvent*> e);
 

@@ -31,7 +31,11 @@ namespace Core::VimKeymap {
 [[nodiscard]] bool CloseKeyboardScope(not_null<QWidget*> scope);
 [[nodiscard]] std::vector<QPointer<QWidget>> KeyboardFocusTargets(
 	not_null<QWidget*> scope);
-void SetKeyboardFocusFrameEnabled(not_null<QWidget*> widget, bool enabled);
+void SetKeyboardFocusTargetEnabled(not_null<QWidget*> widget, bool enabled);
+void SetKeyboardFocusCircle(not_null<QWidget*> widget);
+[[nodiscard]] bool HandleKeyboardControlKey(
+	not_null<QWidget*> scope,
+	not_null<QKeyEvent*> e);
 void FocusModalNextPrevChild(not_null<QWidget*> scope, bool next);
 
 class KeyboardNavigation final : public Ui::RpWidget {
@@ -52,6 +56,7 @@ public:
 	[[nodiscard]] bool hasHints() const;
 	void clearHints();
 	bool handleHintKey(not_null<QKeyEvent*> e, const QString &input);
+	bool handleControlKey(not_null<QKeyEvent*> e);
 
 protected:
 	void paintEvent(QPaintEvent *e) override;
@@ -59,6 +64,7 @@ protected:
 
 private:
 	void trackFocus(QWidget *widget);
+	void finishControlEdit(bool cancel = false);
 	[[nodiscard]] QRect targetRect(not_null<QWidget*> target) const;
 
 	struct Hint {
@@ -68,6 +74,8 @@ private:
 	QPointer<QWidget> _scope;
 	QPointer<QWidget> _focused;
 	QPointer<QWidget> _lastFocused;
+	QPointer<QWidget> _editingControl;
+	int _editingNativeValue = 0;
 	std::vector<QPointer<QWidget>> _watched;
 	std::vector<Hint> _hints;
 	QString _prefix;

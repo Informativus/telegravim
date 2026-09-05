@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/vim_keymap_geometry.h"
 #include "core/vim_keymap_widgets.h"
 #include "core/vim_keymap.h"
+#include "info/info_navigation_history.h"
 #include "base/qt/qt_tab_key.h"
 #include "base/flat_map.h"
 #include "base/integration.h"
@@ -16,12 +17,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/integration.h"
 #include "ui/layers/layer_widget.h"
 #include "ui/widgets/checkbox.h"
+#include "ui/widgets/buttons.h"
+#include "ui/widgets/continuous_sliders.h"
 #include "ui/widgets/labels.h"
 #include "ui/text/text_utilities.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/widgets/menu/menu_action.h"
 #include "ui/style/style_core.h"
 #include "styles/style_widgets.h"
+#include "styles/style_vim_keymap.h"
 
 #include <crl/crl_on_main.h>
 #include <rpl/never.h>
@@ -38,6 +42,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtWidgets/QLineEdit>
 #include <QtWidgets/QScrollArea>
 #include <QtWidgets/QScrollBar>
+#include <QtWidgets/QSlider>
 
 #include <iostream>
 #include <algorithm>
@@ -113,6 +118,22 @@ void Check(bool condition, const char *name) {
 		++FailedChecks;
 		std::cout << "FAILED: " << name << std::endl;
 	}
+}
+
+void DrainMainQueue() {
+	auto drained = true;
+	for (auto i = 0; i != 3; ++i) {
+		auto loop = QEventLoop();
+		auto completed = false;
+		crl::on_main(&loop, [&] {
+			completed = true;
+			loop.quit();
+		});
+		QTimer::singleShot(1000, &loop, &QEventLoop::quit);
+		loop.exec();
+		drained &= completed;
+	}
+	Check(drained, "queued UI actions finish before assertions");
 }
 
 #include "tests/vim_focus_labels_tests.h"
@@ -1488,17 +1509,21 @@ void TestCustomKeyboardFocusFrame() {
 	auto grid = QWidget(&root);
 	grid.setGeometry(20, 20, 360, 280);
 	grid.setFocusPolicy(Qt::StrongFocus);
-	SetKeyboardFocusFrameEnabled(&grid, false);
+	SetKeyboardFocusTargetEnabled(&grid, false);
+	auto proxy = QWidget(&root);
+	proxy.setFocusPolicy(Qt::StrongFocus);
+	proxy.setFocusProxy(&grid);
 	auto button = Ui::AbstractButton(&root);
 	button.setGeometry(20, 320, 360, 40);
 	root.show();
 	QApplication::setActiveWindow(&root);
 	const auto navigation = KeyboardNavigation::Get(&root);
 	Check(KeyboardFocusTargets(&root) == std::vector<QPointer<QWidget>>{
-		&grid, &button }, "custom grid indicator does not remove its Tab target");
+		&button }, "sticker grid is excluded from Tab and focus hints");
 	navigation->focusTarget(&button);
 	navigation->focusNext(false);
-	Check(grid.hasFocus(), "Shift Tab still reaches the grid with its own indicator");
+	Check(button.hasFocus(), "Shift Tab skips excluded grid and wraps to the button");
+	grid.setFocus(Qt::OtherFocusReason);
 	for (const auto dpr : { 1, 2, 3 }) {
 		auto image = QImage(root.size() * dpr, QImage::Format_ARGB32_Premultiplied);
 		image.setDevicePixelRatio(dpr);
@@ -1516,14 +1541,239 @@ void TestCustomKeyboardFocusFrame() {
 		Check(!ink, "self-painted grid has no duplicate container frame at each DPR");
 	}
 	navigation->focusNext(true);
-	Check(button.hasFocus(), "Tab still leaves the grid for the action button");
+	Check(button.hasFocus(), "Tab leaves the programmatically focused grid for a button");
 	navigation->showHints([](int index, int) {
 		return QString(QChar('a' + index));
 	}, QFont(u"Menlo"_q, 13), { 7, 3 }, 3);
 	auto choose = QKeyEvent(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier, u"a"_q);
 	Check(navigation->handleHintKey(&choose, u"a"_q)
-		&& grid.hasFocus() && !navigation->hasHints(),
-		"focus hint still reaches the grid without adding a container frame");
+		&& button.hasFocus() && !navigation->hasHints(),
+		"focus hint skips the excluded grid");
+	navigation->focusTarget(&grid);
+	Check(button.hasFocus(), "excluded grid cannot be focused by the navigation controller");
+}
+
+void TestInterfaceHistory() {
+#ifdef Q_OS_MAC
+	const auto control = Qt::MetaModifier;
+	const auto command = Qt::ControlModifier;
+#else // Q_OS_MAC
+	const auto control = Qt::ControlModifier;
+	const auto command = Qt::MetaModifier;
+#endif // !Q_OS_MAC
+	for (const auto &[key, text, expected] : {
+		std::tuple(Qt::Key_H, u"h"_q, -1),
+		std::tuple(Qt::Key_L, u"l"_q, 1),
+		std::tuple(Qt::Key_unknown, u"\u0440"_q, -1),
+		std::tuple(Qt::Key_unknown, u"\u0434"_q, 1) }) {
+		auto event = QKeyEvent(QEvent::KeyPress, key, control, text);
+		Check(Core::VimKeymap::Bindings::InterfaceHistoryDelta(&event) == expected,
+			"physical Ctrl H/L navigates history in Latin and Cyrillic layouts");
+		for (const auto modifiers : {
+			Qt::KeyboardModifiers(command), Qt::KeyboardModifiers(Qt::NoModifier),
+			control | Qt::ShiftModifier, control | Qt::AltModifier }) {
+			auto ignored = QKeyEvent(QEvent::KeyPress, key, modifiers, text);
+			Check(!Core::VimKeymap::Bindings::InterfaceHistoryDelta(&ignored),
+				"history ignores command, unmodified, shift and alt keys");
+		}
+	}
+	auto back = std::vector<std::unique_ptr<int>>();
+	auto forward = std::vector<std::unique_ptr<int>>();
+	auto current = 3;
+	back.push_back(std::make_unique<int>(1));
+	back.push_back(std::make_unique<int>(2));
+	const auto save = [&] { return std::make_unique<int>(current); };
+	const auto valid = [](const auto &entry) { return entry != nullptr; };
+	for (const auto expected : { 2, 1 }) {
+		const auto entry = Info::TakeHistoryStep(back, forward, save, valid);
+		Check(entry && **entry == expected, "back restores the previous memento in order");
+		current = **entry;
+	}
+	auto saved = 0;
+	Check(!Info::TakeHistoryStep(back, forward, [&] {
+		++saved;
+		return save();
+	}, valid) && !saved && forward.size() == 2,
+		"empty back history does not save or mutate current state");
+	for (const auto expected : { 2, 3 }) {
+		const auto entry = Info::TakeHistoryStep(forward, back, save, valid);
+		Check(entry && **entry == expected, "forward restores mementos in reverse back order");
+		current = **entry;
+	}
+	Check(forward.empty() && back.size() == 2 && current == 3,
+		"back-forward round trip preserves the original history");
+	back.push_back(nullptr);
+	const auto restored = Info::TakeHistoryStep(back, forward, save, valid);
+	Check(restored && **restored == 2,
+		"history skips removed destinations before restoring a valid page");
+}
+
+void TestKeyboardSliderEditing() {
+	using namespace Core::VimKeymap;
+	auto root = QWidget();
+	root.setAttribute(Qt::WA_DontShowOnScreen);
+	root.resize(400, 300);
+	auto slider = Ui::MediaSlider(&root, st::defaultContinuousSlider);
+	slider.setGeometry(20, 30, 300, 24);
+	slider.setValue(0.5);
+	auto native = QSlider(Qt::Horizontal, &root);
+	native.setGeometry(20, 90, 300, 24);
+	native.setRange(0, 10);
+	native.setValue(5);
+	auto nativeFinished = 0;
+	QObject::connect(&native, &QSlider::sliderReleased, &root, [&] { ++nativeFinished; });
+	auto button = Ui::AbstractButton(&root);
+	button.setGeometry(20, 150, 100, 40);
+	root.show();
+	QApplication::setActiveWindow(&root);
+	const auto navigation = KeyboardNavigation::Get(&root);
+	const auto key = [&](int key, const QString &text = {},
+			Qt::KeyboardModifiers modifiers = Qt::NoModifier, bool repeat = false) {
+		auto event = QKeyEvent(QEvent::KeyPress, key, modifiers, text, repeat);
+		const auto handled = HandleKeyboardControlKey(&root, &event);
+		if (key == Qt::Key_Return || key == Qt::Key_Tab || key == Qt::Key_Escape) {
+			DrainMainQueue();
+		}
+		return handled;
+	};
+	auto progress = 0;
+	auto finished = 0;
+	slider.setChangeProgressCallback([&](float64) { ++progress; });
+	slider.setChangeFinishedCallback([&](float64) { ++finished; });
+	navigation->focusTarget(&slider);
+	Check(!key(Qt::Key_H, u"h"_q) && slider.value() == 0.5,
+		"h/l cannot edit a slider before Enter");
+	Check(key(Qt::Key_Return) && slider.value() == 0.5,
+		"Enter starts slider editing without changing its value");
+	Check(key(Qt::Key_H, u"h"_q) && slider.value() < 0.5
+		&& progress == 1 && finished == 0,
+		"h previews its value without opening the scale confirmation");
+	Check(key(Qt::Key_unknown, u"\u0434"_q) && slider.value() == 0.5,
+		"Cyrillic l increases the edited slider");
+	Check(key(Qt::Key_Return, {}, Qt::NoModifier, true)
+		&& key(Qt::Key_L, u"l"_q), "held Enter does not toggle editing off");
+	Check(key(Qt::Key_Escape) && !key(Qt::Key_H, u"h"_q)
+		&& root.isVisible() && slider.value() == 0.5 && finished == 1,
+		"Escape restores the original slider value without closing its scope");
+	Check(key(Qt::Key_Return) && key(Qt::Key_L, u"l"_q)
+		&& key(Qt::Key_L, u"l"_q) && finished == 1,
+		"multiple slider steps do not confirm until editing finishes");
+	Check(key(Qt::Key_Return) && finished == 2 && slider.value() > 0.5,
+		"Enter commits the edited slider value exactly once");
+	Check(key(Qt::Key_Return) && key(Qt::Key_H, u"h"_q) && finished == 2,
+		"the next editing session starts without an extra confirmation");
+	Check(key(Qt::Key_Tab) && native.hasFocus(),
+		"Tab commits and moves from a Telegram slider to the next control");
+	Check(finished == 3, "leaving a changed slider confirms it once");
+	Check(!key(Qt::Key_H, u"h"_q) && native.value() == 5,
+		"editing mode is not inherited by the next slider");
+	Check(key(Qt::Key_Return) && key(Qt::Key_L, u"l"_q) && native.value() == 6
+		&& nativeFinished == 0,
+		"native Qt sliders use the same Enter and h/l workflow");
+	Check(key(Qt::Key_Return) && !key(Qt::Key_H, u"h"_q) && nativeFinished == 1,
+		"second Enter finishes slider editing");
+	Check(key(Qt::Key_Return) && key(Qt::Key_H, u"h"_q) && native.value() == 5
+		&& key(Qt::Key_Escape) && native.value() == 6 && nativeFinished == 2,
+		"Escape cancels native slider editing and restores its starting value");
+	navigation->focusTarget(&slider);
+	slider.setAdjustCallback([](float64 value) { return std::round(value * 4) / 4; });
+	slider.setValue(0.5);
+	Check(key(Qt::Key_Return) && key(Qt::Key_L, u"l"_q) && slider.value() == 0.75,
+		"discrete settings sliders advance to the next allowed step");
+	slider.setValue(1.);
+	const auto count = finished;
+	Check(key(Qt::Key_L, u"l"_q) && slider.value() == 1. && finished == count,
+		"slider limits do not emit duplicate changes");
+	slider.setDisabled(true);
+	Check(!key(Qt::Key_H, u"h"_q) && slider.value() == 1.,
+		"disabled slider cannot be changed from the keyboard");
+	const auto targets = KeyboardFocusTargets(&root);
+	Check(std::find(targets.begin(), targets.end(), &slider) == targets.end(),
+		"disabled Telegram slider is not a focus target");
+	slider.setDisabled(false);
+	navigation->focusTarget(&button);
+	navigation->focusTarget(&slider);
+	Check(!key(Qt::Key_H, u"h"_q), "focus changes terminate slider editing");
+	Check(key(Qt::Key_Return) && key(Qt::Key_Tab, {}, Qt::ShiftModifier)
+		&& button.hasFocus(), "Shift Tab exits editing and wraps backwards");
+	auto disposable = std::make_unique<Ui::MediaSlider>(&root, st::defaultContinuousSlider);
+	disposable->setGeometry(20, 210, 300, 24);
+	disposable->show();
+	disposable->setValue(0.5);
+	disposable->setChangeProgressCallback([&](float64) { disposable.reset(); });
+	navigation->focusTarget(disposable.get());
+	Check(key(Qt::Key_Return) && key(Qt::Key_L, u"l"_q) && !disposable,
+		"slider callbacks may destroy the focused control safely");
+}
+
+void TestKeyboardFocusShapes() {
+	using namespace Core::VimKeymap;
+	auto root = QWidget();
+	root.setAttribute(Qt::WA_DontShowOnScreen);
+	root.resize(420, 280);
+	auto icon = Ui::IconButton(&root, st::menuToggle);
+	icon.setGeometry(20, 20, 40, 56);
+	auto swatch = Ui::AbstractButton(&root);
+	swatch.setGeometry(100, 30, 24, 24);
+	SetKeyboardFocusCircle(&swatch);
+	auto button = Ui::RoundButton(&root, rpl::single(u"Add stickers"_q), st::defaultActiveButton);
+	button.setGeometry(20, 100, 360, 42);
+	button.setFullRadius(true);
+	auto slider = Ui::MediaSlider(&root, st::defaultContinuousSlider);
+	slider.setGeometry(20, 190, 360, 24);
+	slider.setAlwaysDisplayMarker(true);
+	slider.setValue(0.5);
+	root.show();
+	QApplication::setActiveWindow(&root);
+	const auto navigation = KeyboardNavigation::Get(&root);
+	for (const auto target : std::vector<QWidget*>{ &icon, &swatch, &button, &slider }) {
+		navigation->focusTarget(target);
+		for (const auto dpr : { 1, 2, 3 }) {
+			auto image = QImage(root.size() * dpr, QImage::Format_ARGB32_Premultiplied);
+			image.setDevicePixelRatio(dpr);
+			image.fill(Qt::transparent);
+			{
+				auto painter = QPainter(&image);
+				navigation->render(&painter, {}, {}, QWidget::RenderFlags());
+			}
+			auto bounds = QRect();
+			for (auto y = 0; y != image.height(); ++y) {
+				for (auto x = 0; x != image.width(); ++x) {
+					if (image.pixelColor(x, y).alpha()) {
+						bounds |= QRect(x, y, 1, 1);
+					}
+				}
+			}
+			Check(!bounds.isEmpty(), "each control has a visible focus indicator at every DPR");
+			Check(!image.pixelColor(bounds.topLeft()).alpha()
+				&& !image.pixelColor(bounds.bottomRight()).alpha(),
+				"focus indicator corners are rounded rather than rectangular");
+			if (target == &slider) {
+				const auto center = slider.mapTo(&root, slider.keyboardFocusPoint()) * dpr;
+				Check(bounds.width() <= st::vimFocusSliderSize * dpr
+					&& (bounds.center() - center).manhattanLength() <= 2,
+					"slider focus surrounds its handle instead of the whole track");
+			} else if (target == &icon || target == &swatch) {
+				Check(std::abs(bounds.width() - bounds.height()) <= 1,
+					"icon and swatch focus indicators are circular");
+			}
+			const auto output = qEnvironmentVariable("VIM_KEYMAP_FOCUS_SNAPSHOTS");
+			if (!output.isEmpty() && dpr == 2) {
+				const auto name = target == &icon ? u"icon"_q
+					: target == &swatch ? u"swatch"_q
+					: target == &button ? u"button"_q : u"slider"_q;
+				auto snapshot = QImage(image.size(), QImage::Format_ARGB32_Premultiplied);
+				snapshot.setDevicePixelRatio(dpr);
+				snapshot.fill(QColor(24, 33, 41));
+				{
+					auto painter = QPainter(&snapshot);
+					painter.drawImage(QPoint(), image);
+				}
+				Check(snapshot.save(output + '/' + name + u".png"_q),
+					"focus rendering snapshot is saved");
+			}
+		}
+	}
 }
 
 void TestPopupHandlerScope() {
@@ -1722,6 +1972,9 @@ int main(int argc, char *argv[]) {
 	TestNestedKeyboardNavigation();
 	TestKeyboardFocusScrollingAndPainting();
 	TestCustomKeyboardFocusFrame();
+	TestInterfaceHistory();
+	TestKeyboardSliderEditing();
+	TestKeyboardFocusShapes();
 	TestVimFocusLabels();
 	TestPopupMenuKeyboardCycle();
 	TestPopupFocusHints();

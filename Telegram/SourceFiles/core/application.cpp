@@ -747,6 +747,9 @@ bool Application::eventFilter(QObject *object, QEvent *e) {
 				return Core::VimKeymap::HandleApplicationKeyPress(object, event);
 			} else if (Core::VimKeymap::CloseKeyboardScope(view)) {
 				return true;
+			} else if (Core::VimKeymap::Enabled()
+				&& Core::VimKeymap::HandleKeyboardControlKey(view, event)) {
+				return true;
 			}
 			_mediaView->close();
 			Core::VimKeymap::TraceKey(event, u"media viewer close"_q);

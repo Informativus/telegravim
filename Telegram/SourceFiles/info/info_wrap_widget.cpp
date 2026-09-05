@@ -7,6 +7,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/info_wrap_widget.h"
 
+#include "core/vim_keymap.h"
+#include "core/vim_keymap_bindings.h"
+#include "info/info_navigation_history.h"
 #include "info/profile/info_profile_widget.h"
 #include "info/profile/info_profile_values.h"
 #include "info/media/info_media_widget.h"
@@ -55,6 +58,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_info.h"
 #include "styles/style_layers.h"
 
+#include <QApplication>
+
 namespace Info {
 namespace {
 
@@ -101,7 +106,17 @@ const style::InfoTopBar &TopBarStyle(Wrap wrap) {
 } // namespace
 
 struct WrapWidget::StackItem {
+	StackItem() = default;
+	explicit StackItem(std::shared_ptr<ContentMemento> memento)
+	: section(std::move(memento))
+	, lifetime(std::make_shared<Memento>(
+		std::vector<std::shared_ptr<ContentMemento>>{ section })) {
+	}
+	[[nodiscard]] bool valid() const {
+		return !lifetime || lifetime->stackSize() > 0;
+	}
 	std::shared_ptr<ContentMemento> section;
+	std::shared_ptr<Memento> lifetime;
 //	std::shared_ptr<ContentMemento> anotherTab;
 };
 
@@ -145,6 +160,29 @@ WrapWidget::WrapWidget(
 		});
 	}, lifetime());
 	restoreHistoryStack(memento->takeStack());
+	Core::VimKeymap::RegisterPreLayerKeyHandler(this, [=](not_null<QKeyEvent*> e) {
+		const auto delta = Core::VimKeymap::Bindings::InterfaceHistoryDelta(e);
+		if (!delta || _mementoTaken || !isVisible() || !QWidget::window()->isActiveWindow()) {
+			return false;
+		}
+		const auto focus = QApplication::focusWidget();
+		if (this->wrap() != Wrap::Layer && focus != this && !isAncestorOf(focus)) {
+			return false;
+		}
+		if (delta > 0 && _forwardStack.empty()) {
+			return true;
+		}
+		if (!e->isAutoRepeat()) {
+			checkBeforeClose([=] {
+				if (delta < 0) {
+					_controller->showBackFromStack();
+				} else {
+					showForwardFromStack();
+				}
+			});
+		}
+		return true;
+	});
 
 	if (const auto topic = _controller->topic()) {
 		topic->destroyed(
@@ -647,21 +685,37 @@ bool WrapWidget::requireTopBarSearch() const {
 
 bool WrapWidget::showBackFromStackInternal(
 		const Window::SectionShow &params) {
-	if (hasStackHistory()) {
-		auto last = std::move(_historyStack.back());
-		_historyStack.pop_back();
+	const auto last = TakeHistoryStep(_historyStack, _forwardStack, [=] {
+		return StackItem{ _content->createMemento() };
+	}, [](const StackItem &item) {
+		return item.valid();
+	});
+	if (last) {
 		showNewContent(
-			last.section.get(),
-			params.withWay(Window::SectionShow::Way::Backward));
+			last->section.get(),
+			params.withWay(Window::SectionShow::Way::Backward),
+			true);
 		return true;
 	}
 	return (wrap() == Wrap::Layer);
 }
 
+bool WrapWidget::showForwardFromStack() {
+	const auto next = TakeHistoryStep(_forwardStack, _historyStack, [=] {
+		return StackItem{ _content->createMemento() };
+	}, [](const StackItem &item) {
+		return item.valid();
+	});
+	if (!next) {
+		return false;
+	}
+	showNewContent(next->section.get(), Window::SectionShow(), true);
+	return true;
+}
+
 void WrapWidget::removeFromStack(const std::vector<Section> &sections) {
 	for (const auto &section : sections) {
-		const auto it = ranges::find_if(_historyStack, [&](
-				const StackItem &item) {
+		const auto matches = [&](const StackItem &item) {
 			const auto &s = item.section->section();
 			if (s.type() != section.type()) {
 				return false;
@@ -673,10 +727,14 @@ void WrapWidget::removeFromStack(const std::vector<Section> &sections) {
 				return (s.settingsType() == section.settingsType());
 			}
 			return false;
-		});
+		};
+		const auto it = ranges::find_if(_historyStack, matches);
 		if (it != end(_historyStack)) {
 			_historyStack.erase(it);
 		}
+		_forwardStack.erase(
+			std::remove_if(_forwardStack.begin(), _forwardStack.end(), matches),
+			_forwardStack.end());
 	}
 }
 
@@ -871,6 +929,9 @@ bool WrapWidget::showInternal(
 		if (_mementoTaken || infoMemento->stackSize() > 1) {
 			return false;
 		}
+		if (params.way != Window::SectionShow::Way::Backward) {
+			_forwardStack.clear();
+		}
 		auto content = infoMemento->content();
 		auto skipInternal = hasStackHistory()
 			&& (params.way == Window::SectionShow::Way::ClearStack);
@@ -903,7 +964,9 @@ std::shared_ptr<Window::SectionMemento> WrapWidget::createMemento() {
 	auto stack = std::vector<std::shared_ptr<ContentMemento>>();
 	stack.reserve(_historyStack.size() + 1);
 	for (auto &stackItem : base::take(_historyStack)) {
-		stack.push_back(std::move(stackItem.section));
+		if (stackItem.valid()) {
+			stack.push_back(std::move(stackItem.section));
+		}
 	}
 	stack.push_back(_content->createMemento());
 
@@ -958,7 +1021,8 @@ bool WrapWidget::returnToFirstStackFrame(
 
 void WrapWidget::showNewContent(
 		not_null<ContentMemento*> memento,
-		const Window::SectionShow &params) {
+		const Window::SectionShow &params,
+		bool fromHistory) {
 	const auto saveToStack = (_content != nullptr)
 		&& (params.way == Window::SectionShow::Way::Forward);
 	const auto needAnimation = (_content != nullptr)
@@ -998,7 +1062,10 @@ void WrapWidget::showNewContent(
 			animationParams.topMask = Ui::PixmapFromImage(std::move(image));
 		}
 	}
-	if (saveToStack) {
+	if (!fromHistory && params.way != Window::SectionShow::Way::Backward) {
+		_forwardStack.clear();
+	}
+	if (saveToStack && !fromHistory) {
 		auto item = StackItem();
 		item.section = _content->createMemento();
 		_historyStack.push_back(std::move(item));
@@ -1196,6 +1263,8 @@ void WrapWidget::replaceSwipeHandler(
 	_content->replaceSwipeHandler(std::move(incompleteArgs));
 }
 
-WrapWidget::~WrapWidget() = default;
+WrapWidget::~WrapWidget() {
+	Core::VimKeymap::UnregisterPreLayerKeyHandler(this);
+}
 
 } // namespace Info

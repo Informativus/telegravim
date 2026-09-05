@@ -77,7 +77,7 @@ constexpr auto kComposeCursorStyleUnderline = "underline";
 constexpr auto kHoldScrollTickMs = 16;
 constexpr auto kHoldScrollStartDelayMs = 90;
 constexpr auto kSingleScrollDurationMs = 190;
-constexpr auto kTelegraVimBuild = "2026.09.05-94";
+constexpr auto kTelegraVimBuild = "2026.09.05-95";
 constexpr auto kKeyLogLimit = 200;
 
 base::options::toggle VimKeymapOption({
@@ -1796,12 +1796,21 @@ bool HandleApplicationKeyPress(
 	}
 	const auto scope = QPointer<QWidget>(ActiveKeyboardScope());
 	UpdateKeyboardScope(scope);
+	const auto controlScope = scope ? scope.data() : QApplication::activeWindow();
+	if (!scope && controlScope && HandleKeyboardControlKey(controlScope, e)) {
+		e->accept();
+		return true;
+	}
 	if (scope) {
 		if (const auto navigation = KeyboardNavigation::Find(scope)) {
 			if (navigation->handleHintKey(e, HintInput(e))) {
 				e->accept();
 				return true;
 			}
+		}
+		if (HandleKeyboardControlKey(scope, e)) {
+			e->accept();
+			return true;
 		}
 		if (e->key() == Qt::Key_Escape
 			&& CleanModifiers(e) == Qt::NoModifier

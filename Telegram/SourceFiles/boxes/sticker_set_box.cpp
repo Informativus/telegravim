@@ -1247,7 +1247,7 @@ StickerSetBox::Inner::Inner(
 , _previewTimer([=] { showPreview(); }) {
 	setAttribute(Qt::WA_OpaquePaintEvent);
 	setFocusPolicy(Qt::StrongFocus);
-	Core::VimKeymap::SetKeyboardFocusFrameEnabled(this, false);
+	Core::VimKeymap::SetKeyboardFocusTargetEnabled(this, false);
 
 	_api.request(MTPmessages_GetStickerSet(
 		Data::InputStickerSet(_input),

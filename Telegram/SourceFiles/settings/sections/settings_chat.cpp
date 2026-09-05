@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "settings/sections/settings_chat.h"
 
+#include "core/vim_keymap_widgets.h"
+
 #include "settings/settings_common_session.h"
 
 #include "base/timer_rpl.h"
@@ -191,6 +193,7 @@ ColorsPalette::Button::Button(
 , _selected(selected) {
 	_widget.show();
 	_widget.setIsListItem(true);
+	Core::VimKeymap::SetKeyboardFocusCircle(&_widget);
 	_widget.resize(st::settingsAccentColorSize, st::settingsAccentColorSize);
 	_widget.paintRequest(
 	) | rpl::on_next([=] {

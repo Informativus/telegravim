@@ -1380,6 +1380,7 @@ PRIVATE
     info/info_layer_widget.h
     info/info_memento.cpp
     info/info_memento.h
+    info/info_navigation_history.h
     info/info_section_widget.cpp
     info/info_section_widget.h
     info/info_top_bar.cpp
