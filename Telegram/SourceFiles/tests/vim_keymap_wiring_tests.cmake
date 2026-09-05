@@ -92,4 +92,31 @@ expect(media/view/media_view_overlay_widget.cpp
 expect(media/view/media_view_overlay_widget.cpp
     "controls->updatePlaybackSpeed\\(\\*speed\\)"
     "Video speed shortcuts must update the existing playback controls")
-message(STATUS "28 Vim application wiring checks passed (source-level).")
+expect(media/player/media_player_widget.cpp
+    "RegisterGlobalFocusRoot\\(this\\)"
+    "The top playback bar must contribute controls to global focus hints")
+expect(core/vim_keymap.cpp
+    "return Bindings::ShortestHintLabel\\(index, total, CurrentHintAlphabet\\(\\)\\)"
+    "All hint consumers must share the shortest prefix-free label allocator")
+expect(history/history_inner_widget.cpp
+    "vimKeymapAddWidgetHints\\(\\);[\n\t ]*for \\(const auto view : accessibleElements\\(\\)\\)"
+    "Player controls must receive short labels before message links")
+expect(history/history_inner_widget.cpp
+    "HintLabel\\(offset \\+ index, total\\)"
+    "Player and message targets must share one alphabet without collisions")
+expect(history/history_inner_widget.cpp
+    "navigation->setHintPrefix\\(_vimKeymapHintPrefix\\)"
+    "Partial multi-letter input must filter player and message badges together")
+expect(history/history_inner_widget.cpp
+    "KeyboardNavigation::Get\\(root\\)->focusTarget\\(target\\)"
+    "Choosing a player hint must focus its actual control")
+expect(core/vim_keymap.cpp
+    "if \\(globalRoot\\)[^{]*\\{[^;]*KeyboardNavigation::Find\\(globalRoot\\)"
+    "Native player control keys must be routed before chat handlers")
+expect(core/vim_keymap.cpp
+    "if \\(const auto navigation = ScrollNavigationKey\\(e\\)\\)"
+    "Modal scrolling must not depend on the composer mode behind the layer")
+expect(core/vim_keymap.cpp
+    "return NormalMode\\(\\) \\? ScrollNavigationKey\\(e\\) : std::nullopt"
+    "Chat j/k must keep their normal-mode guard for insert-mode typing")
+message(STATUS "37 Vim application wiring checks passed (source-level).")

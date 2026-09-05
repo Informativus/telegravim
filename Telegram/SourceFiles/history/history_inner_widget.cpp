@@ -16,6 +16,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/vim_keymap.h"
 #include "core/vim_keymap_bindings.h"
 #include "core/vim_keymap_geometry.h"
+#include "core/vim_keymap_widgets.h"
 #include "data/data_chat_participant_status.h"
 #include "history/history_item_helpers.h"
 #include "history/view/controls/history_view_forward_panel.h"
@@ -4447,12 +4448,15 @@ void HistoryInner::vimKeymapClearHints() {
 		return;
 	}
 	_vimKeymapHintMode = VimKeymapHintMode::None;
+	_vimKeymapWidgetHintsLifetime.destroy();
+	_vimKeymapWidgetHintRoots.clear();
 	_vimKeymapHints.clear();
 	_vimKeymapHintPrefix.clear();
 	update();
 }
 
 void HistoryInner::vimKeymapBuildMessageHints(VimKeymapHintMode mode) {
+	vimKeymapClearHints();
 	_vimKeymapHintMode = mode;
 	_vimKeymapHints.clear();
 	_vimKeymapHintPrefix.clear();
@@ -4500,6 +4504,7 @@ void HistoryInner::vimKeymapBuildMessageHints(VimKeymapHintMode mode) {
 }
 
 void HistoryInner::vimKeymapBuildLinkHints(not_null<Element*> view) {
+	vimKeymapClearHints();
 	_vimKeymapHintMode = VimKeymapHintMode::ActivateLink;
 	_vimKeymapHints.clear();
 	_vimKeymapHintPrefix.clear();
@@ -4513,9 +4518,11 @@ void HistoryInner::vimKeymapBuildLinkHints(not_null<Element*> view) {
 }
 
 void HistoryInner::vimKeymapBuildVisibleLinkHints() {
+	vimKeymapClearHints();
 	_vimKeymapHintMode = VimKeymapHintMode::ActivateLink;
 	_vimKeymapHints.clear();
 	_vimKeymapHintPrefix.clear();
+	vimKeymapAddWidgetHints();
 	for (const auto view : accessibleElements()) {
 		const auto top = itemTop(view);
 		const auto bottom = top + view->height();
@@ -4863,9 +4870,47 @@ void HistoryInner::vimKeymapAddLinkHints(not_null<Element*> view) {
 	}
 }
 
+void HistoryInner::vimKeymapAddWidgetHints() {
+	_vimKeymapWidgetHintRoots = Core::VimKeymap::GlobalFocusRoots(window());
+	for (const auto root : _vimKeymapWidgetHintRoots) {
+		for (const auto target : Core::VimKeymap::VisibleKeyboardHintTargets(root)) {
+			_vimKeymapHints.push_back({ .widget = target });
+		}
+	}
+}
+
 void HistoryInner::vimKeymapAssignHintLabels() {
 	for (auto i = 0, count = int(_vimKeymapHints.size()); i != count; ++i) {
 		_vimKeymapHints[i].label = Core::VimKeymap::HintLabel(i, count);
+	}
+	const auto total = int(_vimKeymapHints.size());
+	auto offset = 0;
+	for (const auto root : _vimKeymapWidgetHintRoots) {
+		const auto navigation = Core::VimKeymap::KeyboardNavigation::Get(root);
+		navigation->showHints(
+			[offset, total](int index, int) {
+				return Core::VimKeymap::HintLabel(offset + index, total);
+			},
+			QFont(u"Menlo"_q, Core::VimKeymap::HintSize(), QFont::DemiBold),
+			st::vimHintPadding,
+			st::vimHintGap);
+		offset += int(Core::VimKeymap::VisibleKeyboardHintTargets(root).size());
+		const auto weak = QPointer<Core::VimKeymap::KeyboardNavigation>(navigation);
+		_vimKeymapWidgetHintsLifetime.add([=] {
+			if (weak) {
+				weak->clearHints();
+			}
+		});
+	}
+}
+
+void HistoryInner::vimKeymapUpdateWidgetHintPrefix() {
+	for (const auto root : _vimKeymapWidgetHintRoots) {
+		if (root) {
+			if (const auto navigation = Core::VimKeymap::KeyboardNavigation::Find(root)) {
+				navigation->setHintPrefix(_vimKeymapHintPrefix);
+			}
+		}
 	}
 }
 
@@ -4901,7 +4946,15 @@ bool HistoryInner::vimKeymapBeginHints(Core::VimKeymap::Action action) {
 bool HistoryInner::vimKeymapTriggerHint(VimKeymapHint hint) {
 	const auto mode = _vimKeymapHintMode;
 	if (mode == VimKeymapHintMode::ActivateLink) {
-		if (hint.photo) {
+		if (hint.widget) {
+			const auto target = hint.widget;
+			const auto root = Core::VimKeymap::GlobalFocusRoot(target);
+			vimKeymapClearHints();
+			if (root && target) {
+				Core::VimKeymap::KeyboardNavigation::Get(root)->focusTarget(target);
+			}
+			return true;
+		} else if (hint.photo) {
 			const auto photo = hint.photo;
 			vimKeymapClearHints();
 			elementOpenPhoto(not_null{ photo }, hint.itemId);
@@ -4980,6 +5033,7 @@ bool HistoryInner::vimKeymapHandleHintKey(not_null<QKeyEvent*> e) {
 	} else if (e->key() == Qt::Key_Backspace) {
 		if (!_vimKeymapHintPrefix.isEmpty()) {
 			_vimKeymapHintPrefix.chop(1);
+			vimKeymapUpdateWidgetHintPrefix();
 			update();
 		}
 		return true;
@@ -5009,6 +5063,7 @@ bool HistoryInner::vimKeymapHandleHintKey(not_null<QKeyEvent*> e) {
 	} else if (!hasPrefix) {
 		_vimKeymapHintPrefix.clear();
 	}
+	vimKeymapUpdateWidgetHintPrefix();
 	update();
 	return true;
 }
@@ -5025,6 +5080,9 @@ void HistoryInner::vimKeymapPaintHints(Painter &p) const {
 	auto badges = std::vector<Core::VimKeymap::HintBadge>();
 	badges.reserve(_vimKeymapHints.size());
 	for (const auto &hint : _vimKeymapHints) {
+		if (!hint.itemId) {
+			continue;
+		}
 		badges.push_back({ hint.label, hint.badge.topLeft(), hint.target });
 	}
 	const auto margin = st::vimHintMargin;

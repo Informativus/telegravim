@@ -611,6 +611,7 @@ private:
 		DocumentData *document = nullptr;
 		QPoint clickPoint;
 		bool useClickPoint = false;
+		QPointer<QWidget> widget;
 	};
 	void vimKeymapClearHints();
 	void vimKeymapBuildMessageHints(VimKeymapHintMode mode);
@@ -618,7 +619,9 @@ private:
 	void vimKeymapBuildVisibleLinkHints();
 	void vimKeymapAddLinkHints(not_null<Element*> view);
 	void vimKeymapAddUserpicHints(Element *onlyView = nullptr);
+	void vimKeymapAddWidgetHints();
 	void vimKeymapAssignHintLabels();
+	void vimKeymapUpdateWidgetHintPrefix();
 	[[nodiscard]] bool vimKeymapTriggerHint(VimKeymapHint hint);
 	void vimKeymapPaintHints(Painter &p) const;
 	[[nodiscard]] bool vimKeymapCopyItem(not_null<HistoryItem*> item);
@@ -779,6 +782,8 @@ private:
 	rpl::lifetime _vimKeymapPhotoCopyLifetime;
 	std::vector<VimKeymapHint> _vimKeymapHints;
 	QString _vimKeymapHintPrefix;
+	std::vector<QPointer<QWidget>> _vimKeymapWidgetHintRoots;
+	rpl::lifetime _vimKeymapWidgetHintsLifetime;
 
 	[[nodiscard]] HistoryView::ElementOverlayHost &ensureOverlayHost();
 	std::unique_ptr<HistoryView::ElementOverlayHost> _overlayHost;

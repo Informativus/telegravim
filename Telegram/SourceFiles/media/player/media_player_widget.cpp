@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "media/player/media_player_widget.h"
 
+#include "core/vim_keymap_widgets.h"
 #include "platform/platform_specific.h"
 #include "data/data_document.h"
 #include "data/data_session.h"
@@ -87,6 +88,7 @@ Widget::Widget(
 	_speedToggle->finishAnimating();
 
 	setAttribute(Qt::WA_OpaquePaintEvent);
+	Core::VimKeymap::RegisterGlobalFocusRoot(this);
 	setMouseTracking(true);
 	resize(width(), st::mediaPlayerHeight + st::lineWidth);
 

@@ -38,6 +38,10 @@ enum class StickerGridAction {
 [[nodiscard]] Qt::KeyboardModifiers CleanModifiers(not_null<QKeyEvent*> e);
 [[nodiscard]] QString PlainText(not_null<QKeyEvent*> e);
 [[nodiscard]] QString HintCharacter(not_null<QKeyEvent*> e);
+[[nodiscard]] QString ShortestHintLabel(
+	int index,
+	int total,
+	const QString &alphabet);
 [[nodiscard]] bool IsPlainEnter(not_null<QKeyEvent*> e);
 [[nodiscard]] bool IsPlainEscape(not_null<QKeyEvent*> e);
 [[nodiscard]] bool IsSystemPaste(not_null<QKeyEvent*> e);

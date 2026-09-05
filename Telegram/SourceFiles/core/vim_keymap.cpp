@@ -77,7 +77,7 @@ constexpr auto kComposeCursorStyleUnderline = "underline";
 constexpr auto kHoldScrollTickMs = 16;
 constexpr auto kHoldScrollStartDelayMs = 90;
 constexpr auto kSingleScrollDurationMs = 190;
-constexpr auto kTelegraVimBuild = "2026.09.05-96";
+constexpr auto kTelegraVimBuild = "2026.09.05-97";
 constexpr auto kKeyLogLimit = 200;
 
 base::options::toggle VimKeymapOption({
@@ -569,6 +569,15 @@ void RecordKeyEvent(
 	MigrateLegacyDefaults();
 	const auto value = option.value().trimmed();
 	return value.isEmpty() ? u"-"_q : value;
+}
+
+[[nodiscard]] std::optional<Qt::Key> ScrollNavigationKey(not_null<QKeyEvent*> e) {
+	if (MatchesBindings(VimKeymapKeyScrollDownOption, e)) {
+		return Qt::Key_Down;
+	} else if (MatchesBindings(VimKeymapKeyScrollUpOption, e)) {
+		return Qt::Key_Up;
+	}
+	return std::nullopt;
 }
 
 [[nodiscard]] bool IsToggleModeKey(not_null<QKeyEvent*> e) {
@@ -1796,7 +1805,26 @@ bool HandleApplicationKeyPress(
 	}
 	const auto scope = QPointer<QWidget>(ActiveKeyboardScope());
 	UpdateKeyboardScope(scope);
-	const auto controlScope = scope ? scope.data() : QApplication::activeWindow();
+	const auto focus = QApplication::focusWidget();
+	const auto globalRoot = scope ? nullptr : GlobalFocusRoot(focus);
+	if (globalRoot) {
+		const auto navigation = KeyboardNavigation::Find(globalRoot);
+		if (!navigation || !navigation->hasHints()) {
+			if (const auto delta = Bindings::TabNavigationDelta(e)) {
+				KeyboardNavigation::Get(globalRoot)->focusNext(delta > 0);
+				e->accept();
+				return true;
+			} else if (dynamic_cast<Ui::AbstractButton*>(focus)
+				&& CleanModifiers(e) == Qt::NoModifier
+				&& (e->key() == Qt::Key_Return
+					|| e->key() == Qt::Key_Enter
+					|| e->key() == Qt::Key_Space)) {
+				return false;
+			}
+		}
+	}
+	const auto controlScope = scope ? scope.data()
+		: globalRoot ? globalRoot : QApplication::activeWindow();
 	if (!scope && controlScope && HandleKeyboardControlKey(controlScope, e)) {
 		e->accept();
 		return true;
@@ -1868,7 +1896,7 @@ bool HandleApplicationKeyPress(
 			return true;
 		}
 		if (!QApplication::activePopupWidget()) {
-			if (const auto navigation = NavigationKey(e)) {
+			if (const auto navigation = ScrollNavigationKey(e)) {
 				const auto down = *navigation == Qt::Key_Down;
 				const auto handled = KeyboardNavigation::Get(scope)->scroll(
 					(down ? 1 : -1) * ScrollStep(),
@@ -2197,15 +2225,7 @@ bool RedoKey(not_null<QKeyEvent*> e) {
 }
 
 std::optional<Qt::Key> NavigationKey(not_null<QKeyEvent*> e) {
-	if (!NormalMode()) {
-		return std::nullopt;
-	}
-	if (MatchesBindings(VimKeymapKeyScrollDownOption, e)) {
-		return Qt::Key_Down;
-	} else if (MatchesBindings(VimKeymapKeyScrollUpOption, e)) {
-		return Qt::Key_Up;
-	}
-	return std::nullopt;
+	return NormalMode() ? ScrollNavigationKey(e) : std::nullopt;
 }
 
 std::optional<Action> ActionKey(not_null<QKeyEvent*> e) {
@@ -2276,14 +2296,7 @@ bool IsJumpToBottomKey(not_null<QKeyEvent*> e) {
 }
 
 QString HintLabel(int index, int total) {
-	const auto alphabet = CurrentHintAlphabet();
-	const auto size = alphabet.size();
-	if (total <= size) {
-		return alphabet.mid(index, 1);
-	}
-	const auto first = (index / size) % size;
-	const auto second = index % size;
-	return alphabet.mid(first, 1) + alphabet.mid(second, 1);
+	return Bindings::ShortestHintLabel(index, total, CurrentHintAlphabet());
 }
 
 QString HintInput(not_null<QKeyEvent*> e) {

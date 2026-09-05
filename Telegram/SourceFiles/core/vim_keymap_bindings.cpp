@@ -16,6 +16,33 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace Core::VimKeymap::Bindings {
 
+QString ShortestHintLabel(int index, int total, const QString &alphabet) {
+	const auto base = int(alphabet.size());
+	if (base < 2 || index < 0 || index >= total) {
+		return {};
+	} else if (total <= base) {
+		return alphabet.mid(index, 1);
+	}
+	auto capacity = int64(base);
+	auto length = 1;
+	while (capacity <= total / base) {
+		capacity *= base;
+		++length;
+	}
+	const auto expanded = (total - capacity + base - 2) / (base - 1);
+	const auto shortCount = capacity - expanded;
+	auto value = int64(index);
+	if (index >= shortCount) {
+		value += shortCount * (base - 1);
+		++length;
+	}
+	auto result = QString(length, alphabet.front());
+	for (auto i = length; i > 0; value /= base) {
+		result[--i] = alphabet[value % base];
+	}
+	return result;
+}
+
 bool IsMessageShare(not_null<QKeyEvent*> e) {
 	return CleanModifiers(e) == Qt::NoModifier
 		&& !e->isAutoRepeat()

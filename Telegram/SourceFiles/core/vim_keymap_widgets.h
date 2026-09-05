@@ -31,6 +31,12 @@ namespace Core::VimKeymap {
 [[nodiscard]] bool CloseKeyboardScope(not_null<QWidget*> scope);
 [[nodiscard]] std::vector<QPointer<QWidget>> KeyboardFocusTargets(
 	not_null<QWidget*> scope);
+[[nodiscard]] std::vector<QPointer<QWidget>> VisibleKeyboardHintTargets(
+	not_null<QWidget*> scope);
+void RegisterGlobalFocusRoot(not_null<QWidget*> root);
+[[nodiscard]] std::vector<QPointer<QWidget>> GlobalFocusRoots(
+	not_null<QWidget*> window);
+[[nodiscard]] QWidget *GlobalFocusRoot(QWidget *widget);
 void SetKeyboardFocusTargetEnabled(not_null<QWidget*> widget, bool enabled);
 void SetKeyboardFocusCircle(not_null<QWidget*> widget);
 void PaintKeyboardStickerFrame(QPainter &p, QRect rect);
@@ -66,6 +72,7 @@ public:
 		int gap);
 	[[nodiscard]] bool hasHints() const;
 	void clearHints();
+	void setHintPrefix(const QString &prefix);
 	bool handleHintKey(not_null<QKeyEvent*> e, const QString &input);
 	bool handleControlKey(not_null<QKeyEvent*> e);
 

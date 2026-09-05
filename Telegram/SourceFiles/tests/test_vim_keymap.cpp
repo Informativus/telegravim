@@ -24,6 +24,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/text/text.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/widgets/menu/menu_action.h"
+#include "ui/wrap/slide_wrap.h"
 #include "ui/style/style_core.h"
 #include "ui/style/style_core_palette.h"
 #include "styles/style_widgets.h"
@@ -1250,6 +1251,7 @@ void TestHintTargetAnchoring() {
 void TestModalTabCycle() {
 	auto root = Ui::RpWidget(nullptr);
 	root.setAttribute(Qt::WA_DontShowOnScreen);
+	root.resize(300, 200);
 	auto menu = Ui::AbstractButton(&root);
 	auto hidden = Ui::AbstractButton(&root);
 	auto close = Ui::AbstractButton(&root);
@@ -1450,6 +1452,227 @@ void TestNestedKeyboardNavigation() {
 	const auto rtl = KeyboardFocusTargets(&body);
 	Check(rtl.size() >= 2 && rtl[0] == &right && rtl[1] == &message,
 		"same-row target order follows right-to-left layout");
+}
+
+void TestShortestHintLabels() {
+	using Core::VimKeymap::Bindings::ShortestHintLabel;
+	for (const auto &alphabet : {
+		u"abc"_q,
+		u"abcdefghijklmnopqrstuvwxyz"_q,
+		u"\u0430\u0431\u0432\u0433\u0434\u0435\u0436\u0437\u0438\u0439"_q }) {
+		const auto base = int(alphabet.size());
+		for (const auto total : { 1, base, base + 1, base * 2,
+			base * base, base * base + 1, 2000 }) {
+			auto labels = std::vector<QString>();
+			auto single = 0;
+			auto valid = true;
+			for (auto i = 0; i != total; ++i) {
+				const auto label = ShortestHintLabel(i, total, alphabet);
+				single += (label.size() == 1);
+				valid &= !label.isEmpty()
+					&& std::all_of(label.begin(), label.end(), [&](QChar c) {
+						return alphabet.contains(c);
+					});
+				labels.push_back(label);
+			}
+			std::sort(labels.begin(), labels.end());
+			for (auto i = 1; i != total; ++i) {
+				valid &= !labels[i].startsWith(labels[i - 1]);
+			}
+			Check(valid, "hint labels stay unique and prefix-free beyond two-letter capacity");
+			if (total <= base) {
+				Check(single == total, "all hints stay single-letter when the alphabet is sufficient");
+			} else if (total == base + 1) {
+				Check(single == base - 1,
+					"one extra target expands only one single-letter prefix");
+			}
+		}
+	}
+	Check(ShortestHintLabel(0, 27, u"abcdefghijklmnopqrstuvwxyz"_q) == u"a"_q
+		&& ShortestHintLabel(24, 27, u"abcdefghijklmnopqrstuvwxyz"_q) == u"y"_q
+		&& ShortestHintLabel(25, 27, u"abcdefghijklmnopqrstuvwxyz"_q) == u"za"_q
+		&& ShortestHintLabel(26, 27, u"abcdefghijklmnopqrstuvwxyz"_q) == u"zb"_q,
+		"crowded hint sets keep priority targets short");
+	Check(ShortestHintLabel(-1, 1, u"abc"_q).isEmpty()
+		&& ShortestHintLabel(1, 1, u"abc"_q).isEmpty()
+		&& ShortestHintLabel(0, 1, {}).isEmpty(), "invalid hint requests return no label");
+}
+
+void TestProfileKeyboardNavigation() {
+	using namespace Core::VimKeymap;
+	auto window = QWidget();
+	window.setAttribute(Qt::WA_DontShowOnScreen);
+	window.resize(500, 400);
+	auto profile = NavigationTestLayer(&window);
+	profile.setGeometry(20, 20, 380, 300);
+	auto scroll = QScrollArea(&profile);
+	scroll.setGeometry(0, 0, 360, 280);
+	const auto content = new QWidget();
+	content->resize(330, 800);
+	scroll.setWidget(content);
+	auto qr = Ui::AbstractButton(content);
+	qr.setGeometry(280, 10, 30, 30);
+	auto empty = Ui::AbstractButton(content);
+	empty.setGeometry(0, 45, 300, 0);
+	auto collapsed = QWidget(content);
+	collapsed.setGeometry(0, 50, 300, 0);
+	auto collapsedButton = Ui::AbstractButton(&collapsed);
+	collapsedButton.setGeometry(0, 0, 300, 40);
+	auto photos = Ui::SlideWrap<Ui::SettingsButton>(content,
+		object_ptr<Ui::SettingsButton>(content, rpl::single(u"261 photos"_q)));
+	photos.resizeToWidth(330);
+	photos.move(0, 70);
+	auto clipped = QWidget(content);
+	clipped.setGeometry(0, 110, 330, 10);
+	auto clippedButton = Ui::AbstractButton(&clipped);
+	clippedButton.setGeometry(0, 20, 330, 40);
+	auto videos = Ui::SlideWrap<Ui::SettingsButton>(content,
+		object_ptr<Ui::SettingsButton>(content, rpl::single(u"5 videos"_q)));
+	videos.resizeToWidth(330);
+	videos.move(0, 140);
+	auto last = Ui::AbstractButton(content);
+	last.setGeometry(0, 720, 330, 40);
+	window.show();
+	QApplication::setActiveWindow(&window);
+	DrainMainQueue();
+	const auto expected = std::vector<QPointer<QWidget>>{
+		&qr, photos.entity(), videos.entity(), &last };
+	Check(KeyboardFocusTargets(&profile) == expected,
+		"profile cycle excludes scroll containers and fully clipped controls");
+	const auto navigation = KeyboardNavigation::Get(&profile);
+	navigation->focusTarget(&qr);
+	navigation->focusNext(true);
+	Check(photos.entity()->hasFocus(), "one Tab moves directly from QR to photos");
+	navigation->focusNext(true);
+	Check(videos.entity()->hasFocus(), "one Tab moves directly from photos to videos");
+	navigation->focusNext(false);
+	Check(photos.entity()->hasFocus(), "one Shift Tab returns directly to photos");
+	navigation->focusNext(true);
+	navigation->focusNext(true);
+	Check(last.hasFocus() && scroll.verticalScrollBar()->value() > 0,
+		"profile keeps reachable offscreen actions in its cycle and reveals them");
+	Check(KeyboardFocusTargets(&profile) == expected,
+		"profile target order stays stable after automatic scrolling");
+	navigation->focusNext(true);
+	Check(qr.hasFocus() && scroll.verticalScrollBar()->value() <= qr.y(),
+		"profile wraps to its first visible control without an empty stop");
+	scroll.verticalScrollBar()->setValue(0);
+	Check(navigation->scroll(80, false, 0) && scroll.verticalScrollBar()->value() == 80,
+		"profile navigation scrolls its own contents down");
+	Check(navigation->scroll(-80, false, 0) && scroll.verticalScrollBar()->value() == 0,
+		"profile navigation scrolls its own contents up");
+}
+
+void TestGlobalPlayerFocusHints() {
+	using namespace Core::VimKeymap;
+	auto window = QWidget();
+	window.setAttribute(Qt::WA_DontShowOnScreen);
+	window.resize(440, 200);
+	auto player = QWidget(&window);
+	player.setGeometry(0, 0, 440, 35);
+	auto controls = QWidget(&player);
+	controls.setGeometry(337, 0, 103, 35);
+	auto buttons = std::vector<std::unique_ptr<Ui::AbstractButton>>();
+	const auto rightRects = std::array{
+		QRect(0, 0, 34, 35),
+		QRect(34, 0, 30, 30),
+		QRect(64, 0, 39, 35),
+	};
+	for (auto i = 0; i != 6; ++i) {
+		const auto parent = i < 3 ? &player : &controls;
+		auto button = std::make_unique<Ui::AbstractButton>(parent);
+		button->setGeometry(i < 3 ? QRect(9 + i * 24, 0, 24, 35) : rightRects[i - 3]);
+		buttons.push_back(std::move(button));
+	}
+	auto caption = Ui::LabelSimple(&player);
+	caption.setGeometry(126, 0, 120, 30);
+	auto hidden = Ui::AbstractButton(&player);
+	auto disabled = Ui::AbstractButton(&player);
+	disabled.setDisabled(true);
+	auto clipped = Ui::AbstractButton(&controls);
+	clipped.setGeometry(200, 0, 40, 40);
+	window.show();
+	hidden.hide();
+	QApplication::setActiveWindow(&window);
+	RegisterGlobalFocusRoot(&player);
+	RegisterGlobalFocusRoot(&player);
+	Check(GlobalFocusRoots(&window).size() == 1, "global player registration is idempotent");
+	const auto targets = VisibleKeyboardHintTargets(&player);
+	Check(targets.size() == 6, "only visible enabled player controls take hint letters");
+	Check(GlobalFocusRoot(buttons.back().get()) == &player,
+		"nested right-side player controls retain their global focus scope");
+	const auto navigation = KeyboardNavigation::Get(&player);
+	const auto alphabet = u"abcdefghijklmnopqrstuvwxyz"_q;
+	const auto total = 29;
+	navigation->showHints([&](int i, int) {
+		return Bindings::ShortestHintLabel(i, total, alphabet);
+	}, QFont(u"Menlo"_q, 12), QSize(4, 2), 3);
+	const auto output = qEnvironmentVariable("VIM_KEYMAP_FOCUS_SNAPSHOTS");
+	for (const auto ratio : { 1, 2 }) {
+		auto image = QImage(player.size() * ratio, QImage::Format_ARGB32_Premultiplied);
+		image.setDevicePixelRatio(ratio);
+		image.fill(Qt::transparent);
+		{
+			auto painter = QPainter(&image);
+			navigation->render(&painter);
+		}
+		auto painted = true;
+		for (const auto target : targets) {
+			const auto bounds = QRect(
+				target->mapTo(&player, QPoint()) * ratio,
+				target->size() * ratio);
+			auto pixels = 0;
+			for (auto y = bounds.top(); y <= bounds.bottom(); ++y) {
+				for (auto x = bounds.left(); x <= bounds.right(); ++x) {
+					pixels += qAlpha(image.pixel(x, y)) > 0;
+				}
+			}
+			painted &= pixels > 0;
+		}
+		Check(painted, "every narrow player button receives a visible hint at its own position");
+		if (!output.isEmpty()) {
+			Check(image.save(output + u"/player-hints-%1x.png"_q.arg(ratio)),
+				"player hint snapshot is saved at its display pixel ratio");
+		}
+	}
+	auto choose = QKeyEvent(QEvent::KeyPress, Qt::Key_B, Qt::NoModifier, u"b"_q);
+	Check(navigation->handleHintKey(&choose, u"b"_q) && buttons[1]->hasFocus(),
+		"player hint focuses the correct button without activating it");
+	auto clicks = 0;
+	buttons[1]->setClickedCallback([&] { ++clicks; });
+	auto press = QKeyEvent(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+	auto release = QKeyEvent(QEvent::KeyRelease, Qt::Key_Return, Qt::NoModifier);
+	QApplication::sendEvent(buttons[1].get(), &press);
+	QApplication::sendEvent(buttons[1].get(), &release);
+	Check(clicks == 1, "Enter uses the player's native button callback exactly once");
+	navigation->focusTarget(buttons.back().get());
+	navigation->focusNext(true);
+	Check(buttons.front()->hasFocus(), "Tab wraps through player controls");
+	navigation->focusNext(false);
+	Check(buttons.back()->hasFocus(), "Shift Tab wraps backwards through player controls");
+	navigation->showHints([](int i, int) {
+		return i == 0 ? u"za"_q : u"zb"_q + QString::number(i);
+	}, QFont(u"Menlo"_q, 12), QSize(4, 2), 3);
+	navigation->setHintPrefix(u"z"_q);
+	auto finish = QKeyEvent(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier, u"a"_q);
+	Check(navigation->handleHintKey(&finish, u"a"_q) && buttons.front()->hasFocus(),
+		"widget hints accept the same multi-letter prefix as message hints");
+	navigation->showHints([](int i, int) { return QString(QChar('a' + i)); },
+		QFont(u"Menlo"_q, 12), QSize(4, 2), 3);
+	auto escape = QKeyEvent(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+	Check(navigation->handleHintKey(&escape, {}) && !navigation->hasHints()
+		&& player.isVisible(), "Escape removes hints without closing playback");
+	player.hide();
+	Check(GlobalFocusRoots(&window).empty(), "a hidden player contributes no global hints");
+	player.show();
+	auto other = QWidget();
+	other.setAttribute(Qt::WA_DontShowOnScreen);
+	other.show();
+	Check(GlobalFocusRoots(&other).empty(), "player hints never leak into another window");
+	const auto temporary = new QWidget(&window);
+	RegisterGlobalFocusRoot(temporary);
+	delete temporary;
+	Check(GlobalFocusRoots(&window).size() == 1, "destroyed player roots are removed safely");
 }
 
 void TestMediaPlaybackAndShareBindings() {
@@ -1934,6 +2157,12 @@ void TestKeyboardSliderEditing() {
 	slider.setChangeProgressCallback([&](float64) { ++progress; });
 	slider.setChangeFinishedCallback([&](float64) { ++finished; });
 	navigation->focusTarget(&slider);
+	navigation->showHints([](int i, int) { return QString(QChar('a' + i)); },
+		QFont(u"Menlo"_q, 12), QSize(4, 2), 3);
+	Check(!key(Qt::Key_Return) && !key(Qt::Key_Tab) && !key(Qt::Key_H, u"h"_q)
+		&& navigation->hasHints() && slider.hasFocus() && progress == 0,
+		"active hints take precedence over focused slider controls");
+	navigation->clearHints();
 	Check(!key(Qt::Key_H, u"h"_q) && slider.value() == 0.5,
 		"h/l cannot edit a slider before Enter");
 	Check(key(Qt::Key_Return) && slider.value() == 0.5,
@@ -2265,6 +2494,9 @@ int main(int argc, char *argv[]) {
 	TestNestedKeyboardNavigation();
 	TestKeyboardMenuNavigation();
 	TestMediaPlaybackAndShareBindings();
+	TestShortestHintLabels();
+	TestProfileKeyboardNavigation();
+	TestGlobalPlayerFocusHints();
 	TestShareKeyboardFocusCycle();
 	TestKeyboardStickerFramePainting();
 	TestMessageCursorPainting();
