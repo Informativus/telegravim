@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "base/invoke_queued.h"
 #include "core/vim_keymap.h"
+#include "core/vim_keymap_widgets.h"
 #include "settings/settings_common.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/checkbox.h"
@@ -18,6 +19,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/ui_utility.h"
 
 #include "styles/style_settings.h"
+#include "styles/style_vim_keymap.h"
 
 #include <QtGui/QKeyEvent>
 #include <QtGui/QPainter>
@@ -58,6 +60,18 @@ KeyNavigation::KeyNavigation(not_null<Ui::RpWidget*> inner)
 }
 
 void KeyNavigation::anchorTo(not_null<QWidget*> widget) {
+	if (Core::VimKeymap::Enabled()) {
+		const auto layer = Core::VimKeymap::FindKeyboardScope(_inner->window());
+		const auto scope = layer ? layer : _inner.get();
+		const auto targets = Core::VimKeymap::KeyboardFocusTargets(scope);
+		const auto target = ranges::find_if(targets, [&](const auto &target) {
+			return target.data() == widget.get();
+		});
+		if (target != end(targets)) {
+			Core::VimKeymap::KeyboardNavigation::Get(scope)->focusTarget(widget);
+		}
+		return;
+	}
 	const auto raw = widget.get();
 	const auto entries = list();
 	for (auto i = 0; i != int(entries.size()); ++i) {
@@ -124,6 +138,29 @@ auto KeyNavigation::list() const -> std::vector<Entry> {
 }
 
 bool KeyNavigation::handle(not_null<QKeyEvent*> e) {
+	if (Core::VimKeymap::Enabled()) {
+		clearSelection();
+		clearHints();
+		const auto layer = Core::VimKeymap::FindKeyboardScope(_inner->window());
+		const auto scope = layer ? layer : _inner.get();
+		if (!Core::VimKeymap::KeyHandlerInScope(_inner, scope)
+			|| Core::VimKeymap::KeyboardScopeHasTextInput(scope, nullptr)) {
+			return false;
+		}
+		const auto navigation = Core::VimKeymap::KeyboardNavigation::Get(scope);
+		if (navigation->handleHintKey(e, Core::VimKeymap::HintInput(e))
+			|| navigation->handleMenuNavigation(e, VimVerticalKey(e))) {
+			return true;
+		} else if (Core::VimKeymap::FocusHintsKey(e) && !e->isAutoRepeat()) {
+			navigation->showHints(
+				Core::VimKeymap::HintLabel,
+				QFont(u"Menlo"_q, Core::VimKeymap::HintSize(), QFont::DemiBold),
+				st::vimHintPadding,
+				st::vimHintGap);
+			return true;
+		}
+		return false;
+	}
 	const auto key = e->key();
 	const auto modifiers = e->modifiers()
 		& ~(Qt::KeypadModifier | Qt::GroupSwitchModifier);

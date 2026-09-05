@@ -186,26 +186,14 @@ SelectableCursorAtOffset(
 	const auto target = int(normalized->symbol);
 	const auto inner = view->innerGeometry();
 	const auto request = LookupSymbolRequest();
-	auto left = inner.right();
-	auto right = inner.left();
-	for (auto x = inner.left(); x <= inner.right(); ++x) {
-		const auto state = view->textState(QPoint(x, point->y()), request);
-		const auto endpoint = FlatEndpoint(state);
-		if (endpoint && int(endpoint->symbol) == target) {
-			left = std::min(left, x);
-			right = std::max(right, x);
-		}
-	}
-	if (right < left) {
-		left = point->x();
-		right = left;
-	}
-	const auto lineHeight = st::messageTextStyle.font->height;
-	return QRect(
-		left,
-		point->y() - lineHeight / 2,
-		right - left + 1,
-		lineHeight).intersected(inner);
+	const auto rect = Core::VimKeymap::LinkHintTargetRect(
+		*point,
+		inner,
+		[&](QPoint hit) {
+			const auto endpoint = FlatEndpoint(view->textState(hit, request));
+			return endpoint && int(endpoint->symbol) == target;
+		});
+	return rect.isEmpty() ? std::nullopt : std::optional<QRect>(rect);
 }
 
 [[nodiscard]] std::optional<MessageSelectionFlatEndpoint> EndpointAtLine(

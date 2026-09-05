@@ -21,9 +21,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/continuous_sliders.h"
 #include "ui/widgets/labels.h"
 #include "ui/text/text_utilities.h"
+#include "ui/text/text.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/widgets/menu/menu_action.h"
 #include "ui/style/style_core.h"
+#include "ui/style/style_core_palette.h"
 #include "styles/style_widgets.h"
 #include "styles/style_vim_keymap.h"
 
@@ -1450,6 +1452,187 @@ void TestNestedKeyboardNavigation() {
 		"same-row target order follows right-to-left layout");
 }
 
+void TestKeyboardMenuNavigation() {
+	using namespace Core::VimKeymap;
+	auto root = QWidget();
+	root.setAttribute(Qt::WA_DontShowOnScreen);
+	root.resize(400, 300);
+	auto header = Ui::AbstractButton(&root);
+	header.setGeometry(300, 0, 40, 40);
+	auto first = Ui::AbstractButton(&root);
+	first.setGeometry(0, 50, 350, 40);
+	auto disabled = Ui::AbstractButton(&root);
+	disabled.setGeometry(0, 100, 350, 40);
+	disabled.setDisabled(true);
+	auto group = QWidget(&root);
+	group.setGeometry(0, 150, 350, 100);
+	auto second = Ui::AbstractButton(&group);
+	second.setGeometry(0, 0, 350, 40);
+	auto hidden = Ui::AbstractButton(&group);
+	hidden.setGeometry(0, 50, 350, 40);
+	hidden.hide();
+	auto input = QLineEdit(&root);
+	input.setGeometry(0, 260, 350, 30);
+	input.hide();
+	root.show();
+	QApplication::setActiveWindow(&root);
+	const auto navigation = KeyboardNavigation::Get(&root);
+	navigation->focusTarget(&header);
+	const auto send = [&](int key, const QString &text = {},
+			Qt::KeyboardModifiers modifiers = Qt::NoModifier) {
+		auto event = QKeyEvent(QEvent::KeyPress, key, modifiers, text);
+		return navigation->handleMenuNavigation(&event);
+	};
+	Check(send(Qt::Key_J, u"j"_q) && first.hasFocus()
+		&& first.isOver() && !header.isOver(),
+		"menu j transfers real focus and hover from the Tab-selected header");
+	FocusModalNextPrevChild(&root, true);
+	Check(second.hasFocus() && !first.isOver(),
+		"Tab continues from j through nested items and skips disabled items");
+	Check(send(Qt::Key_K, u"k"_q) && first.hasFocus() && !second.isOver(),
+		"menu k continues from Tab without a second selection");
+	Check(send(Qt::Key_Tab, {}, Qt::ShiftModifier) && header.hasFocus(),
+		"Shift Tab continues from k in the same focus cycle");
+	Check(send(Qt::Key_Up) && second.hasFocus(),
+		"menu up wraps backwards and skips hidden items");
+	Check(send(Qt::Key_Down) && header.hasFocus(),
+		"menu down wraps forwards to the header");
+	Check(send(0x041E, u"\u043E"_q) && first.hasFocus()
+		&& send(0x041B, u"\u043B"_q) && header.hasFocus(),
+		"Cyrillic j and k share the menu focus cycle");
+	Check(!send(Qt::Key_J, u"j"_q, Qt::ControlModifier) && header.hasFocus(),
+		"modified j is not stolen by menu navigation");
+	auto configured = QKeyEvent(QEvent::KeyPress, Qt::Key_N, Qt::NoModifier, u"n"_q);
+	Check(navigation->handleMenuNavigation(&configured, Qt::Key_Down)
+		&& first.hasFocus(), "configured navigation uses the same focus cycle");
+	input.show();
+	navigation->focusTarget(&input);
+	Check(!send(Qt::Key_J, u"j"_q) && !send(Qt::Key_K, u"k"_q)
+		&& input.hasFocus(), "menu j and k pass through while editing text");
+	auto typed = QKeyEvent(QEvent::KeyPress, Qt::Key_J, Qt::NoModifier, u"j"_q);
+	QApplication::sendEvent(&input, &typed);
+	Check(input.text() == u"j"_q, "input receives the j character");
+	input.hide();
+	const auto nestedNavigation = KeyboardNavigation::Get(&group);
+	nestedNavigation->focusTarget(&second);
+	Check(nestedNavigation->handleMenuNavigation(&configured, Qt::Key_Down)
+		&& second.hasFocus(), "nested menu navigation cannot select background controls");
+}
+
+void TestKeyboardStickerFramePainting() {
+	using namespace Core::VimKeymap;
+	const auto cell = QRect(12, 12, 64, 64);
+	const auto palette = style::main_palette::save();
+	for (const auto dpr : { 1, 2, 3 }) {
+		for (const auto background : { QColor(15, 18, 23), QColor(255, 255, 255) }) {
+			const auto dark = background.lightness() < 128;
+			auto theme = style::palette();
+			theme.setColor(QLatin1String("windowBg"), background);
+			theme.setColor(QLatin1String("windowFg"), dark ? Qt::white : Qt::black);
+			theme.finalize();
+			style::main_palette::apply(theme);
+			auto image = QImage(QSize(88, 88) * dpr, QImage::Format_ARGB32_Premultiplied);
+			image.setDevicePixelRatio(dpr);
+			image.fill(background);
+			{
+				auto painter = QPainter(&image);
+				PaintKeyboardStickerFrame(painter, cell);
+			}
+			auto contained = true;
+			auto contrastPixels = 0;
+			for (auto y = 0; y != image.height(); ++y) {
+				for (auto x = 0; x != image.width(); ++x) {
+					const auto pixel = image.pixelColor(x, y);
+					if (pixel != background) {
+						contained &= cell.contains(QPoint(x / dpr, y / dpr));
+						contrastPixels += std::abs(pixel.lightness() - background.lightness()) > 100;
+					}
+				}
+			}
+			Check(contained && contrastPixels > 100 * dpr * dpr,
+				"sticker frame is high-contrast on dark and light imagery at each DPR");
+			Check(image.pixelColor(cell.center() * dpr) == background,
+				"sticker frame leaves the sticker interior unobscured");
+			const auto output = qEnvironmentVariable("VIM_KEYMAP_FOCUS_SNAPSHOTS");
+			if (!output.isEmpty() && dpr == 2) {
+				Check(image.save(output + (dark ? u"/sticker-dark.png"_q : u"/sticker-light.png"_q)),
+					"sticker focus rendering snapshot is saved");
+			}
+		}
+	}
+	Check(style::main_palette::load(palette), "sticker test restores the UI palette");
+}
+
+void TestMessageCursorPainting() {
+	using namespace Core::VimKeymap;
+	const auto text = Ui::Text::String(st::defaultTextStyle, u"Wi  m"_q);
+	const auto bounds = QRect(0, 0, 200, 40);
+	auto request = Ui::Text::StateRequest();
+	request.flags = Ui::Text::StateRequest::Flag::LookupSymbol;
+	auto cells = std::vector<QRect>();
+	for (auto symbol = 0; symbol != 5; ++symbol) {
+		const auto matches = [&](QPoint point) {
+			const auto state = text.getState(point, bounds.width(), request);
+			return state.uponSymbol && state.symbol == symbol;
+		};
+		auto hit = QPoint(-1, -1);
+		for (auto y = 0; y != bounds.height() && hit.x() < 0; ++y) {
+			for (auto x = 0; x != bounds.width(); ++x) {
+				if (matches({ x, y })) {
+					hit = { x, y };
+					break;
+				}
+			}
+		}
+		const auto cell = LinkHintTargetRect(hit, bounds, matches);
+		Check(!cell.isEmpty(), "letters and consecutive spaces have distinct cursor cells");
+		cells.push_back(cell);
+		for (const auto dpr : { 1, 2, 3 }) {
+			for (const auto dark : { false, true }) {
+				auto image = QImage(bounds.size() * dpr, QImage::Format_ARGB32_Premultiplied);
+				image.setDevicePixelRatio(dpr);
+				image.fill(dark ? QColor(16, 20, 24) : QColor(245, 245, 245));
+				{
+					auto painter = QPainter(&image);
+					painter.setPen(dark ? Qt::white : Qt::black);
+					text.draw(painter, { .availableWidth = bounds.width() });
+				}
+				const auto original = image.copy();
+				{
+					auto painter = QPainter(&image);
+					PaintMessageCursor(painter, cell);
+					Check(painter.compositionMode() == QPainter::CompositionMode_SourceOver,
+						"cursor painting restores the message painter state");
+				}
+				auto inverted = true;
+				for (auto y = 0; y != image.height(); ++y) {
+					for (auto x = 0; x != image.width(); ++x) {
+						const auto before = original.pixelColor(x, y);
+						const auto expected = cell.contains(QPoint(x / dpr, y / dpr))
+							? QColor(255 - before.red(), 255 - before.green(), 255 - before.blue())
+							: before;
+						inverted &= image.pixelColor(x, y) == expected;
+					}
+				}
+				Check(inverted, "cursor inverts the entire glyph or space without painting neighbors");
+				const auto output = qEnvironmentVariable("VIM_KEYMAP_FOCUS_SNAPSHOTS");
+				if (!output.isEmpty() && dpr == 2 && dark) {
+					Check(image.save(output + u"/cursor-%1.png"_q.arg(symbol)),
+						"message cursor rendering snapshot is saved");
+				}
+			}
+		}
+	}
+	Check(cells[0].width() > cells[1].width(), "block cursor follows proportional character widths");
+	for (auto i = 1; i != cells.size(); ++i) {
+		Check(!cells[i - 1].intersects(cells[i])
+			&& cells[i - 1].right() + 1 == cells[i].left()
+			&& cells[i - 1].top() == cells[i].top()
+			&& cells[i - 1].height() == cells[i].height(),
+			"cursor cells stay adjacent and aligned across letters and spaces");
+	}
+}
+
 void TestKeyboardFocusScrollingAndPainting() {
 	using namespace Core::VimKeymap;
 	auto root = QWidget();
@@ -1970,6 +2153,9 @@ int main(int argc, char *argv[]) {
 	TestModalTabCycle();
 	TestKeyboardLayerStack();
 	TestNestedKeyboardNavigation();
+	TestKeyboardMenuNavigation();
+	TestKeyboardStickerFramePainting();
+	TestMessageCursorPainting();
 	TestKeyboardFocusScrollingAndPainting();
 	TestCustomKeyboardFocusFrame();
 	TestInterfaceHistory();

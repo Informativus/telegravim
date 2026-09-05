@@ -202,6 +202,25 @@ void SetKeyboardFocusCircle(not_null<QWidget*> widget) {
 	widget->setProperty(kCircleFocusFrame, true);
 }
 
+void PaintKeyboardStickerFrame(QPainter &p, QRect rect) {
+	const auto inset = st::vimStickerFocusInset;
+	const auto frame = QRectF(rect).adjusted(inset, inset, -inset, -inset);
+	if (frame.isEmpty()) {
+		return;
+	}
+	p.save();
+	p.setClipRect(rect, Qt::IntersectClip);
+	p.setRenderHint(QPainter::Antialiasing);
+	p.setBrush(Qt::NoBrush);
+	p.setPen(QPen(
+		st::windowBg->c,
+		st::vimStickerFocusWidth + 2 * st::vimStickerFocusHalo));
+	p.drawRoundedRect(frame, st::vimFocusRadius, st::vimFocusRadius);
+	p.setPen(QPen(st::windowFg->c, st::vimStickerFocusWidth));
+	p.drawRoundedRect(frame, st::vimFocusRadius, st::vimFocusRadius);
+	p.restore();
+}
+
 bool HandleKeyboardControlKey(
 		not_null<QWidget*> scope,
 		not_null<QKeyEvent*> e) {
@@ -379,6 +398,32 @@ bool KeyboardNavigation::scroll(int delta, bool autoRepeat, int duration) {
 		}
 	}, from, _scrollTarget, duration, anim::linear);
 	return true;
+}
+
+bool KeyboardNavigation::handleMenuNavigation(
+		not_null<QKeyEvent*> e,
+		std::optional<Qt::Key> navigationKey) {
+	if (!_scope || KeyboardScopeHasTextInput(_scope, QApplication::focusWidget())) {
+		return false;
+	}
+	if (const auto delta = Bindings::TabNavigationDelta(e)) {
+		focusNext(delta > 0);
+		return true;
+	}
+	const auto modifiers = e->modifiers()
+		& ~(Qt::KeypadModifier | Qt::GroupSwitchModifier);
+	if (!navigationKey && modifiers == Qt::NoModifier) {
+		if (Bindings::Matches(u"j, \u043E"_q, e) || e->key() == Qt::Key_Down) {
+			navigationKey = Qt::Key_Down;
+		} else if (Bindings::Matches(u"k, \u043B"_q, e) || e->key() == Qt::Key_Up) {
+			navigationKey = Qt::Key_Up;
+		}
+	}
+	if (navigationKey == Qt::Key_Down || navigationKey == Qt::Key_Up) {
+		focusNext(navigationKey == Qt::Key_Down);
+		return true;
+	}
+	return false;
 }
 
 void KeyboardNavigation::focusNext(bool next) {

@@ -448,8 +448,6 @@ stickersFeaturedUnreadTop: 7px;
 stickersMaxHeight: 320px;
 stickersPadding: margins(19px, 13px, 19px, 13px);
 stickersSize: size(64px, 64px);
-vimKeymapStickerSelectionInset: 3px;
-vimKeymapStickerSelectionStroke: 2px;
 emojiSetPadding: margins(12px, 0px, 12px, 0px);
 emojiSetMaxHeight: 197px;
 emojiSetSize: size(42px, 39px);

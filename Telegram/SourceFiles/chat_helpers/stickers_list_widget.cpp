@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/timer_rpl.h"
 #include "core/application.h"
 #include "core/vim_keymap.h"
+#include "core/vim_keymap_widgets.h"
 #include "data/data_document.h"
 #include "data/data_document_media.h"
 #include "data/data_session.h"
@@ -101,30 +102,6 @@ base::options::toggle OptionUnlimitedRecentStickers({
 }
 
 } // namespace
-
-void PaintVimKeymapStickerSelectionFrame(Painter &p, QRect rect) {
-	rect = rect.marginsRemoved(QMargins(
-		st::vimKeymapStickerSelectionInset,
-		st::vimKeymapStickerSelectionInset,
-		st::vimKeymapStickerSelectionInset,
-		st::vimKeymapStickerSelectionInset));
-	if (rect.isEmpty()) {
-		return;
-	}
-
-	p.save();
-	auto pen = QPen(
-		st::activeButtonBg->c,
-		st::vimKeymapStickerSelectionStroke);
-	pen.setJoinStyle(Qt::RoundJoin);
-	p.setPen(pen);
-	p.setBrush(Qt::NoBrush);
-	p.drawRoundedRect(
-		QRectF(rect).adjusted(0.5, 0.5, -0.5, -0.5),
-		st::roundRadiusSmall,
-		st::roundRadiusSmall);
-	p.restore();
-}
 
 const char kOptionUnlimitedRecentStickers[] = "unlimited-recent-stickers";
 
@@ -2347,7 +2324,7 @@ void StickersListWidget::paintSticker(
 		if (rtl()) {
 			frame.moveLeft(width() - frame.x() - frame.width());
 		}
-		PaintVimKeymapStickerSelectionFrame(p, frame);
+		Core::VimKeymap::PaintKeyboardStickerFrame(p, frame);
 	}
 }
 

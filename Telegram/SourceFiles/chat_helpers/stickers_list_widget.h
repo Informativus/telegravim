@@ -61,7 +61,6 @@ namespace ChatHelpers {
 
 extern const char kOptionUnlimitedRecentStickers[];
 [[nodiscard]] QVector<MTPstring> SearchStickersLangCodes();
-void PaintVimKeymapStickerSelectionFrame(Painter &p, QRect rect);
 
 struct StickerIcon;
 enum class ValidateIconAnimations;

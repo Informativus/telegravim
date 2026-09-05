@@ -2606,7 +2606,7 @@ void StickerSetBox::Inner::paintSticker(
 		if (rtl()) {
 			frame.moveLeft(width() - frame.x() - frame.width());
 		}
-		ChatHelpers::PaintVimKeymapStickerSelectionFrame(p, frame);
+		Core::VimKeymap::PaintKeyboardStickerFrame(p, frame);
 	}
 }
 

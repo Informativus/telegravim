@@ -33,6 +33,7 @@ namespace Core::VimKeymap {
 	not_null<QWidget*> scope);
 void SetKeyboardFocusTargetEnabled(not_null<QWidget*> widget, bool enabled);
 void SetKeyboardFocusCircle(not_null<QWidget*> widget);
+void PaintKeyboardStickerFrame(QPainter &p, QRect rect);
 [[nodiscard]] bool HandleKeyboardControlKey(
 	not_null<QWidget*> scope,
 	not_null<QKeyEvent*> e);
@@ -45,6 +46,9 @@ public:
 
 	explicit KeyboardNavigation(not_null<QWidget*> scope);
 	void focusNext(bool next);
+	bool handleMenuNavigation(
+		not_null<QKeyEvent*> e,
+		std::optional<Qt::Key> navigationKey = std::nullopt);
 	void focusTarget(not_null<QWidget*> target);
 	void restoreFocus();
 	bool scroll(int delta, bool autoRepeat, int duration);

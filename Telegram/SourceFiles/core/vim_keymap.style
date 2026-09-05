@@ -16,3 +16,6 @@ vimFocusWidth: 2px;
 vimFocusInset: 3px;
 vimFocusRadius: 6px;
 vimFocusSliderSize: 22px;
+vimStickerFocusInset: 3px;
+vimStickerFocusWidth: 2px;
+vimStickerFocusHalo: 1px;

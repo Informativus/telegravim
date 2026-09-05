@@ -190,6 +190,16 @@ void PaintHintBadges(
 	p.restore();
 }
 
+void PaintMessageCursor(QPainter &p, QRect characterRect) {
+	if (characterRect.isEmpty()) {
+		return;
+	}
+	p.save();
+	p.setCompositionMode(QPainter::CompositionMode_Difference);
+	p.fillRect(characterRect, Qt::white);
+	p.restore();
+}
+
 QRect CursorPaintRect(
 		QRect characterRect,
 		const QString &style,

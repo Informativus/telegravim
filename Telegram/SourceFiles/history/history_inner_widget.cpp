@@ -1474,29 +1474,10 @@ void HistoryInner::vimKeymapPaintTextCursor(Painter &p) {
 	if (!_vimKeymapTextCursorRect) {
 		return;
 	}
-	const auto lineHeight = st::messageTextStyle.font->height;
-	const auto cursorWidth = Core::VimKeymap::ComposeCursorWidth();
-	const auto cursorHeight = std::clamp(
-		lineHeight * Core::VimKeymap::ComposeCursorHeight() / 100,
-		1,
-		lineHeight);
 	const auto inner = view->innerGeometry().translated(0, top);
-	auto characterRect = _vimKeymapTextCursorRect->translated(0, top);
-	characterRect.setHeight(lineHeight);
-	auto rect = Core::VimKeymap::CursorPaintRect(
-		characterRect,
-		Core::VimKeymap::ComposeCursorStyle(),
-		cursorWidth,
-		cursorHeight).intersected(inner);
-	if (rect.isEmpty()) {
-		return;
-	}
-
-	p.save();
-	p.setPen(Qt::NoPen);
-	p.setBrush(QColor(218, 91, 166, 210));
-	p.drawRect(rect);
-	p.restore();
+	Core::VimKeymap::PaintMessageCursor(
+		p,
+		_vimKeymapTextCursorRect->translated(0, top).intersected(inner));
 }
 
 TextSelection HistoryInner::getSelectedTextRange(

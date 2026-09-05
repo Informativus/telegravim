@@ -55,6 +55,7 @@ struct VisualSelectionRange {
 	const QString &style,
 	int requestedWidth,
 	int requestedHeight);
+void PaintMessageCursor(QPainter &p, QRect characterRect);
 [[nodiscard]] VisualSelectionRange MakeVisualSelectionRange(
 	int anchor,
 	int focus,
