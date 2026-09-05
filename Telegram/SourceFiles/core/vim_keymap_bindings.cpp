@@ -454,6 +454,23 @@ bool KeyIs(
 		|| TextIs(e, latin, cyrillic);
 }
 
+bool ValidBindings(const QString &bindings) {
+	if (bindings.trimmed().isEmpty()) {
+		return true;
+	}
+	for (const auto &part : bindings.split(',')) {
+		for (const auto &token : part.split('+')) {
+			if (token.trimmed().isEmpty()) {
+				return false;
+			}
+		}
+		if (!ParseBinding(part)) {
+			return false;
+		}
+	}
+	return true;
+}
+
 bool Matches(
 		const QString &bindings,
 		not_null<QKeyEvent*> e,

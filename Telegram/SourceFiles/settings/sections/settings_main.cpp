@@ -46,6 +46,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings/settings_builder.h"
 #include "settings/cloud_password/settings_cloud_password_input.h"
 #include "settings/settings_experimental.h"
+#include "settings/settings_vim_editor.h"
 #include "settings/sections/settings_advanced.h"
 #include "settings/sections/settings_business.h"
 #include "settings/sections/settings_calls.h"
@@ -86,6 +87,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_layers.h"
 #include "styles/style_menu_icons.h"
 #include "styles/style_settings.h"
+#include "styles/style_vim_keymap.h"
 
 #include <QtGui/QClipboard>
 #include <QtGui/QGuiApplication>
@@ -368,9 +370,12 @@ public:
 		not_null<Window::SessionController*> controller);
 
 	[[nodiscard]] rpl::producer<QString> title() override;
+	void checkBeforeClose(Fn<void()> close) override;
+	bool closeByOutsideClick() const override;
 
 private:
 	void setupContent();
+	VimKeymapEditor *_editor = nullptr;
 
 };
 
@@ -386,13 +391,39 @@ rpl::producer<QString> VimKeymap::title() {
 }
 
 void VimKeymap::setupContent() {
-	const auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
+	const auto window = &controller()->window();
+	_editor = Ui::CreateChild<VimKeymapEditor>(this,
+		[=](not_null<Ui::VerticalLayout*> content) {
+			SetupVimKeymapOptions(window, content);
+		},
+		[=](Fn<void()> discard) {
+			window->show(Ui::MakeConfirmBox({
+				.text = u"Отбросить несохранённые изменения JSON?"_q,
+				.confirmed = [discard = std::move(discard)](Fn<void()> close) {
+					close();
+					discard();
+				},
+				.confirmText = u"Отбросить"_q,
+				.cancelText = u"Продолжить редактирование"_q,
+			}));
+		},
+		[=] {
+			window->show(Box([](not_null<Ui::GenericBox*> box) {
+				box->setTitle(rpl::single(u"Руководство Vim keymap"_q));
+				box->setWidth(st::vimGuideWidth);
+				box->addRow(CreateVimKeymapGuide(box));
+				box->addButton(tr::lng_close(), [=] { box->closeBox(); });
+			}));
+		});
+	Ui::ResizeFitChild(this, _editor);
+}
 
-	Ui::AddSkip(content);
-	Ui::AddSubsectionTitle(content, rpl::single(u"Vim keymap"_q));
-	SetupVimKeymapOptions(&controller()->window(), content);
+void VimKeymap::checkBeforeClose(Fn<void()> close) {
+	_editor->checkBeforeClose(std::move(close));
+}
 
-	Ui::ResizeFitChild(this, content);
+bool VimKeymap::closeByOutsideClick() const {
+	return !_editor->dirty();
 }
 
 void BuildSectionButtons(SectionBuilder &builder) {

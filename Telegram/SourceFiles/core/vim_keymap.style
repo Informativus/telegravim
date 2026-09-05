@@ -19,3 +19,7 @@ vimFocusSliderSize: 22px;
 vimStickerFocusInset: 3px;
 vimStickerFocusWidth: 2px;
 vimStickerFocusHalo: 1px;
+
+vimJsonEditorHeight: 360px;
+vimGuideHeight: 480px;
+vimGuideWidth: 640px;

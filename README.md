@@ -12,6 +12,13 @@ This is the complete source code and the build instructions for the official [Te
 
 The source code is published under GPLv3 with OpenSSL exception, the license is available [here][license].
 
+## Vim keymap
+
+[User guide (Russian)](docs/vim-keymap.md),
+[complete JSON example](docs/vim-keymap.example.json), and
+[JSON Schema](docs/vim-keymap.schema.json).
+The same guide is available inside Settings > Vim keymap.
+
 ## Supported systems
 
 The latest version is available for
@@ -96,4 +103,3 @@ Version **1.8.15** was the last that supports older systems
 </a>
 
 CI infrastructure sponsored by [Depot](https://depot.dev) — fast GitHub Actions runners.
-

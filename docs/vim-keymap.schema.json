@@ -1,0 +1,278 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+        "vim-keymap": {
+            "default": true,
+            "description": "Включает Vim-навигацию. false отключает Vim-обработчики, но не удаляет остальные настройки. Поля ввода сохраняют обычный набор текста.",
+            "title": "Vim keymap",
+            "type": "boolean"
+        },
+        "vim-keymap-compose-cursor-blink": {
+            "default": 0,
+            "description": "Интервал мигания курсора поля сообщения, в миллисекундах. 0 отключает мигание и оставляет курсор видимым постоянно.",
+            "maximum": 2000,
+            "minimum": 0,
+            "title": "Vim compose cursor blink",
+            "type": "integer"
+        },
+        "vim-keymap-compose-cursor-height": {
+            "default": 100,
+            "description": "Высота курсора поля сообщения, в процентах высоты строки. Не изменяет размер самого текста.",
+            "maximum": 100,
+            "minimum": 20,
+            "title": "Vim compose cursor height",
+            "type": "integer"
+        },
+        "vim-keymap-compose-cursor-style": {
+            "default": "block",
+            "description": "Форма курсора в поле сообщения в режиме просмотра: block: блок символа, bar: вертикальная черта, underline: подчёркивание. Не меняет системный курсор в режиме ввода.",
+            "enum": [
+                "block",
+                "bar",
+                "underline"
+            ],
+            "title": "Vim compose cursor style",
+            "type": "string"
+        },
+        "vim-keymap-compose-cursor-width": {
+            "default": 5,
+            "description": "Ширина курсора поля сообщения, в пикселях. Блочный курсор подстраивается под символ; эта величина не задаёт ширину букв текста.",
+            "maximum": 30,
+            "minimum": 1,
+            "title": "Vim compose cursor width",
+            "type": "integer"
+        },
+        "vim-keymap-escape-closes-composer": {
+            "default": true,
+            "description": "Разрешает Esc сначала отменить ответ, редактирование, пересылку и другое временное состояние редактора сообщения, а затем менять режим Vim. Отдельные привязки отмены ответа и редактирования действуют независимо от этого переключателя.",
+            "title": "Vim Esc closes composer state",
+            "type": "boolean"
+        },
+        "vim-keymap-hint-alphabet": {
+            "default": "russian",
+            "description": "Алфавит меток: russian: русские буквы, english: латинские буквы и знаки. Не меняет раскладку клавиатуры или привязки команд. Метки удлиняются только при нехватке коротких.",
+            "enum": [
+                "russian",
+                "english"
+            ],
+            "title": "Vim hint buttons language",
+            "type": "string"
+        },
+        "vim-keymap-hint-size": {
+            "default": 13,
+            "description": "Размер шрифта буквенных подсказок, в пунктах QFont. Большие значения требуют больше места возле целей.",
+            "maximum": 24,
+            "minimum": 10,
+            "title": "Vim hint letter size",
+            "type": "integer"
+        },
+        "vim-keymap-hold-scroll-speed": {
+            "default": 3200,
+            "description": "Скорость удерживаемой прокрутки чата, в пикселях в секунду. Не является длительностью анимации или шагом одиночного нажатия.",
+            "maximum": 16000,
+            "minimum": 600,
+            "title": "Vim hold scroll speed",
+            "type": "integer"
+        },
+        "vim-keymap-key-call": {
+            "default": "Ctrl+T, Ctrl+е",
+            "description": "Вызывает штатное действие звонка из текущего чата. Доступность и дальнейшие подтверждения определяются Telegram.",
+            "maxLength": 1024,
+            "title": "Vim key: call",
+            "type": "string"
+        },
+        "vim-keymap-key-cancel-edit": {
+            "default": "",
+            "description": "Отмена редактирования отправленного сообщения. Пустая строка отключает отдельную команду, но общий переключатель обработки Esc может по-прежнему отменять редактирование.",
+            "maxLength": 1024,
+            "title": "Vim key: cancel edit",
+            "type": "string"
+        },
+        "vim-keymap-key-cancel-reply": {
+            "default": "Esc",
+            "description": "Отмена текущего ответа на сообщение. При назначении Esc отмена ответа имеет приоритет перед переключением режима.",
+            "maxLength": 1024,
+            "title": "Vim key: cancel reply",
+            "type": "string"
+        },
+        "vim-keymap-key-chat-preview": {
+            "default": "Ctrl+V, Ctrl+м",
+            "description": "Показывает метки чатов для предпросмотра без прочтения. На macOS физический Ctrl+V отличается от Cmd+V: Cmd+V остаётся вставкой из буфера.",
+            "maxLength": 1024,
+            "title": "Vim key: chat preview hints",
+            "type": "string"
+        },
+        "vim-keymap-key-copy-message": {
+            "default": "y, н",
+            "description": "Показывает метки для копирования сообщений. Выбранное сообщение копируется с учётом ограничений чата; фотографии копируются как изображение после загрузки. В выделенном тексте y имеет свою контекстную роль.",
+            "maxLength": 1024,
+            "title": "Vim key: copy message hints",
+            "type": "string"
+        },
+        "vim-keymap-key-delete-message": {
+            "default": "d, в",
+            "description": "Показывает метки сообщений для удаления. Выбор ведёт к штатному действию Telegram с его проверками и подтверждением; JSON не обходит ограничения доступа.",
+            "maxLength": 1024,
+            "title": "Vim key: delete message hints",
+            "type": "string"
+        },
+        "vim-keymap-key-edit-message": {
+            "default": "e, у",
+            "description": "Показывает метки сообщений, которые разрешено редактировать. Обычно это доступные для редактирования собственные сообщения.",
+            "maxLength": 1024,
+            "title": "Vim key: edit message hints",
+            "type": "string"
+        },
+        "vim-keymap-key-emoji-panel": {
+            "default": "",
+            "description": "Открывает панель эмодзи и стикеров. По умолчанию отдельная команда отключена, чтобы не конфликтовать с другими сочетаниями.",
+            "maxLength": 1024,
+            "title": "Vim key: emoji panel",
+            "type": "string"
+        },
+        "vim-keymap-key-focus-chat": {
+            "default": "Ctrl+H, Ctrl+р",
+            "description": "Возвращает фокус из панели эмодзи и стикеров в чат. В просмотрщике медиа и истории страниц Ctrl+H может выполнять контекстное действие влево или назад.",
+            "maxLength": 1024,
+            "title": "Vim key: focus chat",
+            "type": "string"
+        },
+        "vim-keymap-key-focus-emoji": {
+            "default": "Ctrl+L, Ctrl+д",
+            "description": "Переносит фокус в панель эмодзи и стикеров. В других контекстах Ctrl+L может выполнять действие вправо или вперёд.",
+            "maxLength": 1024,
+            "title": "Vim key: focus emoji",
+            "type": "string"
+        },
+        "vim-keymap-key-focus-hints": {
+            "default": "f, а",
+            "description": "Показывает метки ссылок, медиа и доступных элементов интерфейса, включая верхнюю панель воспроизведения. Кнопка получает фокус, Enter активирует её. Вложенные окна ограничивают набор целей своим содержимым.",
+            "maxLength": 1024,
+            "title": "Vim key: focus/link hints",
+            "type": "string"
+        },
+        "vim-keymap-key-global-search": {
+            "default": "Ctrl+F, Ctrl+а, Cmd+Shift+F, Cmd+Shift+а, Ctrl+Shift+F, Ctrl+Shift+а",
+            "description": "Фокусирует глобальный поиск. Можно перечислить варианты для обеих раскладок и модификаторов; в активном поле поиска текстовые буквы не используются для навигации по результатам.",
+            "maxLength": 1024,
+            "title": "Vim key: global search",
+            "type": "string"
+        },
+        "vim-keymap-key-help": {
+            "default": "?",
+            "description": "Открывает справку по командам Vim и журнал последних клавиш. Полное руководство по JSON доступно отдельной кнопкой на экране настроек.",
+            "maxLength": 1024,
+            "title": "Vim key: help",
+            "type": "string"
+        },
+        "vim-keymap-key-jump-bottom": {
+            "default": "Ctrl+G, Ctrl+п",
+            "description": "Выполняет действие нижней угловой кнопки чата: переход к актуальной позиции или возврат по истории переходов. Это не просто прокрутка до конца загруженных сообщений.",
+            "maxLength": 1024,
+            "title": "Vim key: jump to bottom",
+            "type": "string"
+        },
+        "vim-keymap-key-next-chat": {
+            "default": "Ctrl+J, Ctrl+о",
+            "description": "Переход к следующему чату в текущем списке. Не меняет папку; Shift может расширять шаг там, где это поддерживает навигация чатов.",
+            "maxLength": 1024,
+            "title": "Vim key: next chat",
+            "type": "string"
+        },
+        "vim-keymap-key-next-folder": {
+            "default": "Tab",
+            "description": "Следующая папка чатов в соответствующем контексте. В модалках Tab сохраняет приоритет обхода элементов интерфейса, а в панелях может переключать их вкладки.",
+            "maxLength": 1024,
+            "title": "Vim key: next folder",
+            "type": "string"
+        },
+        "vim-keymap-key-open-chat-hints": {
+            "default": "o, щ",
+            "description": "Показывает метки видимых чатов для обычного открытия. В отличие от предпросмотра, обычное открытие может отметить чат прочитанным.",
+            "maxLength": 1024,
+            "title": "Vim key: open chat hints",
+            "type": "string"
+        },
+        "vim-keymap-key-previous-chat": {
+            "default": "Ctrl+K, Ctrl+л",
+            "description": "Переход к предыдущему чату в текущем списке. Позиция вычисляется относительно выбранного чата.",
+            "maxLength": 1024,
+            "title": "Vim key: previous chat",
+            "type": "string"
+        },
+        "vim-keymap-key-previous-folder": {
+            "default": "Shift+Tab",
+            "description": "Предыдущая папка чатов. Shift+Tab в модалках обходит доступные элементы в обратном порядке.",
+            "maxLength": 1024,
+            "title": "Vim key: previous folder",
+            "type": "string"
+        },
+        "vim-keymap-key-redo": {
+            "default": "Ctrl+R, Ctrl+к",
+            "description": "Повторяет отменённое изменение текста редактора сообщения. Не является повторной отправкой сообщения.",
+            "maxLength": 1024,
+            "title": "Vim key: redo compose text",
+            "type": "string"
+        },
+        "vim-keymap-key-reply-to-message": {
+            "default": "r, к",
+            "description": "Показывает метки сообщений для ответа. Выбор метки открывает ответ на конкретное сообщение.",
+            "maxLength": 1024,
+            "title": "Vim key: reply hints",
+            "type": "string"
+        },
+        "vim-keymap-key-scroll-down": {
+            "default": "j, о",
+            "description": "Прокрутка вниз в режиме просмотра. В модалках действует вне редактируемых полей независимо от режима чата за окном. В поле ввода j остаётся буквой.",
+            "maxLength": 1024,
+            "title": "Vim key: scroll down",
+            "type": "string"
+        },
+        "vim-keymap-key-scroll-up": {
+            "default": "k, л",
+            "description": "Прокрутка вверх; правила режима и полей ввода такие же, как у прокрутки вниз.",
+            "maxLength": 1024,
+            "title": "Vim key: scroll up",
+            "type": "string"
+        },
+        "vim-keymap-key-search": {
+            "default": "/",
+            "description": "Открывает поиск в режиме просмотра. Внутри перемещения или выделения текста символ / имеет контекстную роль начала строки; привязка не отменяет эту роль.",
+            "maxLength": 1024,
+            "title": "Vim key: search in navigation mode",
+            "type": "string"
+        },
+        "vim-keymap-key-select-message-text": {
+            "default": "Ctrl+Shift+V, Ctrl+Shift+м",
+            "description": "Показывает метки текстовых сообщений. После выбора можно двигаться по тексту без ввода, включить visual клавишей v и скопировать выделение клавишей y.",
+            "maxLength": 1024,
+            "title": "Vim key: select message text hints",
+            "type": "string"
+        },
+        "vim-keymap-key-toggle-mode": {
+            "default": "Esc",
+            "description": "Переключение режима ввода и режима просмотра. Esc сначала обрабатывает открытые подсказки, вложенные окна и отмену состояния редактора; это не безусловное закрытие всего интерфейса.",
+            "maxLength": 1024,
+            "title": "Vim key: toggle mode",
+            "type": "string"
+        },
+        "vim-keymap-key-undo": {
+            "default": "u, г",
+            "description": "Отменяет изменение текста в редакторе сообщения в режиме просмотра. Не отменяет отправку, удаление сообщения или действия над чатом.",
+            "maxLength": 1024,
+            "title": "Vim key: undo compose text",
+            "type": "string"
+        },
+        "vim-keymap-scroll-step": {
+            "default": 180,
+            "description": "Шаг одиночного нажатия клавиши прокрутки, в пикселях. Относится к чату и прокручиваемым модалкам; содержимое, которое помещается целиком, прокручивать некуда.",
+            "maximum": 1800,
+            "minimum": 80,
+            "title": "Vim scroll step",
+            "type": "integer"
+        }
+    },
+    "title": "Telegravim Vim keymap",
+    "type": "object"
+}

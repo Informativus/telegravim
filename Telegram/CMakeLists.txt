@@ -604,6 +604,10 @@ PRIVATE
     core/update_verify.cpp
     core/update_verify.h
     core/vim_keymap.cpp
+    core/vim_keymap_options.cpp
+    core/vim_keymap_options.h
+    core/vim_keymap_config.cpp
+    core/vim_keymap_config.h
     core/vim_keymap.h
     core/vim_keymap_bindings.cpp
     core/vim_keymap_bindings.h
@@ -1866,6 +1870,8 @@ PRIVATE
     settings/settings_credits_graphics.h
     settings/settings_experimental.cpp
     settings/settings_experimental.h
+    settings/settings_vim_editor.cpp
+    settings/settings_vim_editor.h
     settings/sections/settings_folders.cpp
     settings/sections/settings_folders.h
     settings/sections/settings_global_ttl.cpp

@@ -1,11 +1,15 @@
 # Guards the application call sites that the standalone Qt harness cannot link.
 get_filename_component(src "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+set_property(GLOBAL PROPERTY vim_wiring_count 0)
 
 function(expect path pattern reason)
     file(READ "${src}/${path}" source)
     if (NOT source MATCHES "${pattern}")
         message(FATAL_ERROR "${reason}: ${path}")
     endif()
+    get_property(count GLOBAL PROPERTY vim_wiring_count)
+    math(EXPR count "${count} + 1")
+    set_property(GLOBAL PROPERTY vim_wiring_count ${count})
 endfunction()
 
 expect(history/history_widget.cpp
@@ -119,4 +123,32 @@ expect(core/vim_keymap.cpp
 expect(core/vim_keymap.cpp
     "return NormalMode\\(\\) \\? ScrollNavigationKey\\(e\\) : std::nullopt"
     "Chat j/k must keep their normal-mode guard for insert-mode typing")
-message(STATUS "37 Vim application wiring checks passed (source-level).")
+expect(settings/sections/settings_main.cpp
+    "_editor->checkBeforeClose"
+    "The settings section must protect unsaved JSON on close")
+expect(settings/sections/settings_main.cpp
+    "return !_editor->dirty"
+    "Outside clicks must not discard JSON drafts")
+expect(settings/sections/settings_main.cpp
+    "close\\(\\);[\n\t ]*discard\\(\\);"
+    "Discard must close the native confirmation before changing mode")
+expect(settings/settings_experimental.cpp
+    "for \\(const auto &field : ConfigOptions\\(\\)\\)"
+    "UI and JSON must expose the same settings registry")
+expect(settings/settings_experimental.cpp
+    "Bindings::ValidBindings\\(value\\)"
+    "UI edits must validate the same shortcut grammar as JSON")
+expect(core/vim_keymap.cpp
+    "LegacyDefaultsMigrated \\|\\| VimKeymapDefaultsMigratedOption.value\\(\\)"
+    "Explicit JSON values must survive migration on the next launch")
+
+file(READ "${src}/core/vim_keymap_options.cpp" options)
+string(REGEX MATCHALL "const char (kOptionVimKeymap[a-zA-Z]*)\\[\\]" keys "${options}")
+foreach(key IN LISTS keys)
+    string(REGEX REPLACE "const char ([a-zA-Z]*)\\[\\]" "\\1" key "${key}")
+    expect(core/vim_keymap_config.cpp
+        "\\{ ${key},"
+        "Every registered Vim setting must have JSON support and documentation")
+endforeach()
+get_property(count GLOBAL PROPERTY vim_wiring_count)
+message(STATUS "${count} Vim application wiring checks passed (source-level).")

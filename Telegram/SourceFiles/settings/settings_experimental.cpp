@@ -34,6 +34,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/launcher.h"
 #include "core/sandbox.h"
 #include "core/vim_keymap.h"
+#include "core/vim_keymap_bindings.h"
+#include "core/vim_keymap_config.h"
 #include "chat_helpers/tabbed_panel.h"
 #include "dialogs/dialogs_entry.h"
 #include "dialogs/dialogs_widget.h"
@@ -658,10 +660,15 @@ void EditStringOptionBox(
 		input->setFocusFast();
 	});
 	input->selectAll();
-	input->setMaxLength(256);
+	input->setMaxLength(1024);
 
 	const auto save = [=, &option] {
-		option.set(input->getLastText().trimmed());
+		const auto value = input->getLastText().trimmed();
+		if (!Core::VimKeymap::Bindings::ValidBindings(value)) {
+			input->showError();
+			return;
+		}
+		option.set(value);
 		box->closeBox();
 	};
 	input->submits(
@@ -1215,138 +1222,34 @@ void SetupExperimental(
 void SetupVimKeymapOptions(
 		not_null<Window::Controller*> window,
 		not_null<Ui::VerticalLayout*> container) {
-	Core::VimKeymap::MigrateLegacyDefaults();
-	AddOption(
-		window,
-		container,
-		base::options::lookup<bool>(Core::VimKeymap::kOptionVimKeymap),
-		rpl::producer<>(),
-		rpl::producer<>(),
-		rpl::producer<QString>(),
-		nullptr);
-	AddOption(
-		window,
-		container,
-		base::options::lookup<bool>(
-			Core::VimKeymap::kOptionVimKeymapEscapeClosesComposer),
-		rpl::producer<>(),
-		rpl::producer<>(),
-		rpl::producer<QString>(),
-		nullptr);
-	AddIntegerOption(
-		window,
-		container,
-		base::options::lookup<int>(
-			Core::VimKeymap::kOptionVimKeymapScrollStep),
-		Core::VimKeymap::ScrollStepBounds(),
-		rpl::producer<>(),
-		rpl::producer<QString>(),
-		nullptr);
-	AddIntegerOption(
-		window,
-		container,
-		base::options::lookup<int>(
-			Core::VimKeymap::kOptionVimKeymapHoldScrollSpeed),
-		Core::VimKeymap::HoldScrollSpeedBounds(),
-		rpl::producer<>(),
-		rpl::producer<QString>(),
-		nullptr);
-	AddIntegerOption(
-		window,
-		container,
-		base::options::lookup<int>(Core::VimKeymap::kOptionVimKeymapHintSize),
-		Core::VimKeymap::HintSizeBounds(),
-		rpl::producer<>(),
-		rpl::producer<QString>(),
-		nullptr);
-	AddStringChoiceOption(
-		window,
-		container,
-		base::options::lookup<QString>(
-			Core::VimKeymap::kOptionVimKeymapHintAlphabet),
-		{
-			{ u"russian"_q, u"Russian"_q },
-			{ u"english"_q, u"English"_q },
-		},
-		rpl::producer<>(),
-		rpl::producer<QString>(),
-		nullptr);
-	AddStringChoiceOption(
-		window,
-		container,
-		base::options::lookup<QString>(
-			Core::VimKeymap::kOptionVimKeymapComposeCursorStyle),
-		{
-			{ u"block"_q, u"Block"_q },
-			{ u"bar"_q, u"Bar"_q },
-			{ u"underline"_q, u"Underline"_q },
-		},
-		rpl::producer<>(),
-		rpl::producer<QString>(),
-		nullptr);
-	AddIntegerOption(
-		window,
-		container,
-		base::options::lookup<int>(
-			Core::VimKeymap::kOptionVimKeymapComposeCursorWidth),
-		Core::VimKeymap::ComposeCursorWidthBounds(),
-		rpl::producer<>(),
-		rpl::producer<QString>(),
-		nullptr);
-	AddIntegerOption(
-		window,
-		container,
-		base::options::lookup<int>(
-			Core::VimKeymap::kOptionVimKeymapComposeCursorHeight),
-		Core::VimKeymap::ComposeCursorHeightBounds(),
-		rpl::producer<>(),
-		rpl::producer<QString>(),
-		nullptr);
-	AddIntegerOption(
-		window,
-		container,
-		base::options::lookup<int>(
-			Core::VimKeymap::kOptionVimKeymapComposeCursorBlink),
-		Core::VimKeymap::ComposeCursorBlinkBounds(),
-		rpl::producer<>(),
-		rpl::producer<QString>(),
-		nullptr);
-	AddComposeCursorPreview(container);
-	const auto addStringOption = [&](
-			const char name[]) {
-		AddStringOption(
-			window,
-			container,
-			base::options::lookup<QString>(name),
-			rpl::producer<>(),
-			rpl::producer<QString>(),
-			nullptr);
-	};
-	addStringOption(Core::VimKeymap::kOptionVimKeymapKeyToggleMode);
-	addStringOption(Core::VimKeymap::kOptionVimKeymapKeyCancelReply);
-	addStringOption(Core::VimKeymap::kOptionVimKeymapKeyCancelEdit);
-	addStringOption(Core::VimKeymap::kOptionVimKeymapKeyHelp);
-	addStringOption(Core::VimKeymap::kOptionVimKeymapKeyScrollDown);
-	addStringOption(Core::VimKeymap::kOptionVimKeymapKeyScrollUp);
-	addStringOption(Core::VimKeymap::kOptionVimKeymapKeyJumpBottom);
-	addStringOption(Core::VimKeymap::kOptionVimKeymapKeyCopyMessage);
-	addStringOption(Core::VimKeymap::kOptionVimKeymapKeySelectMessageText);
-	addStringOption(Core::VimKeymap::kOptionVimKeymapKeyReplyToMessage);
-	addStringOption(Core::VimKeymap::kOptionVimKeymapKeyEditMessage);
-	addStringOption(Core::VimKeymap::kOptionVimKeymapKeyDeleteMessage);
-	addStringOption(Core::VimKeymap::kOptionVimKeymapKeyFocusHints);
-	addStringOption(Core::VimKeymap::kOptionVimKeymapKeyOpenChatHints);
-	addStringOption(Core::VimKeymap::kOptionVimKeymapKeyChatPreview);
-	addStringOption(Core::VimKeymap::kOptionVimKeymapKeySearch);
-	addStringOption(Core::VimKeymap::kOptionVimKeymapKeyGlobalSearch);
-	addStringOption(Core::VimKeymap::kOptionVimKeymapKeyNextChat);
-	addStringOption(Core::VimKeymap::kOptionVimKeymapKeyPreviousChat);
-	addStringOption(Core::VimKeymap::kOptionVimKeymapKeyNextFolder);
-	addStringOption(Core::VimKeymap::kOptionVimKeymapKeyPreviousFolder);
-	addStringOption(Core::VimKeymap::kOptionVimKeymapKeyEmojiPanel);
-	addStringOption(Core::VimKeymap::kOptionVimKeymapKeyFocusEmoji);
-	addStringOption(Core::VimKeymap::kOptionVimKeymapKeyFocusChat);
-	addStringOption(Core::VimKeymap::kOptionVimKeymapKeyCall);
+	using namespace Core::VimKeymap;
+	MigrateLegacyDefaults();
+	for (const auto &field : ConfigOptions()) {
+		auto &option = base::options::details::Lookup(field.id);
+		if (v::is<bool>(option.value())) {
+			AddOption(window, container, base::options::lookup<bool>(field.id),
+				{}, option.changes(), {}, nullptr);
+		} else if (field.bounds) {
+			AddIntegerOption(window, container, base::options::lookup<int>(field.id),
+				*field.bounds, option.changes(), {}, nullptr);
+		} else if (!field.choices.empty()) {
+			auto choices = std::vector<StringChoice>();
+			for (const auto &value : field.choices) {
+				auto label = value;
+				label[0] = label.front().toUpper();
+				choices.push_back({ value, label });
+			}
+			AddStringChoiceOption(window, container,
+				base::options::lookup<QString>(field.id),
+				std::move(choices), option.changes(), {}, nullptr);
+		} else {
+			AddStringOption(window, container, base::options::lookup<QString>(field.id),
+				option.changes(), {}, nullptr);
+		}
+		if (QString::fromLatin1(field.id) == QLatin1String(kOptionVimKeymapComposeCursorBlink)) {
+			AddComposeCursorPreview(container);
+		}
+	}
 }
 
 Experimental::Experimental(

@@ -14,19 +14,30 @@ target_include_directories(test_vim_keymap PRIVATE
     ${src_loc}
     ${CMAKE_CURRENT_BINARY_DIR}/gen)
 target_precompile_headers(test_vim_keymap PRIVATE ${src_loc}/ui/ui_pch.h)
+target_compile_definitions(test_vim_keymap PRIVATE
+    VIM_KEYMAP_DOCS_DIR="${CMAKE_SOURCE_DIR}/docs")
 
 nice_target_sources(test_vim_keymap ${src_loc}
 PRIVATE
     core/vim_keymap_bindings.cpp
     core/vim_keymap_bindings.h
+    core/vim_keymap_options.cpp
+    core/vim_keymap_options.h
+    core/vim_keymap_config.cpp
+    core/vim_keymap_config.h
+    settings/settings_vim_editor.cpp
+    settings/settings_vim_editor.h
     core/vim_keymap_geometry.cpp
     core/vim_keymap_geometry.h
     core/vim_keymap_widgets.cpp
     core/vim_keymap_widgets.h
     tests/test_vim_keymap.cpp
+    tests/vim_config_tests.h
     tests/vim_focus_labels_tests.h
     ui/widgets/continuous_sliders.cpp
     ui/widgets/continuous_sliders.h
+    ui/widgets/discrete_sliders.cpp
+    ui/widgets/discrete_sliders.h
 )
 
 target_sources(test_vim_keymap PRIVATE

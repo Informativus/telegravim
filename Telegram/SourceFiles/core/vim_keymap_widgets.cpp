@@ -60,9 +60,11 @@ bool KeyboardScopeHasTextInput(not_null<QWidget*> scope, QObject *receiver) {
 	const auto isInput = [&](QWidget *widget) {
 		for (auto current = widget; current && KeyHandlerInScope(current, scope);
 			current = current->parentWidget()) {
+			const auto rich = qobject_cast<QTextEdit*>(current);
+			const auto plain = qobject_cast<QPlainTextEdit*>(current);
 			if (qobject_cast<QLineEdit*>(current)
-				|| qobject_cast<QTextEdit*>(current)
-				|| qobject_cast<QPlainTextEdit*>(current)
+				|| (rich && !rich->isReadOnly())
+				|| (plain && !plain->isReadOnly())
 				|| dynamic_cast<Ui::InputField*>(current)) {
 				return true;
 			}
@@ -158,7 +160,9 @@ private:
 	if (widget->property(kExcludedFocusTarget).toBool()
 		|| dynamic_cast<KeyboardNavigation*>(widget.get())
 		|| dynamic_cast<Ui::ElasticScroll*>(widget.get())
-		|| qobject_cast<QAbstractScrollArea*>(widget.get())
+		|| (qobject_cast<QAbstractScrollArea*>(widget.get())
+			&& !qobject_cast<QTextEdit*>(widget.get())
+			&& !qobject_cast<QPlainTextEdit*>(widget.get()))
 		|| qobject_cast<QScrollBar*>(widget.get())) {
 		return false;
 	} else if (dynamic_cast<Ui::AbstractButton*>(widget.get())) {

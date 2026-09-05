@@ -9,6 +9,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/vim_keymap_geometry.h"
 #include "core/vim_keymap_widgets.h"
 #include "core/vim_keymap.h"
+#include "core/vim_keymap_config.h"
+#include "core/vim_keymap_options.h"
+#include "settings/settings_vim_editor.h"
+#include "ui/widgets/discrete_sliders.h"
+#include "ui/wrap/vertical_layout.h"
 #include "info/info_navigation_history.h"
 #include "base/qt/qt_tab_key.h"
 #include "base/flat_map.h"
@@ -41,11 +46,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QEventLoop>
 #include <QtCore/QTimer>
 #include <QtCore/QRandomGenerator>
+#include <QtCore/QJsonDocument>
+#include <QtCore/QJsonArray>
+#include <QtCore/QSaveFile>
+#include <QtCore/QDir>
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QLineEdit>
 #include <QtWidgets/QScrollArea>
 #include <QtWidgets/QScrollBar>
 #include <QtWidgets/QSlider>
+#include <QtWidgets/QPlainTextEdit>
+#include <QtWidgets/QTextBrowser>
 
 #include <iostream>
 #include <algorithm>
@@ -2463,6 +2474,8 @@ void TestVimKeymapCommandBindings() {
 		Qt::ControlModifier);
 }
 
+#include "tests/vim_config_tests.h"
+
 } // namespace
 
 int main(int argc, char *argv[]) {
@@ -2509,6 +2522,9 @@ int main(int argc, char *argv[]) {
 	TestPopupMenuKeyboardCycle();
 	TestPopupFocusHints();
 	TestPopupHandlerScope();
+	TestVimConfig();
+	TestVimConfigEditor();
+	TestVimConfigDocuments();
 
 	std::cout << (TotalChecks - FailedChecks) << "/" << TotalChecks
 		<< " checks passed." << std::endl;
