@@ -23,7 +23,15 @@ void TestVimFocusLabels() {
 	QApplication::setActiveWindow(&root);
 	const auto drain = [] {
 		for (auto i = 0; i != 3; ++i) {
-			QApplication::processEvents();
+			auto loop = QEventLoop();
+			auto completed = false;
+			crl::on_main(&loop, [&] {
+				completed = true;
+				loop.quit();
+			});
+			QTimer::singleShot(1000, &loop, &QEventLoop::quit);
+			loop.exec();
+			Check(completed, "queued label actions finish before assertions");
 		}
 	};
 	const auto focus = [&](Label &label) {

@@ -23,6 +23,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/vim_keymap.h"
 #include "core/vim_keymap_bindings.h"
 #include "core/vim_keymap_geometry.h"
+#include "core/vim_keymap_widgets.h"
 #include "data/data_document.h"
 #include "data/data_document_media.h"
 #include "data/data_file_origin.h"
@@ -1246,6 +1247,7 @@ StickerSetBox::Inner::Inner(
 , _previewTimer([=] { showPreview(); }) {
 	setAttribute(Qt::WA_OpaquePaintEvent);
 	setFocusPolicy(Qt::StrongFocus);
+	Core::VimKeymap::SetKeyboardFocusFrameEnabled(this, false);
 
 	_api.request(MTPmessages_GetStickerSet(
 		Data::InputStickerSet(_input),

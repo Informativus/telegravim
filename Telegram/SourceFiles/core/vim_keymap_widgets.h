@@ -31,6 +31,7 @@ namespace Core::VimKeymap {
 [[nodiscard]] bool CloseKeyboardScope(not_null<QWidget*> scope);
 [[nodiscard]] std::vector<QPointer<QWidget>> KeyboardFocusTargets(
 	not_null<QWidget*> scope);
+void SetKeyboardFocusFrameEnabled(not_null<QWidget*> widget, bool enabled);
 void FocusModalNextPrevChild(not_null<QWidget*> scope, bool next);
 
 class KeyboardNavigation final : public Ui::RpWidget {

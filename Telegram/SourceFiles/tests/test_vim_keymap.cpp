@@ -23,6 +23,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/style/style_core.h"
 #include "styles/style_widgets.h"
 
+#include <crl/crl_on_main.h>
 #include <rpl/never.h>
 
 #include <QtGui/QKeyEvent>
@@ -1479,6 +1480,52 @@ void TestKeyboardFocusScrollingAndPainting() {
 		"scoped scrolling clamps at the end without moving a background");
 }
 
+void TestCustomKeyboardFocusFrame() {
+	using namespace Core::VimKeymap;
+	auto root = QWidget();
+	root.setAttribute(Qt::WA_DontShowOnScreen);
+	root.resize(400, 400);
+	auto grid = QWidget(&root);
+	grid.setGeometry(20, 20, 360, 280);
+	grid.setFocusPolicy(Qt::StrongFocus);
+	SetKeyboardFocusFrameEnabled(&grid, false);
+	auto button = Ui::AbstractButton(&root);
+	button.setGeometry(20, 320, 360, 40);
+	root.show();
+	QApplication::setActiveWindow(&root);
+	const auto navigation = KeyboardNavigation::Get(&root);
+	Check(KeyboardFocusTargets(&root) == std::vector<QPointer<QWidget>>{
+		&grid, &button }, "custom grid indicator does not remove its Tab target");
+	navigation->focusTarget(&button);
+	navigation->focusNext(false);
+	Check(grid.hasFocus(), "Shift Tab still reaches the grid with its own indicator");
+	for (const auto dpr : { 1, 2, 3 }) {
+		auto image = QImage(root.size() * dpr, QImage::Format_ARGB32_Premultiplied);
+		image.setDevicePixelRatio(dpr);
+		image.fill(Qt::transparent);
+		{
+			auto painter = QPainter(&image);
+			navigation->render(&painter, {}, {}, QWidget::RenderFlags());
+		}
+		auto ink = 0;
+		for (auto y = 0; y != image.height(); ++y) {
+			for (auto x = 0; x != image.width(); ++x) {
+				ink += image.pixelColor(x, y).alpha() != 0;
+			}
+		}
+		Check(!ink, "self-painted grid has no duplicate container frame at each DPR");
+	}
+	navigation->focusNext(true);
+	Check(button.hasFocus(), "Tab still leaves the grid for the action button");
+	navigation->showHints([](int index, int) {
+		return QString(QChar('a' + index));
+	}, QFont(u"Menlo"_q, 13), { 7, 3 }, 3);
+	auto choose = QKeyEvent(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier, u"a"_q);
+	Check(navigation->handleHintKey(&choose, u"a"_q)
+		&& grid.hasFocus() && !navigation->hasHints(),
+		"focus hint still reaches the grid without adding a container frame");
+}
+
 void TestPopupHandlerScope() {
 	using Core::VimKeymap::KeyHandlerInScope;
 	auto background = QWidget();
@@ -1674,6 +1721,7 @@ int main(int argc, char *argv[]) {
 	TestKeyboardLayerStack();
 	TestNestedKeyboardNavigation();
 	TestKeyboardFocusScrollingAndPainting();
+	TestCustomKeyboardFocusFrame();
 	TestVimFocusLabels();
 	TestPopupMenuKeyboardCycle();
 	TestPopupFocusHints();

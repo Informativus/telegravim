@@ -31,6 +31,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QTextEdit>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QVariant>
 
 #include <algorithm>
 #include <unordered_set>
@@ -66,6 +67,8 @@ bool KeyboardScopeHasTextInput(not_null<QWidget*> scope, QObject *receiver) {
 }
 
 namespace {
+
+constexpr auto kCustomFocusFrame = "vim-keymap-custom-focus-frame";
 
 [[nodiscard]] bool Available(not_null<QWidget*> widget, QWidget *scope) {
 	if (!KeyHandlerInScope(widget, scope) || !widget->isEnabled()) {
@@ -169,6 +172,10 @@ std::vector<QPointer<QWidget>> KeyboardFocusTargets(not_null<QWidget*> scope) {
 			: rtl ? ap.x() + a->width() > bp.x() + b->width() : ap.x() < bp.x();
 	});
 	return result;
+}
+
+void SetKeyboardFocusFrameEnabled(not_null<QWidget*> widget, bool enabled) {
+	widget->setProperty(kCustomFocusFrame, !enabled);
 }
 
 void FocusModalNextPrevChild(not_null<QWidget*> scope, bool next) {
@@ -447,7 +454,9 @@ bool KeyboardNavigation::handleHintKey(not_null<QKeyEvent*> e, const QString &in
 
 void KeyboardNavigation::paintEvent(QPaintEvent *e) {
 	auto p = QPainter(this);
-	if (_focused && Available(_focused, _scope)) {
+	if (_focused
+		&& Available(_focused, _scope)
+		&& !_focused->property(kCustomFocusFrame).toBool()) {
 		const auto rect = targetRect(_focused);
 		const auto border = st::lineWidth * 2;
 		p.setPen(QPen(st::windowBgActive->c, border));
