@@ -1,0 +1,11 @@
+// This file is part of Telegram Desktop,
+// the official desktop application for the Telegram messaging service.
+//
+// For license and copyright information please follow this link:
+// https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
+
+using "ui/basic.style";
+
+vimHintMargin: 4px;
+vimHintGap: 3px;
+vimHintPadding: size(7px, 3px);

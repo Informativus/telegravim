@@ -10,7 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/vim_keymap_bindings.h"
 #include "core/vim_keymap_geometry.h"
 #include "base/options.h"
-#include "base/qt/qt_tab_key.h"
+#include "core/vim_keymap_widgets.h"
 #include "core/application.h"
 #include "core/shortcuts.h"
 #include "core/version.h"
@@ -75,7 +75,7 @@ constexpr auto kComposeCursorStyleUnderline = "underline";
 constexpr auto kHoldScrollTickMs = 16;
 constexpr auto kHoldScrollStartDelayMs = 90;
 constexpr auto kSingleScrollDurationMs = 190;
-constexpr auto kTelegraVimBuild = "2026.09.05-90";
+constexpr auto kTelegraVimBuild = "2026.09.05-91";
 constexpr auto kKeyLogLimit = 200;
 
 base::options::toggle VimKeymapOption({
@@ -891,7 +891,9 @@ void CleanupScrollAnimations() {
 	return false;
 }
 
-[[nodiscard]] bool HandleRegisteredKey(not_null<QKeyEvent*> e) {
+[[nodiscard]] bool HandleRegisteredKey(
+		not_null<QKeyEvent*> e,
+		QWidget *scope = nullptr) {
 	const auto handle = [&](std::vector<KeyHandler> &handlers) {
 		const auto remove = [](const KeyHandler &handler) {
 			return !handler.owner;
@@ -900,7 +902,7 @@ void CleanupScrollAnimations() {
 			std::remove_if(begin(handlers), end(handlers), remove),
 			end(handlers));
 		for (auto i = handlers.rbegin(); i != handlers.rend(); ++i) {
-			if (i->handler(e)) {
+			if (KeyHandlerInScope(i->owner, scope) && i->handler(e)) {
 				return true;
 			}
 		}
@@ -1054,17 +1056,11 @@ void RefreshModeIndicator() {
 	if (!box) {
 		return false;
 	}
-	for (const auto widget : box->findChildren<QWidget*>()) {
-		if (const auto button = dynamic_cast<Ui::AbstractButton*>(widget)) {
-			button->setFocusPolicy(Qt::StrongFocus);
-		}
-	}
-	box->setVisualTabOrder(true);
 	if (ModalKeyboardFocusedButton) {
 		ModalKeyboardFocusedButton->setSynteticOver(false);
 		ModalKeyboardFocusedButton = nullptr;
 	}
-	base::FocusNextPrevChildBlocked(box, delta > 0);
+	FocusModalNextPrevChild(box, delta > 0);
 	if (const auto button = dynamic_cast<Ui::AbstractButton*>(
 			QApplication::focusWidget())) {
 		button->setSynteticOver(true);
@@ -1796,6 +1792,13 @@ bool HandleApplicationKeyPress(
 		return false;
 	}
 	if (IsModifierOnlyKey(e)) {
+		return false;
+	}
+	if (const auto popup = QApplication::activePopupWidget()) {
+		if (HandleRegisteredKey(e, popup)) {
+			e->accept();
+			return true;
+		}
 		return false;
 	}
 	if (HandlePreLayerKey(e)) {

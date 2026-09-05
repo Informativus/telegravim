@@ -12,7 +12,29 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QRect>
 #include <QtCore/QString>
 
+class QFont;
+class QPainter;
+
 namespace Core::VimKeymap {
+
+struct HintBadge {
+	QString label;
+	QPoint anchor;
+};
+
+[[nodiscard]] std::vector<QRect> LayoutHintBadges(
+	const std::vector<QRect> &desired,
+	QRect bounds,
+	int gap);
+void PaintHintBadges(
+	QPainter &p,
+	const std::vector<HintBadge> &hints,
+	const QString &prefix,
+	const QFont &font,
+	QRect bounds,
+	QSize padding,
+	int gap,
+	bool visual);
 
 struct VisualSelectionRange {
 	int from = 0;

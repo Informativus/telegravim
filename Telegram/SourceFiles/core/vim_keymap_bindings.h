@@ -32,6 +32,7 @@ enum class StickerGridAction {
 	ScrollDown,
 	Choose,
 	Preview,
+	ClosePreview,
 };
 
 [[nodiscard]] Qt::KeyboardModifiers CleanModifiers(not_null<QKeyEvent*> e);

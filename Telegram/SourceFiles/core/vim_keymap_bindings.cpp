@@ -446,6 +446,9 @@ int PickerNavigationDelta(not_null<QKeyEvent*> e) {
 }
 
 StickerGridAction StickerGridActionKey(not_null<QKeyEvent*> e) {
+	if (IsPlainEscape(e)) {
+		return StickerGridAction::ClosePreview;
+	}
 	const auto modifiers = CleanModifiers(e);
 	const auto left = KeyIs(e, Qt::Key_H, u"h"_q, u"\u0440"_q);
 	const auto down = KeyIs(e, Qt::Key_J, u"j"_q, u"\u043E"_q);

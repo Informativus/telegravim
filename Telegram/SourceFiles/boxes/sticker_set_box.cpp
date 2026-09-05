@@ -325,6 +325,7 @@ public:
 	[[nodiscard]] QRect moveKeyboardSelection(int dx, int dy);
 	[[nodiscard]] bool chooseKeyboardSelection();
 	[[nodiscard]] bool previewKeyboardSelection();
+	[[nodiscard]] bool dismissPreview();
 	[[nodiscard]] rpl::producer<uint64> setInstalled() const;
 	[[nodiscard]] rpl::producer<uint64> setArchived() const;
 	[[nodiscard]] rpl::producer<> updateControls() const;
@@ -730,6 +731,10 @@ bool StickerSetBox::handleVimKey(not_null<QKeyEvent*> e) {
 		}
 	} else if (action == Action::Preview) {
 		if (!_inner->previewKeyboardSelection()) {
+			return false;
+		}
+	} else if (action == Action::ClosePreview) {
+		if (!e->isAutoRepeat() && !_inner->dismissPreview()) {
 			return false;
 		}
 	}
@@ -2128,6 +2133,21 @@ bool StickerSetBox::Inner::previewKeyboardSelection() {
 		return false;
 	}
 	showPreviewForDocument(document->id);
+	return true;
+}
+
+bool StickerSetBox::Inner::dismissPreview() {
+	if (_previewShown < 0 && !_previewDocumentId
+		&& !_previewTimer.isActive()) {
+		return false;
+	}
+	_previewTimer.cancel();
+	_previewShown = -1;
+	_previewDocumentId = 0;
+	_previewLocked = false;
+	if (const auto window = _show->resolveWindow()) {
+		window->widget()->hideMediaPreview();
+	}
 	return true;
 }
 

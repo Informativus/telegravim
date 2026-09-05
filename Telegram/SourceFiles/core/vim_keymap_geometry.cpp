@@ -7,9 +7,137 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "core/vim_keymap_geometry.h"
 
+#include <QtGui/QFontMetrics>
+#include <QtGui/QPainter>
+
 #include <algorithm>
+#include <limits>
 
 namespace Core::VimKeymap {
+
+std::vector<QRect> LayoutHintBadges(
+		const std::vector<QRect> &desired,
+		QRect bounds,
+		int gap) {
+	auto result = std::vector<QRect>();
+	result.reserve(desired.size());
+	gap = std::max(gap, 0);
+	for (auto rect : desired) {
+		if (rect.isEmpty() || bounds.isEmpty()
+			|| rect.width() > bounds.width()
+			|| rect.height() > bounds.height()) {
+			result.emplace_back();
+			continue;
+		}
+		const auto maxX = bounds.right() - rect.width() + 1;
+		const auto maxY = bounds.bottom() - rect.height() + 1;
+		rect.moveLeft(std::clamp(rect.x(), bounds.left(), maxX));
+		rect.moveTop(std::clamp(rect.y(), bounds.top(), maxY));
+		const auto free = [&](QRect candidate) {
+			return std::ranges::none_of(result, [&](QRect placed) {
+				return !placed.isEmpty()
+					&& placed.marginsAdded(QMargins(gap, gap, gap, gap))
+						.intersects(candidate);
+			});
+		};
+		if (free(rect)) {
+			result.push_back(rect);
+			continue;
+		}
+		auto rows = std::vector<int>{ rect.y(), bounds.top(), maxY };
+		for (const auto placed : result) {
+			if (!placed.isEmpty()) {
+				rows.push_back(std::clamp(
+					placed.top() - gap - rect.height(), bounds.top(), maxY));
+				rows.push_back(std::clamp(
+					placed.bottom() + gap + 1, bounds.top(), maxY));
+			}
+		}
+		std::ranges::sort(rows);
+		rows.erase(std::unique(rows.begin(), rows.end()), rows.end());
+		auto best = QRect();
+		auto distance = std::numeric_limits<int>::max();
+		for (const auto y : rows) {
+			if (std::abs(y - rect.y()) > distance) {
+				continue;
+			}
+			auto blocked = std::vector<std::pair<int, int>>();
+			for (const auto placed : result) {
+				if (!placed.isEmpty()
+					&& y <= placed.bottom() + gap
+					&& y + rect.height() > placed.top() - gap) {
+					blocked.emplace_back(
+						placed.left() - gap - rect.width() + 1,
+						placed.right() + gap);
+				}
+			}
+			std::ranges::sort(blocked);
+			const auto consider = [&](int left, int right) {
+				if (left > right) {
+					return;
+				}
+				const auto x = std::clamp(rect.x(), left, right);
+				const auto delta = std::abs(x - rect.x()) + std::abs(y - rect.y());
+				if (delta < distance) {
+					distance = delta;
+					best = QRect(QPoint(x, y), rect.size());
+				}
+			};
+			auto left = bounds.left();
+			for (const auto &[from, till] : blocked) {
+				consider(left, std::min(maxX, from - 1));
+				left = std::max(left, till + 1);
+			}
+			consider(left, maxX);
+		}
+		result.push_back(best);
+	}
+	return result;
+}
+
+void PaintHintBadges(
+		QPainter &p,
+		const std::vector<HintBadge> &hints,
+		const QString &prefix,
+		const QFont &font,
+		QRect bounds,
+		QSize padding,
+		int gap,
+		bool visual) {
+	const auto metrics = QFontMetrics(font);
+	auto labels = std::vector<QString>();
+	auto desired = std::vector<QRect>();
+	for (const auto &hint : hints) {
+		if (!hint.label.startsWith(prefix)) {
+			continue;
+		}
+		const auto remaining = hint.label.mid(prefix.size());
+		labels.push_back(remaining.isEmpty() ? hint.label : remaining);
+		desired.emplace_back(hint.anchor, QSize(
+			metrics.horizontalAdvance(labels.back()) + 2 * padding.width(),
+			metrics.height() + 2 * padding.height()));
+	}
+	const auto rects = LayoutHintBadges(desired, bounds, gap);
+	p.save();
+	p.setClipRect(bounds, Qt::IntersectClip);
+	p.setFont(font);
+	p.setRenderHint(QPainter::Antialiasing, true);
+	for (auto i = 0; i != rects.size(); ++i) {
+		const auto rect = rects[i];
+		if (rect.isEmpty()) {
+			continue;
+		}
+		const auto radius = rect.height() / 2.;
+		p.setPen(Qt::NoPen);
+		p.setBrush(visual
+			? QColor(218, 91, 166, 246)
+			: QColor(255, 218, 72, 246));
+		p.drawRoundedRect(QRectF(rect), radius, radius);
+		p.setPen(visual ? QColor(255, 255, 255) : QColor(28, 24, 14));
+		p.drawText(rect, Qt::AlignCenter, labels[i]);
+	}
+	p.restore();
+}
 
 QRect CursorPaintRect(
 		QRect characterRect,

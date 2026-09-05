@@ -7,16 +7,26 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "core/vim_keymap_bindings.h"
 #include "core/vim_keymap_geometry.h"
+#include "core/vim_keymap_widgets.h"
 #include "core/vim_keymap.h"
+#include "base/qt/qt_tab_key.h"
+#include "base/flat_map.h"
 #include "ui/abstract_button.h"
 #include "ui/integration.h"
+#include "ui/widgets/popup_menu.h"
+#include "ui/widgets/menu/menu_action.h"
+#include "ui/style/style_core.h"
+#include "styles/style_widgets.h"
 
 #include <rpl/never.h>
 
 #include <QtGui/QKeyEvent>
+#include <QtGui/QPainter>
+#include <QtCore/QRandomGenerator>
 #include <QtWidgets/QApplication>
 
 #include <iostream>
+#include <algorithm>
 
 namespace crl {
 
@@ -60,6 +70,7 @@ public:
 
 private:
 	int _touchCounter = 0;
+
 };
 
 void Check(bool condition, const char *name) {
@@ -800,6 +811,12 @@ void TestVimKeymapStickerSetNavigation() {
 		action(Qt::Key_W, Qt::NoModifier, u"w"_q) == Action::Preview,
 		"w previews the selected sticker");
 	Check(
+		action(Qt::Key_Escape, Qt::NoModifier) == Action::ClosePreview,
+		"escape is offered to the sticker preview before the box");
+	Check(
+		action(Qt::Key_Escape, Qt::ControlModifier) == Action::None,
+		"modified escape does not dismiss the sticker preview");
+	Check(
 		action(Qt::Key_W, Qt::ControlModifier, u"w"_q) == Action::None,
 		"modified w leaves the sticker preview unchanged");
 	Check(
@@ -964,6 +981,183 @@ void TestAbstractButtonKeyboardActivation() {
 	Check(clicks == 1, "enter activates a normal button exactly once");
 }
 
+void TestHintBadgeLayoutAndPainting() {
+	using namespace Core::VimKeymap;
+	const auto valid = [](const std::vector<QRect> &rects, QRect bounds, int gap) {
+		for (auto i = 0; i != rects.size(); ++i) {
+			if (rects[i].isEmpty()) {
+				continue;
+			}
+			if (!bounds.contains(rects[i])) {
+				return false;
+			}
+			for (auto j = 0; j != i; ++j) {
+				if (!rects[j].isEmpty()
+					&& rects[i].marginsAdded(QMargins(gap, gap, gap, gap))
+						.intersects(rects[j])) {
+					return false;
+				}
+			}
+		}
+		return true;
+	};
+	const auto bounds = QRect(4, 4, 300, 180);
+	const auto clustered = std::vector<QRect>(24, QRect(10, 80, 25, 24));
+	const auto placed = LayoutHintBadges(clustered, bounds, 3);
+	Check(valid(placed, bounds, 3), "clustered badges never overlap");
+	Check(std::ranges::none_of(placed, &QRect::isEmpty),
+		"clustered badges remain visible when space is available");
+	Check(placed == LayoutHintBadges(clustered, bounds, 3),
+		"badge positions are deterministic across repaints");
+	const auto tiny = QRect(0, 0, 25, 24);
+	const auto overflow = LayoutHintBadges(clustered, tiny, 3);
+	Check(!overflow.front().isEmpty()
+		&& std::ranges::count_if(overflow, &QRect::isEmpty) == 23,
+		"full viewport never falls back to overlapping badges");
+	Check(LayoutHintBadges({ QRect(0, 0, 400, 24) }, bounds, 3)[0].isEmpty(),
+		"oversized badge is not drawn clipped");
+	auto random = QRandomGenerator(57931);
+	auto allValid = true;
+	for (auto run = 0; run != 200; ++run) {
+		const auto viewport = QRect(0, run * 1000,
+			random.bounded(40, 1200), random.bounded(40, 900));
+		auto desired = std::vector<QRect>();
+		for (auto i = 0; i != 60; ++i) {
+			desired.emplace_back(random.bounded(-100, 1300),
+				viewport.y() + random.bounded(-100, 1000),
+				random.bounded(15, 120), random.bounded(15, 65));
+		}
+		allValid &= valid(LayoutHintBadges(desired, viewport, 3), viewport, 3);
+	}
+	Check(allValid, "randomized sizes, scroll offsets and edges never overlap");
+	for (const auto dpr : { 1, 2, 3 }) {
+		for (const auto size : { 10, 13, 24 }) {
+			auto canvas = QImage(QSize(320, 200) * dpr,
+				QImage::Format_ARGB32_Premultiplied);
+			canvas.setDevicePixelRatio(dpr);
+			canvas.fill(Qt::transparent);
+			const auto font = QFont(u"Menlo"_q, size, QFont::DemiBold);
+			const auto hints = std::vector<HintBadge>{
+				{ u"fa"_q, { 12, 80 } }, { u"fb"_q, { 12, 80 } },
+				{ u"fc"_q, { 12, 80 } }, { u"ga"_q, { 12, 80 } },
+			};
+			const auto metrics = QFontMetrics(font);
+			const auto rects = LayoutHintBadges(std::vector<QRect>(3,
+				QRect(QPoint(12, 80), QSize(metrics.horizontalAdvance(u"a"_q) + 14,
+					metrics.height() + 6))), bounds, 3);
+			{
+				auto painter = QPainter(&canvas);
+				PaintHintBadges(painter, hints, u"f"_q, font, bounds, { 7, 3 }, 3, false);
+			}
+			auto contained = true;
+			auto ink = 0;
+			for (auto y = 0; y != canvas.height(); ++y) {
+				for (auto x = 0; x != canvas.width(); ++x) {
+					const auto pixel = canvas.pixelColor(x, y);
+					if (!pixel.alpha()) {
+						continue;
+					}
+					contained &= std::ranges::any_of(rects, [&](QRect rect) {
+						return rect.contains(QPoint(x / dpr, y / dpr));
+					});
+					ink += pixel.red() < 100;
+				}
+			}
+			Check(contained && ink > 0,
+				"painted labels fit disjoint badges at all font sizes and DPRs");
+		}
+	}
+}
+
+void TestModalTabCycle() {
+	auto root = Ui::RpWidget(nullptr);
+	root.setAttribute(Qt::WA_DontShowOnScreen);
+	auto menu = Ui::AbstractButton(&root);
+	auto hidden = Ui::AbstractButton(&root);
+	auto close = Ui::AbstractButton(&root);
+	auto disabled = Ui::AbstractButton(&root);
+	auto vimDisabled = Ui::AbstractButton(&root);
+	auto add = Ui::AbstractButton(&root);
+	for (const auto button : { &menu, &hidden, &close, &disabled, &add }) {
+		button->setFocusPolicy(Qt::StrongFocus);
+	}
+	menu.setGeometry(100, 0, 30, 30);
+	close.setGeometry(140, 0, 30, 30);
+	add.setGeometry(0, 100, 170, 30);
+	hidden.hide();
+	disabled.setEnabled(false);
+	vimDisabled.setDisabled(true);
+	root.setVisualTabOrder(true);
+	root.show();
+	root.refreshVisualTabOrder();
+	QApplication::setActiveWindow(&root);
+	menu.setFocus();
+	Core::VimKeymap::FocusModalNextPrevChild(&root, true);
+	Check(close.hasFocus(), "tab moves from menu to close, skipping hidden controls");
+	Core::VimKeymap::FocusModalNextPrevChild(&root, true);
+	Check(add.hasFocus(), "tab skips both native and Telegram-disabled controls");
+	Core::VimKeymap::FocusModalNextPrevChild(&root, true);
+	Check(menu.hasFocus(), "tab wraps from last button to first");
+	Core::VimKeymap::FocusModalNextPrevChild(&root, false);
+	Check(add.hasFocus(), "shift tab wraps from first button to last");
+}
+
+void TestPopupHandlerScope() {
+	using Core::VimKeymap::KeyHandlerInScope;
+	auto background = QWidget();
+	auto popup = QWidget(&background, Qt::Popup);
+	auto preview = QWidget(&popup);
+	auto hidden = QWidget(&popup);
+	auto otherPopup = QWidget(&popup, Qt::Popup);
+	auto otherPreview = QWidget(&otherPopup);
+	preview.show();
+	hidden.hide();
+	otherPreview.show();
+	Check(KeyHandlerInScope(&preview, &popup),
+		"popup keeps its own chat preview key handler for j/k and enter");
+	Check(!KeyHandlerInScope(&background, &popup),
+		"popup blocks background chat and sticker pack handlers");
+	Check(!KeyHandlerInScope(&hidden, &popup),
+		"popup ignores hidden handlers");
+	Check(!KeyHandlerInScope(&otherPreview, &popup),
+		"popup ignores handlers in a different popup window");
+	Check(KeyHandlerInScope(&background, nullptr),
+		"normal key dispatch remains unrestricted without a popup");
+}
+
+void TestPopupMenuKeyboardCycle() {
+	auto owner = QWidget();
+	auto menu = Ui::PopupMenu(&owner, st::defaultPopupMenu);
+	menu.deleteOnHide(false);
+	const auto first = menu.addAction(u"Share"_q, [] {});
+	menu.addSeparator();
+	const auto disabled = menu.addAction(u"Unavailable"_q, [] {});
+	disabled->setEnabled(false);
+	const auto last = menu.addAction(u"Copy link"_q, [] {});
+	const auto send = [&](Qt::Key key, Qt::KeyboardModifiers mods = Qt::NoModifier) {
+		auto event = QKeyEvent(QEvent::KeyPress, key, mods);
+		QApplication::sendEvent(&menu, &event);
+	};
+	const auto selected = [&] {
+		const auto item = menu.menu()->findSelectedAction();
+		return item ? item->action().get() : nullptr;
+	};
+	send(Qt::Key_Tab);
+	Check(selected() == first, "menu tab selects first action");
+	send(Qt::Key_Tab);
+	Check(selected() == last, "menu tab skips separator and disabled action");
+	send(Qt::Key_Tab);
+	Check(selected() == first, "menu tab wraps");
+	send(Qt::Key_Tab, Qt::ShiftModifier);
+	Check(selected() == last, "menu shift tab wraps backwards");
+	send(Qt::Key_Backtab, Qt::ShiftModifier);
+	Check(selected() == first, "menu backtab moves backwards");
+	auto escape = QKeyEvent(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+	escape.ignore();
+	QApplication::sendEvent(&menu, &escape);
+	Check(escape.isAccepted(), "popup consumes escape instead of propagating to owner");
+}
+
 void TestVimKeymapCommandBindings() {
 	const auto allowExtraShift = MatchOptions{ .allowExtraShift = true };
 
@@ -1029,6 +1223,7 @@ int main(int argc, char *argv[]) {
 	auto application = QApplication(argc, argv);
 	auto integration = TestIntegration();
 	Ui::Integration::Set(&integration);
+	style::StartManager(100);
 
 	TestVimKeymapNavigationBindings();
 	TestVimKeymapActionBindings();
@@ -1039,6 +1234,10 @@ int main(int argc, char *argv[]) {
 	TestVimKeymapStickerSetNavigation();
 	TestVimKeymapMediaNavigation();
 	TestAbstractButtonKeyboardActivation();
+	TestHintBadgeLayoutAndPainting();
+	TestModalTabCycle();
+	TestPopupMenuKeyboardCycle();
+	TestPopupHandlerScope();
 
 	std::cout << (TotalChecks - FailedChecks) << "/" << TotalChecks
 		<< " checks passed." << std::endl;

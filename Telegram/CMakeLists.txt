@@ -609,6 +609,8 @@ PRIVATE
     core/vim_keymap_bindings.h
     core/vim_keymap_geometry.cpp
     core/vim_keymap_geometry.h
+    core/vim_keymap_widgets.cpp
+    core/vim_keymap_widgets.h
     core/utils.cpp
     core/utils.h
     core/version.h

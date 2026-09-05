@@ -29,6 +29,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/shortcuts.h"
 #include "core/ui_integration.h"
 #include "core/vim_keymap.h"
+#include "core/vim_keymap_geometry.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/widgets/scroll_area.h"
@@ -90,6 +91,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_chat_filters.h"
 #include "base/qt/qt_common_adapters.h"
 #include "styles/style_dialogs.h"
+#include "styles/style_vim_keymap.h"
 #include "styles/style_boxes.h"
 #include "styles/style_chat.h" // popupMenuExpandedSeparator
 #include "styles/style_chat_helpers.h"
@@ -6686,40 +6688,24 @@ void InnerWidget::vimKeymapPaintChatHints(Painter &p) const {
 	p.resetTransform();
 	const auto hintSize = Core::VimKeymap::HintSize();
 	const auto font = QFont(u"Menlo"_q, hintSize, QFont::DemiBold);
-	const auto metrics = QFontMetrics(font);
-	const auto horizontalPadding = std::max(7, hintSize / 2);
-	const auto verticalPadding = std::max(3, hintSize / 4);
-	p.setFont(font);
-	p.setRenderHint(QPainter::Antialiasing, true);
+	auto badges = std::vector<Core::VimKeymap::HintBadge>();
+	badges.reserve(_vimKeymapChatHints.size());
 	for (const auto &hint : _vimKeymapChatHints) {
-		const auto remaining = hint.label.mid(
-			_vimKeymapChatHintPrefix.size());
-		const auto label = _vimKeymapChatHintPrefix.isEmpty()
-			? hint.label
-			: remaining.isEmpty()
-			? hint.label
-			: remaining;
-		const auto textWidth = metrics.horizontalAdvance(label);
-		auto rect = QRect(
-			hint.badge.topLeft(),
-			QSize(
-				textWidth + 2 * horizontalPadding,
-				metrics.height() + 2 * verticalPadding));
-		const auto minLeft = 4;
-		const auto maxLeft = std::max(minLeft, width() - rect.width() - 4);
-		const auto minTop = _visibleTop + 4;
-		const auto maxTop = std::max(
-			minTop,
-			_visibleBottom - rect.height() - 4);
-		rect.moveLeft(std::clamp(rect.left(), minLeft, maxLeft));
-		rect.moveTop(std::clamp(rect.top(), minTop, maxTop));
-		const auto radius = rect.height() / 2;
-		p.setPen(QColor(102, 78, 0, 105));
-		p.setBrush(QColor(255, 218, 72, 246));
-		p.drawRoundedRect(rect, radius, radius);
-		p.setPen(QColor(28, 24, 14));
-		p.drawText(rect, Qt::AlignCenter, label);
+		badges.push_back({ hint.label, hint.badge.topLeft() });
 	}
+	const auto margin = st::vimHintMargin;
+	Core::VimKeymap::PaintHintBadges(
+		p,
+		badges,
+		_vimKeymapChatHintPrefix,
+		font,
+		QRect(0, _visibleTop, width(), _visibleBottom - _visibleTop)
+			.marginsRemoved(QMargins(margin, margin, margin, margin)),
+		QSize(
+			std::max(st::vimHintPadding.width(), hintSize / 2),
+			std::max(st::vimHintPadding.height(), hintSize / 4)),
+		st::vimHintGap,
+		false);
 	p.restore();
 }
 

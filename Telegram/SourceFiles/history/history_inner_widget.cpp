@@ -136,6 +136,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_changes.h"
 #include "dialogs/ui/dialogs_video_userpic.h"
 #include "styles/style_chat.h"
+#include "styles/style_vim_keymap.h"
 #include "styles/style_menu_icons.h"
 
 #include <QtGui/QClipboard>
@@ -4907,51 +4908,28 @@ void HistoryInner::vimKeymapPaintHints(Painter &p) const {
 		|| _vimKeymapHints.empty()) {
 		return;
 	}
-	p.save();
 	const auto hintSize = Core::VimKeymap::HintSize();
 	const auto font = QFont(u"Menlo"_q, hintSize, QFont::DemiBold);
-	const auto metrics = QFontMetrics(font);
-	const auto horizontalPadding = std::max(7, hintSize / 2);
-	const auto verticalPadding = std::max(3, hintSize / 4);
 	const auto textSelectionHints
 		= (_vimKeymapHintMode == VimKeymapHintMode::SelectMessageText);
-	p.setFont(font);
-	p.setRenderHint(QPainter::Antialiasing, true);
+	auto badges = std::vector<Core::VimKeymap::HintBadge>();
+	badges.reserve(_vimKeymapHints.size());
 	for (const auto &hint : _vimKeymapHints) {
-		const auto remaining = hint.label.mid(_vimKeymapHintPrefix.size());
-		const auto label = _vimKeymapHintPrefix.isEmpty()
-			? hint.label
-			: remaining.isEmpty()
-			? hint.label
-			: remaining;
-		const auto textWidth = metrics.horizontalAdvance(label);
-		auto rect = QRect(
-			hint.badge.topLeft(),
-			QSize(
-				textWidth + 2 * horizontalPadding,
-				metrics.height() + 2 * verticalPadding));
-		const auto minLeft = 4;
-		const auto maxLeft = std::max(minLeft, width() - rect.width() - 4);
-		const auto minTop = _visibleAreaTop + 4;
-		const auto maxTop = std::max(
-			minTop,
-			_visibleAreaBottom - rect.height() - 4);
-		rect.moveLeft(std::clamp(rect.left(), minLeft, maxLeft));
-		rect.moveTop(std::clamp(rect.top(), minTop, maxTop));
-		const auto radius = rect.height() / 2;
-		p.setPen(textSelectionHints
-			? QColor(112, 43, 82, 135)
-			: QColor(102, 78, 0, 105));
-		p.setBrush(textSelectionHints
-			? QColor(218, 91, 166, 246)
-			: QColor(255, 218, 72, 246));
-		p.drawRoundedRect(rect, radius, radius);
-		p.setPen(textSelectionHints
-			? QColor(255, 255, 255)
-			: QColor(28, 24, 14));
-		p.drawText(rect, Qt::AlignCenter, label);
+		badges.push_back({ hint.label, hint.badge.topLeft() });
 	}
-	p.restore();
+	const auto margin = st::vimHintMargin;
+	Core::VimKeymap::PaintHintBadges(
+		p,
+		badges,
+		_vimKeymapHintPrefix,
+		font,
+		QRect(0, _visibleAreaTop, width(), _visibleAreaBottom - _visibleAreaTop)
+			.marginsRemoved(QMargins(margin, margin, margin, margin)),
+		QSize(
+			std::max(st::vimHintPadding.width(), hintSize / 2),
+			std::max(st::vimHintPadding.height(), hintSize / 4)),
+		st::vimHintGap,
+		textSelectionHints);
 }
 
 void HistoryInner::editCaptionUploadLayer(not_null<HistoryItem*> item) {
