@@ -26,6 +26,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/update_checker.h"
 #include "core/shortcuts.h"
 #include "core/vim_keymap.h"
+#include "core/vim_keymap_widgets.h"
 #include "core/sandbox.h"
 #include "core/local_url_handlers.h"
 #include "core/launcher.h"
@@ -739,6 +740,14 @@ bool Application::eventFilter(QObject *object, QEvent *e) {
 		if (!event->isAutoRepeat()
 			&& event->key() == Qt::Key_Escape
 			&& mediaViewHandlesEscape(object)) {
+			const auto view = _mediaView->widget()->window();
+			if (QApplication::activePopupWidget()
+				|| QApplication::activeModalWidget()
+				|| Core::VimKeymap::FindKeyboardScope(view)) {
+				return Core::VimKeymap::HandleApplicationKeyPress(object, event);
+			} else if (Core::VimKeymap::CloseKeyboardScope(view)) {
+				return true;
+			}
 			_mediaView->close();
 			Core::VimKeymap::TraceKey(event, u"media viewer close"_q);
 			return true;

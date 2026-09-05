@@ -18,6 +18,7 @@ PRIVATE
     core/vim_keymap_widgets.cpp
     core/vim_keymap_widgets.h
     tests/test_vim_keymap.cpp
+    tests/vim_focus_labels_tests.h
 )
 
 target_link_libraries(test_vim_keymap

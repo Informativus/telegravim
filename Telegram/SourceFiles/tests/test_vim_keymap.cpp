@@ -11,8 +11,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/vim_keymap.h"
 #include "base/qt/qt_tab_key.h"
 #include "base/flat_map.h"
+#include "base/integration.h"
 #include "ui/abstract_button.h"
 #include "ui/integration.h"
+#include "ui/layers/layer_widget.h"
+#include "ui/widgets/checkbox.h"
+#include "ui/widgets/labels.h"
+#include "ui/text/text_utilities.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/widgets/menu/menu_action.h"
 #include "ui/style/style_core.h"
@@ -22,11 +27,20 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <QtGui/QKeyEvent>
 #include <QtGui/QPainter>
+#include <QtGui/QClipboard>
+#include <QtGui/QtEvents>
+#include <QtCore/QMimeData>
+#include <QtCore/QEventLoop>
+#include <QtCore/QTimer>
 #include <QtCore/QRandomGenerator>
 #include <QtWidgets/QApplication>
+#include <QtWidgets/QLineEdit>
+#include <QtWidgets/QScrollArea>
+#include <QtWidgets/QScrollBar>
 
 #include <iostream>
 #include <algorithm>
+#include <memory>
 
 namespace crl {
 
@@ -42,6 +56,25 @@ using MatchOptions = Core::VimKeymap::Bindings::MatchOptions;
 
 int FailedChecks = 0;
 int TotalChecks = 0;
+
+class TestBaseIntegration final : public base::Integration {
+public:
+	using base::Integration::Integration;
+	void enterFromEventLoop(FnMut<void()> &&method) override {
+		method();
+	}
+	bool logSkipDebug() override {
+		return true;
+	}
+	void logMessageDebug(const QString &message) override {
+	}
+	void logMessage(const QString &message) override {
+	}
+	void logAssertionViolation(const QString &info) override {
+		std::cerr << info.toStdString() << std::endl;
+	}
+
+};
 
 class TestIntegration final : public Ui::Integration {
 public:
@@ -80,6 +113,8 @@ void Check(bool condition, const char *name) {
 		std::cout << "FAILED: " << name << std::endl;
 	}
 }
+
+#include "tests/vim_focus_labels_tests.h"
 
 [[nodiscard]] bool MatchesKey(
 		const QString &bindings,
@@ -1221,6 +1256,229 @@ void TestModalTabCycle() {
 	Check(add.hasFocus(), "shift tab wraps from first button to last");
 }
 
+class NavigationTestLayer final : public Ui::LayerWidget {
+public:
+	using Ui::LayerWidget::LayerWidget;
+	void parentResized() override {
+	}
+
+};
+
+void TestKeyboardLayerStack() {
+	using namespace Core::VimKeymap;
+	auto root = QWidget();
+	root.setAttribute(Qt::WA_DontShowOnScreen);
+	root.resize(500, 500);
+	auto stack = Ui::LayerStackWidget(&root, {});
+	auto profile = object_ptr<NavigationTestLayer>(&stack);
+	const auto profilePointer = QPointer<NavigationTestLayer>(profile.data());
+	profile->setGeometry(30, 30, 400, 400);
+	root.show();
+	QApplication::setActiveWindow(&root);
+	stack.showSpecialLayer(std::move(profile), anim::type::instant);
+	Check(FindKeyboardScope(&root) == profilePointer,
+		"real layer stack exposes special profile layer as scope");
+	auto dialog = std::make_unique<NavigationTestLayer>(&stack);
+	const auto dialogPointer = QPointer<NavigationTestLayer>(dialog.get());
+	dialog->setGeometry(50, 50, 300, 300);
+	stack.showLayer(std::move(dialog), Ui::LayerOption::KeepOther, anim::type::instant);
+	Check(FindKeyboardScope(&root) == dialogPointer,
+		"stack dialog overrides special profile layer");
+	auto inner = NavigationTestLayer(dialogPointer);
+	inner.setGeometry(10, 10, 100, 100);
+	inner.show();
+	Check(FindKeyboardScope(&root) == &inner,
+		"scope resolver descends into nested layer inside stack top");
+	inner.hide();
+	Check(FindKeyboardScope(&root) == dialogPointer,
+		"hidden nested layer no longer captures keyboard scope");
+}
+
+void TestNestedKeyboardNavigation() {
+	using namespace Core::VimKeymap;
+	auto root = Ui::RpWidget(nullptr);
+	root.setAttribute(Qt::WA_DontShowOnScreen);
+	root.resize(500, 500);
+	auto background = Ui::AbstractButton(&root);
+	auto layer = NavigationTestLayer(&root);
+	layer.setGeometry(20, 20, 420, 420);
+	auto header = QWidget(&layer);
+	header.setGeometry(0, 0, 400, 60);
+	auto close = Ui::AbstractButton(&header);
+	close.setGeometry(360, 0, 30, 30);
+	auto body = QWidget(&layer);
+	body.setGeometry(0, 60, 400, 300);
+	auto message = Ui::AbstractButton(&body);
+	message.setGeometry(20, 0, 150, 40);
+	auto embedded = Ui::AbstractButton(&message);
+	embedded.setGeometry(115, 0, 30, 30);
+	auto checkbox = Ui::Checkbox(&body, u"Enabled"_q, false, st::defaultCheckbox);
+	checkbox.setGeometry(20, 60, 150, 30);
+	auto input = QLineEdit(&body);
+	input.setGeometry(20, 110, 150, 30);
+	auto disabled = Ui::AbstractButton(&body);
+	disabled.setDisabled(true);
+	auto hidden = QWidget(&body);
+	auto hiddenButton = Ui::AbstractButton(&hidden);
+	hidden.hide();
+	auto popup = QWidget(&layer, Qt::Popup);
+	auto popupButton = Ui::AbstractButton(&popup);
+	root.show();
+	QApplication::setActiveWindow(&root);
+	background.setFocus();
+	Check(FindKeyboardScope(&root) == &layer,
+		"profile-like non-box layer is found even when focus remains in background");
+	const auto targets = KeyboardFocusTargets(&layer);
+	Check(targets == std::vector<QPointer<QWidget>>{
+		&close, &message, &embedded, &checkbox, &input },
+		"recursive visual order includes nested button, checkbox and input only");
+	const auto navigation = KeyboardNavigation::Get(&layer);
+	Check(!navigation->scroll(80, false, 0),
+		"surface without scrolling defers j/k to native media controls");
+	for (const auto target : targets) {
+		navigation->focusNext(true);
+		Check(QApplication::focusWidget() == target,
+			"Tab reaches each nested target in visual order");
+	}
+	navigation->focusNext(true);
+	Check(close.hasFocus(), "Tab stays in profile and wraps after input");
+	navigation->focusNext(false);
+	Check(input.hasFocus(), "Shift Tab wraps backwards inside profile");
+	auto typed = QKeyEvent(QEvent::KeyPress, Qt::Key_F, Qt::NoModifier, u"f"_q);
+	QApplication::sendEvent(&input, &typed);
+	Check(input.text() == u"f"_q, "focused editor retains text input");
+	Check(KeyboardScopeHasTextInput(&layer, &input),
+		"scope recognizes its nested editor for text passthrough");
+	Check(!KeyboardScopeHasTextInput(&popup, &popup),
+		"editor behind popup does not disable popup keyboard navigation");
+
+	auto nested = NavigationTestLayer(&layer);
+	nested.setGeometry(40, 40, 200, 160);
+	auto nestedButton = Ui::AbstractButton(&nested);
+	nestedButton.setGeometry(20, 20, 100, 35);
+	auto closed = 0;
+	nested.setClosedCallback([&] { ++closed; nested.hide(); });
+	nested.show();
+	nestedButton.show();
+	Check(FindKeyboardScope(&root) == &nested,
+		"deepest visible layer wins over parent profile focus");
+	Check(!KeyHandlerInScope(&message, &nested)
+		&& KeyHandlerInScope(&nestedButton, &nested),
+		"nested layer blocks all parent key handlers");
+	const auto childNavigation = KeyboardNavigation::Get(&nested);
+	childNavigation->focusNext(true);
+	childNavigation->focusNext(true);
+	Check(nestedButton.hasFocus(), "single nested target wraps without losing focus");
+	childNavigation->showHints([](int, int) { return u"a"_q; },
+		QFont(u"Menlo"_q, 13), { 7, 3 }, 3);
+	Check(CloseKeyboardScope(&nested) && !closed
+		&& !childNavigation->hasHints() && nested.isVisible(),
+		"first Escape dismisses only focus hints");
+	Check(CloseKeyboardScope(&nested) && closed == 1 && layer.isVisible(),
+		"next Escape closes only the nested layer");
+	Check(FindKeyboardScope(&root) == &layer,
+		"parent profile becomes active after nested dismissal");
+	navigation->restoreFocus();
+	Check(input.hasFocus(), "returning to parent restores its previous target");
+	navigation->focusTarget(&message);
+	navigation->showHints([](int index, int) {
+		return QString(QChar('a' + index));
+	}, QFont(u"Menlo"_q, 13), { 7, 3 }, 3);
+	input.setFocus(Qt::MouseFocusReason);
+	Check(!navigation->hasHints() && input.hasFocus(),
+		"clicking into an input cancels hints before typing");
+
+	auto activated = 0;
+	message.setClickedCallback([&] { ++activated; });
+	navigation->showHints([](int index, int) {
+		return QString(QChar('a' + index));
+	}, QFont(u"Menlo"_q, 13), { 7, 3 }, 3);
+	auto choose = QKeyEvent(QEvent::KeyPress, Qt::Key_B, Qt::NoModifier, u"b"_q);
+	Check(navigation->handleHintKey(&choose, u"b"_q)
+		&& message.hasFocus() && !activated && !navigation->hasHints(),
+		"hint selection focuses target without activating its action");
+	auto press = QKeyEvent(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+	auto release = QKeyEvent(QEvent::KeyRelease, Qt::Key_Return, Qt::NoModifier);
+	QApplication::sendEvent(&message, &press);
+	QApplication::sendEvent(&message, &release);
+	Check(activated == 1, "Enter activates hinted button exactly once");
+	navigation->focusTarget(&checkbox);
+	QApplication::sendEvent(&checkbox, &press);
+	QApplication::sendEvent(&checkbox, &release);
+	Check(checkbox.checked(), "nested checkbox toggles from keyboard");
+
+	auto dynamic = std::make_unique<Ui::AbstractButton>(&body);
+	dynamic->setGeometry(20, 170, 150, 30);
+	dynamic->show();
+	navigation->showHints([](int index, int) {
+		return QString(QChar('a' + index));
+	}, QFont(u"Menlo"_q, 13), { 7, 3 }, 3);
+	dynamic.reset();
+	Check(navigation->handleHintKey(&choose, u"f"_q)
+		&& navigation->hasHints(), "deleted hint target is ignored without closing hints");
+	auto escape = QKeyEvent(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+	Check(navigation->handleHintKey(&escape, {}) && !navigation->hasHints(),
+		"Escape cancels hints after target deletion");
+	auto right = Ui::AbstractButton(&body);
+	right.setGeometry(250, 0, 100, 40);
+	right.show();
+	root.setLayoutDirection(Qt::RightToLeft);
+	const auto rtl = KeyboardFocusTargets(&body);
+	Check(rtl.size() >= 2 && rtl[0] == &right && rtl[1] == &message,
+		"same-row target order follows right-to-left layout");
+}
+
+void TestKeyboardFocusScrollingAndPainting() {
+	using namespace Core::VimKeymap;
+	auto root = QWidget();
+	root.setAttribute(Qt::WA_DontShowOnScreen);
+	root.resize(400, 240);
+	auto scroll = QScrollArea(&root);
+	scroll.setGeometry(0, 0, 350, 200);
+	const auto content = new QWidget();
+	content->resize(300, 800);
+	scroll.setWidget(content);
+	auto first = Ui::AbstractButton(content);
+	first.setGeometry(20, 20, 100, 40);
+	auto last = Ui::AbstractButton(content);
+	last.setGeometry(20, 700, 100, 40);
+	root.show();
+	QApplication::setActiveWindow(&root);
+	const auto navigation = KeyboardNavigation::Get(&root);
+	navigation->focusTarget(&last);
+	Check(last.hasFocus() && scroll.verticalScrollBar()->value() > 0,
+		"Tab target below viewport scrolls the containing area into view");
+	for (const auto dpr : { 1, 2, 3 }) {
+		auto image = QImage(root.size() * dpr, QImage::Format_ARGB32_Premultiplied);
+		image.setDevicePixelRatio(dpr);
+		image.fill(Qt::transparent);
+		{
+			auto painter = QPainter(&image);
+			navigation->render(&painter, {}, {}, QWidget::RenderFlags());
+		}
+		const auto target = QRect(last.mapTo(&root, QPoint()), last.size());
+		auto ink = 0;
+		auto contained = true;
+		for (auto y = 0; y != image.height(); ++y) {
+			for (auto x = 0; x != image.width(); ++x) {
+				if (image.pixelColor(x, y).alpha()) {
+					++ink;
+					contained &= target.contains(QPoint(x / dpr, y / dpr));
+				}
+			}
+		}
+		Check(ink > 0 && contained,
+			"keyboard focus outline is visible and follows scrolled target at each DPR");
+	}
+	const auto previous = scroll.verticalScrollBar()->value();
+	navigation->scroll(-80, false, 0);
+	Check(scroll.verticalScrollBar()->value() == previous - 80,
+		"scoped scrolling moves the focused scroll area");
+	navigation->scroll(10000, false, 0);
+	Check(scroll.verticalScrollBar()->value() == scroll.verticalScrollBar()->maximum(),
+		"scoped scrolling clamps at the end without moving a background");
+}
+
 void TestPopupHandlerScope() {
 	using Core::VimKeymap::KeyHandlerInScope;
 	auto background = QWidget();
@@ -1275,6 +1533,59 @@ void TestPopupMenuKeyboardCycle() {
 	escape.ignore();
 	QApplication::sendEvent(&menu, &escape);
 	Check(escape.isAccepted(), "popup consumes escape instead of propagating to owner");
+}
+
+void TestPopupFocusHints() {
+	using namespace Core::VimKeymap;
+	auto owner = QWidget();
+	owner.setAttribute(Qt::WA_DontShowOnScreen);
+	owner.resize(400, 400);
+	owner.show();
+	auto menu = Ui::PopupMenu(&owner, st::defaultPopupMenu);
+	menu.setAttribute(Qt::WA_DontShowOnScreen);
+	menu.deleteOnHide(false);
+	menu.addAction(u"First"_q, [] {});
+	auto activated = 0;
+	const auto second = menu.addAction(u"Second"_q, [&] { ++activated; });
+	const auto third = menu.addAction(u"Third"_q, [] {});
+	menu.popup(owner.mapToGlobal(QPoint(20, 20)));
+	{
+		auto loop = QEventLoop();
+		QTimer::singleShot(st::defaultPopupMenu.showDuration + 50, &loop, &QEventLoop::quit);
+		loop.exec();
+	}
+	const auto rendered = menu.grab();
+	Check(!rendered.isNull(), "popup completes its hidden paint pass before navigation");
+	const auto selected = [&] {
+		const auto item = menu.menu()->findSelectedAction();
+		return item ? item->action().get() : nullptr;
+	};
+	auto tab = QKeyEvent(QEvent::KeyPress, Qt::Key_Tab, Qt::NoModifier);
+	QApplication::sendEvent(&menu, &tab);
+	QApplication::sendEvent(&menu, &tab);
+	Check(selected() == second, "native menu starts on second item for hint navigation");
+	const auto navigation = KeyboardNavigation::Get(&menu);
+	const auto hints = [&] {
+		navigation->showHints([](int index, int) {
+			return QString(QChar('a' + index));
+		}, QFont(u"Menlo"_q, 13), { 7, 3 }, 3);
+	};
+	hints();
+	Check(navigation->hasHints(), "popup exposes its actions as focus hints");
+	Check(!navigation->handleHintKey(&tab, {}) && !navigation->hasHints(),
+		"Tab during popup hints defers to native menu navigation");
+	QApplication::sendEvent(&menu, &tab);
+	Check(selected() == third, "popup Tab retains selection after cancelling hints");
+	hints();
+	auto letter = QKeyEvent(QEvent::KeyPress, Qt::Key_B, Qt::NoModifier, u"b"_q);
+	Check(navigation->handleHintKey(&letter, u"b"_q)
+		&& selected() == second && !activated,
+		"hint focuses native menu action without triggering it");
+	auto enter = QKeyEvent(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+	QApplication::sendEvent(&menu, &enter);
+	QApplication::processEvents();
+	Check(activated == 1, "Enter triggers the hinted native menu action once");
+	menu.hideMenu(true);
 }
 
 void TestVimKeymapCommandBindings() {
@@ -1340,9 +1651,13 @@ int main(int argc, char *argv[]) {
 	qputenv("QT_QPA_PLATFORM", "offscreen");
 #endif // !Q_OS_MAC
 	auto application = QApplication(argc, argv);
+	auto baseIntegration = TestBaseIntegration(argc, argv);
+	base::Integration::Set(&baseIntegration);
 	auto integration = TestIntegration();
 	Ui::Integration::Set(&integration);
 	style::StartManager(100);
+	Ui::Animations::Manager::SetScheduleWithInvokeQueued(true);
+	auto animations = Ui::Animations::Manager();
 
 	TestVimKeymapNavigationBindings();
 	TestVimKeymapActionBindings();
@@ -1356,7 +1671,12 @@ int main(int argc, char *argv[]) {
 	TestHintBadgeLayoutAndPainting();
 	TestHintTargetAnchoring();
 	TestModalTabCycle();
+	TestKeyboardLayerStack();
+	TestNestedKeyboardNavigation();
+	TestKeyboardFocusScrollingAndPainting();
+	TestVimFocusLabels();
 	TestPopupMenuKeyboardCycle();
+	TestPopupFocusHints();
 	TestPopupHandlerScope();
 
 	std::cout << (TotalChecks - FailedChecks) << "/" << TotalChecks

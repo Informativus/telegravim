@@ -25,11 +25,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/discrete_sliders.h"
 #include "ui/widgets/fields/input_field.h"
 #include "ui/widgets/labels.h"
+#include "ui/widgets/popup_menu.h"
 #include "ui/widgets/scroll_area.h"
 #include "window/window_controller.h"
 #include "window/window_session_controller.h"
 #include "styles/style_layers.h"
 #include "styles/style_settings.h"
+#include "styles/style_vim_keymap.h"
 
 #include <QtCore/QPointer>
 #include <QtCore/QStringList>
@@ -75,7 +77,7 @@ constexpr auto kComposeCursorStyleUnderline = "underline";
 constexpr auto kHoldScrollTickMs = 16;
 constexpr auto kHoldScrollStartDelayMs = 90;
 constexpr auto kSingleScrollDurationMs = 190;
-constexpr auto kTelegraVimBuild = "2026.09.05-92";
+constexpr auto kTelegraVimBuild = "2026.09.05-93";
 constexpr auto kKeyLogLimit = 200;
 
 base::options::toggle VimKeymapOption({
@@ -382,7 +384,7 @@ struct ForcedNormalModeHandler {
 
 std::vector<ForcedNormalModeHandler> ForcedNormalModeHandlers;
 std::vector<QPointer<QWidget>> ModeIndicatorWidgets;
-QPointer<Ui::AbstractButton> ModalKeyboardFocusedButton;
+QPointer<QWidget> LastKeyboardScope;
 
 [[nodiscard]] Qt::KeyboardModifiers CleanModifiers(not_null<QKeyEvent*> e) {
 	return e->modifiers()
@@ -911,7 +913,9 @@ void CleanupScrollAnimations() {
 	return handle(KeyHandlers);
 }
 
-[[nodiscard]] bool HandlePreLayerKey(not_null<QKeyEvent*> e) {
+[[nodiscard]] bool HandlePreLayerKey(
+		not_null<QKeyEvent*> e,
+		QWidget *scope = nullptr) {
 	const auto remove = [](const KeyHandler &handler) {
 		return !handler.owner;
 	};
@@ -924,7 +928,7 @@ void CleanupScrollAnimations() {
 	for (auto i = PreLayerKeyHandlers.rbegin();
 		i != PreLayerKeyHandlers.rend();
 		++i) {
-		if (i->handler(e)) {
+		if (KeyHandlerInScope(i->owner, scope) && i->handler(e)) {
 			return true;
 		}
 	}
@@ -1025,48 +1029,44 @@ void RefreshModeIndicator() {
 	return active && (active->locked() || active->isLayerShown());
 }
 
-[[nodiscard]] Ui::BoxLayerWidget *ActiveBoxLayer() {
+[[nodiscard]] QWidget *ActiveKeyboardScope() {
+	if (const auto popup = QApplication::activePopupWidget()) {
+		return popup;
+	} else if (const auto modal = QApplication::activeModalWidget()) {
+		if (const auto nested = FindKeyboardScope(modal)) {
+			return nested;
+		}
+		return modal;
+	}
 	const auto active = QApplication::activeWindow();
 	if (!active) {
 		return nullptr;
 	}
-	for (auto current = QApplication::focusWidget();
-		current;
-		current = current->parentWidget()) {
-		if (const auto box = dynamic_cast<Ui::BoxLayerWidget*>(current)) {
-			return box;
-		}
+	const auto main = App().activeWindow();
+	if (main && main->widget() == active && !main->isLayerShown()) {
+		return nullptr;
 	}
-	const auto widgets = active->findChildren<QWidget*>();
-	for (auto i = widgets.rbegin(); i != widgets.rend(); ++i) {
-		if (const auto box = dynamic_cast<Ui::BoxLayerWidget*>(*i);
-				box && box->isVisibleTo(active)) {
-			return box;
-		}
+	if (const auto layer = FindKeyboardScope(active)) {
+		return layer;
 	}
-	return dynamic_cast<Ui::BoxLayerWidget*>(active);
+	return (main && main->widget() == active) ? nullptr : active;
 }
 
-[[nodiscard]] bool HandleModalTabNavigation(not_null<QKeyEvent*> e) {
-	const auto delta = Bindings::TabNavigationDelta(e);
-	if (!delta) {
-		return false;
+void UpdateKeyboardScope(QWidget *scope) {
+	if (LastKeyboardScope == scope) {
+		return;
 	}
-	const auto box = ActiveBoxLayer();
-	if (!box) {
-		return false;
+	if (LastKeyboardScope) {
+		if (const auto navigation = KeyboardNavigation::Find(LastKeyboardScope)) {
+			navigation->clearHints();
+		}
 	}
-	if (ModalKeyboardFocusedButton) {
-		ModalKeyboardFocusedButton->setSynteticOver(false);
-		ModalKeyboardFocusedButton = nullptr;
+	LastKeyboardScope = scope;
+	if (scope) {
+		if (const auto navigation = KeyboardNavigation::Find(scope)) {
+			navigation->restoreFocus();
+		}
 	}
-	FocusModalNextPrevChild(box, delta > 0);
-	if (const auto button = dynamic_cast<Ui::AbstractButton*>(
-			QApplication::focusWidget())) {
-		button->setSynteticOver(true);
-		ModalKeyboardFocusedButton = button;
-	}
-	return true;
 }
 
 void SetNormalModeValue(bool enabled) {
@@ -1794,20 +1794,88 @@ bool HandleApplicationKeyPress(
 	if (IsModifierOnlyKey(e)) {
 		return false;
 	}
-	if (const auto popup = QApplication::activePopupWidget()) {
-		if (HandleRegisteredKey(e, popup)) {
+	const auto scope = QPointer<QWidget>(ActiveKeyboardScope());
+	UpdateKeyboardScope(scope);
+	if (scope) {
+		if (const auto navigation = KeyboardNavigation::Find(scope)) {
+			if (navigation->handleHintKey(e, HintInput(e))) {
+				e->accept();
+				return true;
+			}
+		}
+		if (e->key() == Qt::Key_Escape
+			&& CleanModifiers(e) == Qt::NoModifier
+			&& e->isAutoRepeat()) {
 			e->accept();
 			return true;
+		}
+		const auto input = KeyboardScopeHasTextInput(scope, object);
+		if (!QApplication::activePopupWidget()
+			&& (!input || Bindings::IsPlainEscape(e))
+			&& HandlePreLayerKey(e, scope)) {
+			e->accept();
+			return true;
+		}
+		if (const auto delta = Bindings::TabNavigationDelta(e)) {
+			if (!dynamic_cast<Ui::PopupMenu*>(scope.data())) {
+				FocusModalNextPrevChild(scope, delta > 0);
+				e->accept();
+				return true;
+			}
+			return false;
+		}
+		if (Bindings::IsPlainEscape(e)) {
+			if ((object == scope || !KeyHandlerInScope(object, scope))
+				&& CloseKeyboardScope(scope)) {
+				e->accept();
+				return true;
+			}
+			return false;
+		}
+		if (input) {
+			return false;
+		}
+		const auto focus = QApplication::focusWidget();
+		if (KeyHandlerInScope(focus, scope)
+			&& (dynamic_cast<Ui::AbstractButton*>(focus)
+				|| dynamic_cast<Ui::FlatLabel*>(focus))
+			&& CleanModifiers(e) == Qt::NoModifier
+			&& (e->key() == Qt::Key_Return
+				|| e->key() == Qt::Key_Enter
+				|| e->key() == Qt::Key_Space)) {
+			return false;
+		}
+		if (HandleRegisteredKey(e, scope)) {
+			e->accept();
+			return true;
+		}
+		if (FocusHintsKey(e) && !e->isAutoRepeat()) {
+			KeyboardNavigation::Get(scope)->showHints(
+				HintLabel,
+				QFont(u"Menlo"_q, HintSize(), QFont::DemiBold),
+				st::vimHintPadding,
+				st::vimHintGap);
+			e->accept();
+			return true;
+		}
+		if (!QApplication::activePopupWidget()) {
+			if (const auto navigation = NavigationKey(e)) {
+				const auto down = *navigation == Qt::Key_Down;
+				const auto handled = KeyboardNavigation::Get(scope)->scroll(
+					(down ? 1 : -1) * ScrollStep(),
+					e->isAutoRepeat(),
+					SingleScrollDurationMs());
+				if (!handled) {
+					return false;
+				}
+				e->accept();
+				return true;
+			}
 		}
 		return false;
 	}
 	if (HandlePreLayerKey(e)) {
 		RecordKeyEvent(e, u"pre-layer handler"_q, true);
-		e->accept();
-		return true;
-	}
-	if (HandleModalTabNavigation(e)) {
-		RecordKeyEvent(e, u"modal tab navigation"_q, true);
 		e->accept();
 		return true;
 	}
