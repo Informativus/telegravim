@@ -450,6 +450,41 @@ void TestVimKeymapTransientUiKeys() {
 	Check(
 		!Core::VimKeymap::ShouldAddScannedLinkHint(false, true, false),
 		"regular non-text link is not added by the text scan");
+	Check(
+		Core::VimKeymap::ShouldAddVoicePlaybackFallback(
+			true,
+			true,
+			false,
+			true),
+		"voice playback uses the direct link when scanning misses");
+	Check(
+		!Core::VimKeymap::ShouldAddVoicePlaybackFallback(
+			true,
+			true,
+			true,
+			true),
+		"voice playback does not duplicate a scanned hint");
+	Check(
+		!Core::VimKeymap::ShouldAddVoicePlaybackFallback(
+			true,
+			true,
+			false,
+			false),
+		"voice playback skips a missing direct link");
+	Check(
+		!Core::VimKeymap::ShouldAddVoicePlaybackFallback(
+			false,
+			true,
+			false,
+			true),
+		"non-voice media does not use the voice fallback");
+	Check(
+		!Core::VimKeymap::ShouldAddVoicePlaybackFallback(
+			true,
+			false,
+			false,
+			true),
+		"hidden voice media does not receive a playback hint");
 	auto enter = QKeyEvent(
 		QEvent::KeyPress,
 		Qt::Key_Return,

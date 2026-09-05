@@ -37,6 +37,9 @@ public:
 	[[nodiscard]] bool allowsFastShare() const override {
 		return true;
 	}
+	[[nodiscard]] std::shared_ptr<FileClickHandler> openLink() const {
+		return _openl;
+	}
 
 	~File();
 

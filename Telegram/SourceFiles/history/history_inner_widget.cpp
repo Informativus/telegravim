@@ -21,6 +21,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/controls/history_view_forward_panel.h"
 #include "history/view/controls/history_view_draft_options.h"
 #include "history/view/controls/history_view_suggest_options.h"
+#include "history/view/media/history_view_file.h"
 #include "history/view/media/history_view_media.h"
 #include "history/view/media/history_view_media_grouped.h"
 #include "history/view/media/history_view_save_document_action.h"
@@ -4682,6 +4683,15 @@ void HistoryInner::vimKeymapAddLinkHints(not_null<Element*> view) {
 							break;
 						}
 					}
+				}
+				const auto file = dynamic_cast<HistoryView::File*>(media);
+				const auto directLink = file ? file->openLink() : nullptr;
+				if (Core::VimKeymap::ShouldAddVoicePlaybackFallback(
+						document->isVoiceMessage(),
+						!visibleMediaRect.isEmpty(),
+						added,
+						directLink != nullptr)) {
+					add(directLink, mediaBadgePoint);
 				}
 			} else if (document->isVideoFile()
 				|| document->isAnimation()

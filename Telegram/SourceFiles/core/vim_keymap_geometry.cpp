@@ -73,6 +73,17 @@ bool ShouldAddScannedLinkHint(
 	return hasLink && (serviceMessage || overMessageText);
 }
 
+bool ShouldAddVoicePlaybackFallback(
+		bool voiceMessage,
+		bool mediaVisible,
+		bool scannedPlaybackLink,
+		bool directPlaybackLink) {
+	return voiceMessage
+		&& mediaVisible
+		&& !scannedPlaybackLink
+		&& directPlaybackLink;
+}
+
 QRect GroupedMediaHintRect(
 		QRect groupItemRect,
 		QPoint itemInnerTopLeft,
