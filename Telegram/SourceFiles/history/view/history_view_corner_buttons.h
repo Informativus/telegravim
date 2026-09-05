@@ -72,6 +72,7 @@ public:
 	using Type = CornerButtonType;
 
 	void downClick();
+	void downClick(bool skipReplyReturn);
 	void mentionsClick();
 	void reactionsClick();
 	void pollVotesClick();

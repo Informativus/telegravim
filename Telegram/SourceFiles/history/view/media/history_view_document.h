@@ -23,6 +23,8 @@ class String;
 
 namespace HistoryView {
 
+class TranscribeButton;
+
 using TtlPaintCallback = Fn<void(QPainter&, QRect, QColor)>;
 
 class Document final
@@ -41,6 +43,7 @@ public:
 
 	void draw(Painter &p, const PaintContext &context) const override;
 	TextState textState(QPoint point, StateRequest request) const override;
+	[[nodiscard]] TranscribeButton *transcribeButton() const;
 	void updatePressed(QPoint point) override;
 
 	[[nodiscard]] TextSelection adjustSelection(

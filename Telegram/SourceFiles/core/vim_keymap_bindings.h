@@ -44,6 +44,10 @@ enum class StickerGridAction {
 [[nodiscard]] bool IsLineStart(not_null<QKeyEvent*> e);
 [[nodiscard]] bool IsLineEnd(not_null<QKeyEvent*> e);
 [[nodiscard]] bool IsTextYank(not_null<QKeyEvent*> e);
+[[nodiscard]] bool IsMessageShare(not_null<QKeyEvent*> e);
+[[nodiscard]] std::optional<float64> MediaPlaybackSpeed(
+	not_null<QKeyEvent*> e,
+	float64 current);
 [[nodiscard]] QString NormalizeToken(QString value);
 [[nodiscard]] bool KeyIs(
 	not_null<QKeyEvent*> e,

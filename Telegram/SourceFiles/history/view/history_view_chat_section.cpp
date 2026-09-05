@@ -4637,6 +4637,11 @@ Context ChatWidget::listContext() {
 	Unexpected("Mode in ChatWidget::listContext().");
 }
 
+bool ChatWidget::listJumpToBottom() {
+	_cornerButtons.downClick(false);
+	return true;
+}
+
 bool ChatWidget::listScrollTo(int top, bool syntetic) {
 	top = std::clamp(top, 0, _scroll->scrollTopMax());
 	const auto scrolled = (_scroll->scrollTop() != top);

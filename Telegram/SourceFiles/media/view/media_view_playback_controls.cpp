@@ -243,6 +243,7 @@ void PlaybackControls::updateSpeedToggleQuality() {
 
 void PlaybackControls::updatePlaybackSpeed(float64 speed) {
 	DEBUG_LOG(("Media playback speed: update to %1.").arg(speed));
+	_speedToggle->setSpeed(speed);
 	_delegate->playbackControlsSpeedChanged(speed);
 	resizeEvent(nullptr);
 }

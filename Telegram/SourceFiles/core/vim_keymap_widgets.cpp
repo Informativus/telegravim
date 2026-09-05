@@ -78,6 +78,31 @@ namespace {
 constexpr auto kExcludedFocusTarget = "vim-keymap-excluded-focus-target";
 constexpr auto kCircleFocusFrame = "vim-keymap-circle-focus-frame";
 
+class KeyboardTabTarget final : public Ui::AbstractButton {
+public:
+	KeyboardTabTarget(not_null<QWidget*> parent, Fn<void()> activate)
+	: Ui::AbstractButton(parent)
+	, _activate(std::move(activate)) {
+		setAttribute(Qt::WA_TransparentForMouseEvents);
+		setFocusPolicy(Qt::StrongFocus);
+		setClickedCallback(_activate);
+	}
+
+protected:
+	void focusInEvent(QFocusEvent *e) override {
+		Ui::AbstractButton::focusInEvent(e);
+		crl::on_main(this, [=] {
+			if (hasFocus()) {
+				_activate();
+			}
+		});
+	}
+
+private:
+	Fn<void()> _activate;
+
+};
+
 [[nodiscard]] bool Adjustable(QWidget *widget) {
 	return dynamic_cast<Ui::ContinuousSlider*>(widget)
 		|| (qobject_cast<QAbstractSlider*>(widget)
@@ -200,6 +225,26 @@ void SetKeyboardFocusTargetEnabled(not_null<QWidget*> widget, bool enabled) {
 
 void SetKeyboardFocusCircle(not_null<QWidget*> widget) {
 	widget->setProperty(kCircleFocusFrame, true);
+}
+
+Ui::RpWidget *CreateKeyboardTabTarget(
+		not_null<QWidget*> parent,
+		Fn<void()> activate) {
+	return new KeyboardTabTarget(parent, std::move(activate));
+}
+
+bool LeaveKeyboardInput(
+		not_null<QWidget*> scope,
+		not_null<QWidget*> input,
+		not_null<QKeyEvent*> e) {
+	const auto focus = QApplication::focusWidget();
+	if (!Bindings::IsPlainEscape(e) || !focus
+		|| (focus != input && !input->isAncestorOf(focus))) {
+		return false;
+	}
+	scope->setFocus(Qt::OtherFocusReason);
+	e->accept();
+	return true;
 }
 
 void PaintKeyboardStickerFrame(QPainter &p, QRect rect) {

@@ -5,6 +5,9 @@
 # https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 add_executable(test_vim_keymap)
+add_custom_target(test_vim_keymap_wiring
+    COMMAND ${CMAKE_COMMAND} -P ${src_loc}/tests/vim_keymap_wiring_tests.cmake)
+add_dependencies(test_vim_keymap test_vim_keymap_wiring)
 init_target(test_vim_keymap "(tests)")
 
 target_include_directories(test_vim_keymap PRIVATE

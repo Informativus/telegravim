@@ -28,6 +28,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/shortcuts.h"
 #include "core/vim_keymap.h"
 #include "core/vim_keymap_bindings.h"
+#include "core/vim_keymap_widgets.h"
 #include "ui/widgets/menu/menu_add_action_callback.h"
 #include "ui/widgets/menu/menu_add_action_callback_factory.h"
 #include "ui/widgets/dropdown_menu.h"
@@ -7448,6 +7449,22 @@ void OverlayWidget::handleKeyPress(not_null<QKeyEvent*> e) {
 bool OverlayWidget::handleVimMediaNavigation(not_null<QKeyEvent*> e) {
 	if (_stories) {
 		return false;
+	}
+	if (Core::VimKeymap::Enabled() && _streamed && _streamed->controls
+		&& !_menu && (!_dropdown || _dropdown->isHidden())
+		&& !QApplication::activePopupWidget()
+		&& !Core::VimKeymap::FindKeyboardScope(_widget)
+		&& !Core::VimKeymap::KeyboardScopeHasTextInput(_widget, nullptr)) {
+		const auto speed = Core::VimKeymap::Bindings::MediaPlaybackSpeed(
+			e,
+			_streamed->instance.speed());
+		if (speed) {
+			stopSpeedBoost();
+			_streamed->controls->updatePlaybackSpeed(*speed);
+			activateControls();
+			e->accept();
+			return true;
+		}
 	}
 	const auto delta
 		= Core::VimKeymap::Bindings::MediaNavigationDelta(e);

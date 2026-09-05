@@ -137,7 +137,11 @@ bool CornerButtons::eventFilter(QObject *o, QEvent *e) {
 }
 
 void CornerButtons::downClick() {
-	if (base::IsCtrlPressed() || !_replyReturn) {
+	downClick(base::IsCtrlPressed());
+}
+
+void CornerButtons::downClick(bool skipReplyReturn) {
+	if (skipReplyReturn || !_replyReturn) {
 		_delegate->cornerButtonsShowAtPosition(Data::UnreadMessagePosition);
 	} else {
 		_delegate->cornerButtonsShowAtPosition(_replyReturn->position());

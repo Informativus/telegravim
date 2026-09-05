@@ -86,6 +86,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/moderate_messages_box.h"
 #include "boxes/premium_preview_box.h"
 #include "boxes/send_gif_with_caption_box.h"
+#include "boxes/share_box.h"
 #include "core/crash_reports.h"
 #include "data/components/sponsored_messages.h"
 #include "data/data_session.h"
@@ -94,6 +95,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_media_types.h"
 #include "data/data_document.h"
 #include "data/data_photo.h"
+#include "data/data_photo_media.h"
 #include "data/data_peer.h"
 #include "data/data_user.h"
 #include "data/data_chat.h"
@@ -105,6 +107,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_window.h" // columnMaximalWidthLeft
 
 #include <QtWidgets/QApplication>
+#include <QtGui/QClipboard>
 #include <QtCore/QMimeData>
 
 namespace HistoryView {
@@ -621,6 +624,8 @@ ListWidget::ListWidget(
 		switch (action) {
 		case Core::VimKeymap::Action::CopyMessage:
 			return vimKeymapCopyTarget();
+		case Core::VimKeymap::Action::ShareMessage:
+			return vimKeymapShareTarget();
 		case Core::VimKeymap::Action::ReplyToMessage:
 			return vimKeymapReplyToTarget();
 		case Core::VimKeymap::Action::EditMessage:
@@ -3622,6 +3627,7 @@ Element *ListWidget::vimKeymapTargetView() const {
 }
 
 bool ListWidget::vimKeymapCopyTarget() {
+	_vimKeymapPhotoCopyLifetime.destroy();
 	if (hasSelectedText() || hasSelectedItems()) {
 		copySelectedText();
 		return true;
@@ -3634,6 +3640,35 @@ bool ListWidget::vimKeymapCopyTarget() {
 	if (showCopyRestriction(item)) {
 		return true;
 	}
+	if (const auto dataMedia = item->media()) {
+		if (const auto photo = dataMedia->photo()) {
+			if (showCopyMediaRestriction(item)) {
+				return true;
+			}
+			const auto media = photo->createMediaView();
+			if (media->setToClipboard()) {
+				return true;
+			}
+			const auto id = item->fullId();
+			const auto changed = QObject::connect(
+				QGuiApplication::clipboard(),
+				&QClipboard::dataChanged,
+				this,
+				[=] { _vimKeymapPhotoCopyLifetime.destroy(); });
+			_vimKeymapPhotoCopyLifetime.add([=] { QObject::disconnect(changed); });
+			session().downloaderTaskFinished(
+			) | rpl::filter([=] {
+				return media->loaded();
+			}) | rpl::take(1) | rpl::on_next([=] {
+				const auto current = session().data().message(id);
+				if (current && !showCopyMediaRestriction(current)) {
+					media->setToClipboard();
+				}
+			}, _vimKeymapPhotoCopyLifetime);
+			media->wanted(Data::PhotoSize::Large, id);
+			return true;
+		}
+	}
 	const auto text = HistoryItemText(item);
 	if (text.empty()) {
 		return false;
@@ -3642,6 +3677,15 @@ bool ListWidget::vimKeymapCopyTarget() {
 		text,
 		HistoryItemRichBlocks(item),
 		&session());
+	return true;
+}
+
+bool ListWidget::vimKeymapShareTarget() {
+	const auto view = vimKeymapTargetView();
+	if (!view || !view->data()->allowsForward()) {
+		return false;
+	}
+	FastShareMessage(_delegate->listWindow(), view->data());
 	return true;
 }
 
@@ -3780,16 +3824,24 @@ void ListWidget::keyPressEvent(QKeyEvent *e) {
 	} else if (Core::VimKeymap::HandleSearch(e)) {
 		return;
 	} else if (Core::VimKeymap::IsJumpToBottomKey(e)) {
-		const auto visible = _visibleBottom - _visibleTop;
-		const auto bottom = std::max(0, height() - visible);
+		vimKeymapStopScroll();
 		_scrollToAnimation.stop();
-		_delegate->listScrollTo(bottom, false);
+		if (!_delegate->listJumpToBottom()) {
+			showAtPosition(Data::MaxMessagePosition, Window::SectionShow());
+		}
 		e->accept();
 		return;
 	} else if (const auto vimAction = Core::VimKeymap::ActionKey(e)) {
 		switch (*vimAction) {
 		case Core::VimKeymap::Action::CopyMessage:
 			if (vimKeymapCopyTarget()) {
+				e->accept();
+			} else {
+				e->ignore();
+			}
+			return;
+		case Core::VimKeymap::Action::ShareMessage:
+			if (vimKeymapShareTarget()) {
 				e->accept();
 			} else {
 				e->ignore();

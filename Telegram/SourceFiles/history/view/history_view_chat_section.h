@@ -185,6 +185,7 @@ public:
 	// ListDelegate interface.
 	Context listContext() override;
 	bool listScrollTo(int top, bool syntetic = true) override;
+	bool listJumpToBottom() override;
 	void listCancelRequest() override;
 	void listDeleteRequest() override;
 	void listTryProcessKeyInput(not_null<QKeyEvent*> e) override;

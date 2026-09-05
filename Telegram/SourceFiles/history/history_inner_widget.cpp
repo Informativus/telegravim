@@ -22,6 +22,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/controls/history_view_draft_options.h"
 #include "history/view/controls/history_view_suggest_options.h"
 #include "history/view/media/history_view_file.h"
+#include "history/view/media/history_view_document.h"
+#include "history/view/media/history_view_gif.h"
 #include "history/view/media/history_view_media.h"
 #include "history/view/media/history_view_media_grouped.h"
 #include "history/view/media/history_view_save_document_action.h"
@@ -43,6 +45,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_element_overlay.h"
 #include "history/view/history_view_emoji_interactions.h"
 #include "history/view/history_view_reply.h"
+#include "history/view/history_view_transcribe_button.h"
 #include "history/view/history_view_top_peers_selector.h"
 #include "history/history_inner_widget_accessibility.h"
 #include "history/history_item_components.h"
@@ -79,6 +82,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/delete_messages_box.h"
 #include "boxes/moderate_messages_box.h"
 #include "boxes/report_messages_box.h"
+#include "boxes/share_box.h"
 #include "boxes/send_gif_with_caption_box.h"
 #include "boxes/star_gift_box.h" // ShowStarGiftBox
 #include "boxes/sticker_set_box.h"
@@ -165,7 +169,8 @@ constexpr auto kVimKeymapGroupedMediaHintLimit = 16;
 		|| dynamic_cast<VoiceSeekClickHandler*>(link.get())) {
 		return false;
 	}
-	return handler->document()->isVoiceMessage();
+	return handler->document()->isVoiceMessage()
+		|| handler->document()->isVideoMessage();
 }
 
 // Helper binary search for an item in a list that is not completely
@@ -4176,9 +4181,41 @@ HistoryInner::Element *HistoryInner::vimKeymapTargetView() const {
 }
 
 bool HistoryInner::vimKeymapCopyItem(not_null<HistoryItem*> item) {
+	_vimKeymapPhotoCopyLifetime.destroy();
 	if (showCopyRestriction(item)) {
 		return true;
-	} else if (const auto group = session().data().groups().find(item)) {
+	}
+	if (const auto dataMedia = item->media()) {
+		if (const auto photo = dataMedia->photo()) {
+			if (showCopyMediaRestriction(item)) {
+				return true;
+			}
+			const auto media = photo->createMediaView();
+			if (media->setToClipboard()) {
+				return true;
+			}
+			const auto id = item->fullId();
+			const auto changed = QObject::connect(
+				QGuiApplication::clipboard(),
+				&QClipboard::dataChanged,
+				this,
+				[=] { _vimKeymapPhotoCopyLifetime.destroy(); });
+			_vimKeymapPhotoCopyLifetime.add([=] { QObject::disconnect(changed); });
+			session().downloaderTaskFinished(
+			) | rpl::filter([=] {
+				return media->loaded();
+			}) | rpl::take(1) | rpl::on_next([=] {
+				const auto current = session().data().message(id);
+				if (current && !showCopyRestriction(current)
+					&& !showCopyMediaRestriction(current)) {
+					media->setToClipboard();
+				}
+			}, _vimKeymapPhotoCopyLifetime);
+			media->wanted(Data::PhotoSize::Large, id);
+			return true;
+		}
+	}
+	if (const auto group = session().data().groups().find(item)) {
 		const auto text = HistoryGroupText(group);
 		if (text.empty()) {
 			return false;
@@ -4423,6 +4460,9 @@ void HistoryInner::vimKeymapBuildMessageHints(VimKeymapHintMode mode) {
 	const auto now = base::unixtime::now();
 	for (const auto view : accessibleElements()) {
 		const auto item = view->data();
+		if (mode == VimKeymapHintMode::ShareMessage && !item->allowsForward()) {
+			continue;
+		}
 		if (mode == VimKeymapHintMode::EditMessage
 			&& !item->allowsEdit(now)) {
 			continue;
@@ -4536,7 +4576,8 @@ void HistoryInner::vimKeymapAddLinkHints(not_null<Element*> view) {
 		.intersected(visibleArea);
 	auto seen = base::flat_set<ClickHandler*>();
 	const auto add = [&](ClickHandlerPtr link, QPoint point, QRect target = {}) {
-		if (!link || seen.contains(link.get())) {
+		if (!link || seen.contains(link.get())
+			|| link->property(kFastShareProperty).value<bool>()) {
 			return;
 		}
 		if (target.isEmpty()) {
@@ -4682,21 +4723,33 @@ void HistoryInner::vimKeymapAddLinkHints(not_null<Element*> view) {
 		}
 		if (const auto document = media->getDocument()) {
 			if (document->isVoiceMessage() || document->isVideoMessage()) {
+				const auto gif = dynamic_cast<HistoryView::Gif*>(media);
+				const auto voice = dynamic_cast<HistoryView::Document*>(media);
+				if (document->isVideoMessage() && gif) {
+					const auto thumb = gif->roundThumbRect()
+						.translated(mediaRect.topLeft());
+					if (visibleArea.contains(thumb.center())) {
+						addClickPoint(
+							itemId,
+							thumb.center(),
+							thumb.intersected(visibleArea),
+							thumb.center());
+					}
+				}
 				auto request = StateRequest();
 				const auto fromY = std::max(0, _visibleAreaTop - top);
 				const auto tillY = std::min(
 					view->height(),
 					_visibleAreaBottom - top);
 				auto added = false;
-				for (auto y = fromY; y < tillY && !added;
+				for (auto y = fromY; voice && y < tillY && !added;
 						y += kVimKeymapPlayableMediaHintYStep) {
 					for (auto x = 0; x < width();
 							x += kVimKeymapPlayableMediaHintXStep) {
 						const auto state = view->textState(
 							QPoint(x, y),
 							request);
-						if (document->isVoiceMessage()
-							&& IsVimKeymapVoiceDocumentLink(state.link)) {
+						if (IsVimKeymapVoiceDocumentLink(state.link)) {
 							add(state.link, QPoint(x, top + y));
 							added = true;
 							break;
@@ -4706,12 +4759,21 @@ void HistoryInner::vimKeymapAddLinkHints(not_null<Element*> view) {
 				const auto file = dynamic_cast<HistoryView::File*>(media);
 				const auto directLink = file ? file->openLink() : nullptr;
 				if (Core::VimKeymap::ShouldAddInlinePlaybackHint(
-						document->isVoiceMessage()
-							|| document->isVideoMessage(),
+						voice != nullptr,
 						!visibleMediaRect.isEmpty(),
 						added,
 						directLink != nullptr)) {
 					add(directLink, mediaBadgePoint, visibleMediaRect);
+				}
+				const auto transcribe = gif ? gif->transcribeButton()
+					: voice ? voice->transcribeButton() : nullptr;
+				if (transcribe) {
+					const auto rect = transcribe->geometry()
+						.translated(mediaRect.topLeft())
+						.intersected(visibleArea);
+					if (!rect.isEmpty()) {
+						add(transcribe->link(), rect.topLeft(), rect);
+					}
 				}
 			} else if (document->isVideoFile()
 				|| document->isAnimation()) {
@@ -4812,6 +4874,9 @@ bool HistoryInner::vimKeymapBeginHints(Core::VimKeymap::Action action) {
 	case Core::VimKeymap::Action::CopyMessage:
 		vimKeymapBuildMessageHints(VimKeymapHintMode::CopyMessage);
 		break;
+	case Core::VimKeymap::Action::ShareMessage:
+		vimKeymapBuildMessageHints(VimKeymapHintMode::ShareMessage);
+		break;
 	case Core::VimKeymap::Action::SelectMessageText:
 		vimKeymapBuildMessageHints(VimKeymapHintMode::SelectMessageText);
 		break;
@@ -4833,7 +4898,7 @@ bool HistoryInner::vimKeymapBeginHints(Core::VimKeymap::Action action) {
 	return _vimKeymapHintMode != VimKeymapHintMode::None;
 }
 
-bool HistoryInner::vimKeymapTriggerHint(const VimKeymapHint &hint) {
+bool HistoryInner::vimKeymapTriggerHint(VimKeymapHint hint) {
 	const auto mode = _vimKeymapHintMode;
 	if (mode == VimKeymapHintMode::ActivateLink) {
 		if (hint.photo) {
@@ -4880,6 +4945,13 @@ bool HistoryInner::vimKeymapTriggerHint(const VimKeymapHint &hint) {
 	} else if (mode == VimKeymapHintMode::SelectMessageText) {
 		vimKeymapClearHints();
 		return vimKeymapBeginTextSelection(view);
+	} else if (mode == VimKeymapHintMode::ShareMessage) {
+		vimKeymapClearHints();
+		if (item->allowsForward()) {
+			FastShareMessage(_controller, item);
+			return true;
+		}
+		return false;
 	}
 	const auto result = (mode == VimKeymapHintMode::CopyMessage)
 		? vimKeymapCopyItem(item)
@@ -4890,7 +4962,12 @@ bool HistoryInner::vimKeymapTriggerHint(const VimKeymapHint &hint) {
 			: (mode == VimKeymapHintMode::DeleteMessage)
 			? vimKeymapDeleteItem(item)
 			: false;
-	vimKeymapClearHints();
+	if (result || mode != VimKeymapHintMode::CopyMessage) {
+		vimKeymapClearHints();
+	} else {
+		_vimKeymapHintPrefix.clear();
+		update();
+	}
 	return result;
 }
 
@@ -4928,8 +5005,7 @@ bool HistoryInner::vimKeymapHandleHintKey(not_null<QKeyEvent*> e) {
 		}
 	}
 	if (exact) {
-		const auto chosen = *exact;
-		return vimKeymapTriggerHint(chosen);
+		return vimKeymapTriggerHint(*exact);
 	} else if (!hasPrefix) {
 		_vimKeymapHintPrefix.clear();
 	}

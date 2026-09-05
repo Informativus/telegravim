@@ -593,6 +593,7 @@ private:
 	enum class VimKeymapHintMode {
 		None,
 		CopyMessage,
+		ShareMessage,
 		ReplyToMessage,
 		EditMessage,
 		DeleteMessage,
@@ -618,7 +619,7 @@ private:
 	void vimKeymapAddLinkHints(not_null<Element*> view);
 	void vimKeymapAddUserpicHints(Element *onlyView = nullptr);
 	void vimKeymapAssignHintLabels();
-	[[nodiscard]] bool vimKeymapTriggerHint(const VimKeymapHint &hint);
+	[[nodiscard]] bool vimKeymapTriggerHint(VimKeymapHint hint);
 	void vimKeymapPaintHints(Painter &p) const;
 	[[nodiscard]] bool vimKeymapCopyItem(not_null<HistoryItem*> item);
 	[[nodiscard]] bool vimKeymapReplyToItem(not_null<HistoryItem*> item);
@@ -775,6 +776,7 @@ private:
 	ClickHandlerPtr _forumThreadBarLink;
 
 	VimKeymapHintMode _vimKeymapHintMode = VimKeymapHintMode::None;
+	rpl::lifetime _vimKeymapPhotoCopyLifetime;
 	std::vector<VimKeymapHint> _vimKeymapHints;
 	QString _vimKeymapHintPrefix;
 

@@ -71,6 +71,7 @@ enum class Action {
 	EditMessage,
 	DeleteMessage,
 	LinkHints,
+	ShareMessage,
 };
 
 [[nodiscard]] constexpr bool ActionUsesMessageHints(Action action) {

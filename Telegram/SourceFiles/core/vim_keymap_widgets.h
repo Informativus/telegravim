@@ -34,6 +34,13 @@ namespace Core::VimKeymap {
 void SetKeyboardFocusTargetEnabled(not_null<QWidget*> widget, bool enabled);
 void SetKeyboardFocusCircle(not_null<QWidget*> widget);
 void PaintKeyboardStickerFrame(QPainter &p, QRect rect);
+[[nodiscard]] Ui::RpWidget *CreateKeyboardTabTarget(
+	not_null<QWidget*> parent,
+	Fn<void()> activate);
+[[nodiscard]] bool LeaveKeyboardInput(
+	not_null<QWidget*> scope,
+	not_null<QWidget*> input,
+	not_null<QKeyEvent*> e);
 [[nodiscard]] bool HandleKeyboardControlKey(
 	not_null<QWidget*> scope,
 	not_null<QKeyEvent*> e);

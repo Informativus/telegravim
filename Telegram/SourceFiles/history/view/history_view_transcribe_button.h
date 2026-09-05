@@ -28,6 +28,7 @@ public:
 	~TranscribeButton();
 
 	[[nodiscard]] QSize size() const;
+	[[nodiscard]] QRect geometry() const;
 
 	void setOpened(bool opened, Fn<void()> update);
 	void setLoading(bool loading);

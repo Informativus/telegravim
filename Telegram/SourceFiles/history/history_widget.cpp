@@ -9763,7 +9763,7 @@ bool HistoryWidget::vimKeymapJumpToBottom() {
 	}
 	vimKeymapStopScroll();
 	_scrollToAnimation.stop();
-	synteticScrollToY(_scroll->scrollTopMax());
+	_cornerButtons.downClick(false);
 	return true;
 }
 

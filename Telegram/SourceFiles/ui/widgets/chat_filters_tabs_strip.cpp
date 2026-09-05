@@ -14,6 +14,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/application.h"
 #include "core/shortcuts.h"
 #include "core/ui_integration.h"
+#include "core/vim_keymap.h"
+#include "core/vim_keymap_widgets.h"
 #include "data/data_chat_filters.h"
 #include "data/data_peer_values.h" // Data::AmPremiumValue.
 #include "data/data_premium_limits.h"
@@ -57,6 +59,7 @@ struct State final {
 
 	std::unique_ptr<Ui::ChatsFiltersTabsReorder> reorder;
 	bool ignoreRefresh = false;
+	std::vector<base::unique_qptr<QWidget>> keyboardTabs;
 };
 
 void ShowMenu(
@@ -409,6 +412,7 @@ not_null<Ui::RpWidget*> AddChatFiltersTabsStrip(
 		if (!sectionsChanged) {
 			return;
 		}
+		state->keyboardTabs.clear();
 		state->rebuildLifetime.destroy();
 		slider->fitWidthToSections();
 		{
@@ -435,6 +439,36 @@ not_null<Ui::RpWidget*> AddChatFiltersTabsStrip(
 		}
 		if (trackActiveFilterAndUnreadAndReorder) {
 			reassignUnreadValue();
+		}
+		if (handleKeyboardSwitch && Core::VimKeymap::Enabled()) {
+			const auto limit = slider->lockedFrom()
+				? slider->lockedFrom() : slider->sectionsCount();
+			for (auto i = 0; i != limit; ++i) {
+				const auto target = Core::VimKeymap::CreateKeyboardTabTarget(
+					slider,
+					[=] {
+						slider->setActiveSectionFast(i);
+						scrollToIndex(i, anim::type::instant);
+					});
+				state->keyboardTabs.emplace_back(target);
+				slider->sizeValue() | rpl::on_next([=] {
+					const auto count = slider->sectionsCount();
+					if (i >= count) {
+						return;
+					}
+					const auto left = slider->lookupSectionLeft(i);
+					const auto right = (i + 1 < count)
+						? slider->lookupSectionLeft(i + 1)
+						: slider->width();
+					target->setGeometry(style::rtlrect(
+						left,
+						0,
+						right - left,
+						slider->height(),
+						slider->width()));
+				}, target->lifetime());
+				target->show();
+			}
 		}
 		[&] {
 			const auto lookingId = state->lastFilterId.value_or(

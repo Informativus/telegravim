@@ -63,6 +63,8 @@ public:
 
 	void draw(Painter &p, const PaintContext &context) const override;
 	TextState textState(QPoint point, StateRequest request) const override;
+	[[nodiscard]] QRect roundThumbRect() const;
+	[[nodiscard]] TranscribeButton *transcribeButton() const;
 
 	void clickHandlerPressedChanged(
 		const ClickHandlerPtr &p,
@@ -172,7 +174,6 @@ private:
 	::Media::View::PlaybackProgress *videoPlayback() const;
 	[[nodiscard]] bool isRoundSeekable() const;
 	[[nodiscard]] bool roundSeekShown() const;
-	[[nodiscard]] QRect roundThumbRect() const;
 	void captureRoundSeekFrame() const;
 	void startRoundSeeking();
 	void updateRoundSeeking(QRect rthumb, QPoint point);

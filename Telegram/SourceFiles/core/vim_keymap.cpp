@@ -2225,6 +2225,8 @@ std::optional<Action> ActionKey(not_null<QKeyEvent*> e) {
 		return Action::DeleteMessage;
 	} else if (MatchesBindings(VimKeymapKeyFocusHintsOption, e, true)) {
 		return Action::LinkHints;
+	} else if (Bindings::IsMessageShare(e)) {
+		return Action::ShareMessage;
 	}
 	return std::nullopt;
 }

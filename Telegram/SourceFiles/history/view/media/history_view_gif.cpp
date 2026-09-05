@@ -1596,6 +1596,10 @@ void Gif::clickHandlerPressedChanged(
 	}
 }
 
+TranscribeButton *Gif::transcribeButton() const {
+	return _transcribe.get();
+}
+
 QRect Gif::roundThumbRect() const {
 	const auto item = _parent->data();
 	auto paintx = 0, painty = 0, paintw = width(), painth = height();

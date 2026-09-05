@@ -1302,6 +1302,11 @@ TextState Document::textState(QPoint point, StateRequest request) const {
 	return textState(point, { width(), height() }, request, LayoutMode::Full);
 }
 
+TranscribeButton *Document::transcribeButton() const {
+	const auto voice = Get<HistoryDocumentVoice>();
+	return voice ? voice->transcribe.get() : nullptr;
+}
+
 TextState Document::textState(
 		QPoint point,
 		QSize layout,

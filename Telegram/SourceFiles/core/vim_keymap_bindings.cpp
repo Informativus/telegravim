@@ -6,13 +6,40 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "core/vim_keymap_bindings.h"
+#include "media/media_common.h"
 
 #include <QtCore/QStringList>
 #include <QtGui/QKeyEvent>
 
 #include <optional>
+#include <cmath>
 
 namespace Core::VimKeymap::Bindings {
+
+bool IsMessageShare(not_null<QKeyEvent*> e) {
+	return CleanModifiers(e) == Qt::NoModifier
+		&& !e->isAutoRepeat()
+		&& KeyIs(e, Qt::Key_S, u"s"_q, u"\u044B"_q);
+}
+
+std::optional<float64> MediaPlaybackSpeed(
+		not_null<QKeyEvent*> e,
+		float64 current) {
+	if (CleanModifiers(e) != Qt::NoModifier) {
+		return std::nullopt;
+	} else if (KeyIs(e, Qt::Key_Q, u"q"_q, u"\u0439"_q)) {
+		return 1.;
+	}
+	const auto delta = KeyIs(e, Qt::Key_D, u"d"_q, u"\u0432"_q) ? 1
+		: KeyIs(e, Qt::Key_A, u"a"_q, u"\u0444"_q) ? -1 : 0;
+	return delta
+		? std::optional<float64>(std::clamp(
+			(std::round(current * 100.) + delta * 10.) / 100.,
+			Media::kSpeedMin,
+			Media::kSpeedMax))
+		: std::nullopt;
+}
+
 namespace {
 
 [[nodiscard]] bool TextIs(not_null<QKeyEvent*> e, const QString &latin) {

@@ -419,6 +419,10 @@ ClickHandlerPtr TranscribeButton::link() {
 	return _link;
 }
 
+QRect TranscribeButton::geometry() const {
+	return QRect(_lastPaintedPoint, size());
+}
+
 bool TranscribeButton::contains(const QPoint &p) {
 	_lastStatePoint = p - _lastPaintedPoint;
 	if (_summarize) {

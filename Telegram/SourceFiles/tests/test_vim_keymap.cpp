@@ -1452,6 +1452,116 @@ void TestNestedKeyboardNavigation() {
 		"same-row target order follows right-to-left layout");
 }
 
+void TestMediaPlaybackAndShareBindings() {
+	using namespace Core::VimKeymap::Bindings;
+	const auto speed = [&](int key, const QString &text, float64 current,
+			Qt::KeyboardModifiers modifiers = Qt::NoModifier) {
+		auto event = QKeyEvent(QEvent::KeyPress, key, modifiers, text);
+		return MediaPlaybackSpeed(&event, current);
+	};
+	Check(speed(Qt::Key_D, u"d"_q, 1.) == 1.1, "d increases video speed by one tenth");
+	Check(speed(Qt::Key_A, u"a"_q, 1.) == 0.9, "a decreases video speed by one tenth");
+	Check(speed(Qt::Key_Q, u"q"_q, 2.3) == 1., "q resets video speed to exactly 1x");
+	Check(speed(Qt::Key_D, u"d"_q, 1.25) == 1.35
+		&& speed(Qt::Key_A, u"a"_q, 1.25) == 1.15,
+		"speed increments preserve the offset of native quarter-speed presets");
+	Check(speed(Qt::Key_D, u"d"_q, 2.5) == 2.5
+		&& speed(Qt::Key_A, u"a"_q, 0.5) == 0.5,
+		"video speed stays within the player-supported limits");
+	Check(speed(0x0412, u"\u0432"_q, 1.1) == 1.2
+		&& speed(0x0424, u"\u0444"_q, 1.1) == 1.
+		&& speed(0x0419, u"\u0439"_q, 2.5) == 1.,
+		"video speed keys work in the Cyrillic layout");
+	for (const auto modifiers : { Qt::ControlModifier, Qt::MetaModifier,
+		Qt::AltModifier, Qt::ShiftModifier }) {
+		Check(!speed(Qt::Key_A, u"a"_q, 1., modifiers)
+			&& !speed(Qt::Key_D, u"d"_q, 1., modifiers)
+			&& !speed(Qt::Key_Q, u"q"_q, 1., modifiers),
+			"speed keys leave modified system and editing shortcuts alone");
+	}
+	auto current = 1.;
+	for (auto i = 0; i != 10; ++i) {
+		current = *speed(Qt::Key_D, u"d"_q, current);
+	}
+	Check(current == 2., "repeated speed increments do not accumulate floating-point drift");
+	for (const auto &[key, text] : {
+		std::pair(Qt::Key_S, u"s"_q),
+		std::pair(Qt::Key_unknown, u"\u044B"_q) }) {
+		auto share = QKeyEvent(QEvent::KeyPress, key, Qt::NoModifier, text);
+		Check(IsMessageShare(&share), "s enters message-sharing hints in either layout");
+		auto repeat = QKeyEvent(QEvent::KeyPress, key, Qt::NoModifier, text, true);
+		Check(!IsMessageShare(&repeat), "holding s cannot repeatedly open sharing");
+		auto save = QKeyEvent(QEvent::KeyPress, key, Qt::ControlModifier, text);
+		Check(!IsMessageShare(&save), "share hints do not steal system save shortcuts");
+	}
+	Check(Core::VimKeymap::ActionUsesMessageHints(Core::VimKeymap::Action::ShareMessage),
+		"sharing is a message-hint action");
+}
+
+void TestShareKeyboardFocusCycle() {
+	using namespace Core::VimKeymap;
+	auto root = QWidget();
+	root.setAttribute(Qt::WA_DontShowOnScreen);
+	root.resize(400, 300);
+	auto search = QLineEdit(&root);
+	search.setGeometry(20, 10, 340, 30);
+	auto strip = QWidget(&root);
+	strip.setGeometry(20, 50, 340, 30);
+	auto active = -1;
+	auto folders = std::vector<QWidget*>();
+	for (auto i = 0; i != 3; ++i) {
+		const auto folder = CreateKeyboardTabTarget(&strip, [&, i] { active = i; });
+		folder->setGeometry(i * 100, 0, 90, 30);
+		folders.push_back(folder);
+	}
+	auto cancel = Ui::AbstractButton(&root);
+	cancel.setGeometry(20, 250, 120, 30);
+	auto submit = Ui::AbstractButton(&root);
+	submit.setGeometry(200, 250, 160, 30);
+	root.show();
+	QApplication::setActiveWindow(&root);
+	const auto navigation = KeyboardNavigation::Get(&root);
+	navigation->focusTarget(&search);
+	for (auto i = 0; i != 3; ++i) {
+		FocusModalNextPrevChild(&root, true);
+		DrainMainQueue();
+		Check(folders[i]->hasFocus() && active == i,
+			"Tab focuses and activates each folder after the search field");
+	}
+	FocusModalNextPrevChild(&root, true);
+	Check(cancel.hasFocus(), "Tab leaves the last folder for the first dialog button");
+	FocusModalNextPrevChild(&root, true);
+	Check(submit.hasFocus(), "Tab visits the submit button");
+	FocusModalNextPrevChild(&root, true);
+	Check(search.hasFocus(), "Tab wraps from buttons to search");
+	FocusModalNextPrevChild(&root, false);
+	Check(submit.hasFocus(), "Shift Tab wraps from search to buttons");
+	FocusModalNextPrevChild(&root, false);
+	FocusModalNextPrevChild(&root, false);
+	DrainMainQueue();
+	Check(folders.back()->hasFocus() && active == 2,
+		"Shift Tab enters folders from the last folder");
+	FocusModalNextPrevChild(&root, false);
+	DrainMainQueue();
+	Check(folders[1]->hasFocus() && active == 1, "Shift Tab activates the previous folder");
+	navigation->focusTarget(&search);
+	search.setText(u"recipient"_q);
+	auto escape = QKeyEvent(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+	Check(LeaveKeyboardInput(&root, &search, &escape)
+		&& root.hasFocus() && root.isVisible() && search.text() == u"recipient"_q,
+		"first Escape leaves search without clearing query or closing the dialog");
+	Check(!LeaveKeyboardInput(&root, &search, &escape),
+		"second Escape passes through to normal dialog closing");
+	navigation->focusTarget(&search);
+	Check(search.hasFocus(), "Tab focus can restore text editing after Escape");
+	const auto temporary = CreateKeyboardTabTarget(&strip, [&] { active = 99; });
+	temporary->show();
+	navigation->focusTarget(temporary);
+	delete temporary;
+	DrainMainQueue();
+	Check(active != 99, "removed folder cannot run a queued activation");
+}
+
 void TestKeyboardMenuNavigation() {
 	using namespace Core::VimKeymap;
 	auto root = QWidget();
@@ -2154,6 +2264,8 @@ int main(int argc, char *argv[]) {
 	TestKeyboardLayerStack();
 	TestNestedKeyboardNavigation();
 	TestKeyboardMenuNavigation();
+	TestMediaPlaybackAndShareBindings();
+	TestShareKeyboardFocusCycle();
 	TestKeyboardStickerFramePainting();
 	TestMessageCursorPainting();
 	TestKeyboardFocusScrollingAndPainting();

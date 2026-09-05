@@ -122,6 +122,7 @@ class ListDelegate {
 public:
 	virtual Context listContext() = 0;
 	virtual bool listScrollTo(int top, bool syntetic = true) = 0;
+	virtual bool listJumpToBottom() { return false; }
 	virtual void listCancelRequest() = 0;
 	virtual void listDeleteRequest() = 0;
 	virtual void listTryProcessKeyInput(not_null<QKeyEvent*> e) = 0;
@@ -370,6 +371,7 @@ public:
 	void copySelectedText();
 		[[nodiscard]] Element *vimKeymapTargetView() const;
 		[[nodiscard]] bool vimKeymapCopyTarget();
+		[[nodiscard]] bool vimKeymapShareTarget();
 		[[nodiscard]] bool vimKeymapReplyToTarget();
 		[[nodiscard]] bool vimKeymapEditTarget();
 		[[nodiscard]] MessageIdsList getSelectedIds() const;
@@ -1100,6 +1102,7 @@ private:
 	base::Timer _touchScrollTimer;
 	Ui::MiddleClickAutoscroll _middleClickAutoscroll;
 	base::Timer _vimKeymapScrollTimer;
+	rpl::lifetime _vimKeymapPhotoCopyLifetime;
 	int _vimKeymapScrollDirection = 0;
 	bool _vimKeymapScrollRepeating = false;
 
