@@ -87,7 +87,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_layers.h"
 #include "styles/style_menu_icons.h"
 #include "styles/style_settings.h"
-#include "styles/style_vim_keymap.h"
 
 #include <QtGui/QClipboard>
 #include <QtGui/QGuiApplication>
@@ -405,14 +404,6 @@ void VimKeymap::setupContent() {
 				},
 				.confirmText = u"Отбросить"_q,
 				.cancelText = u"Продолжить редактирование"_q,
-			}));
-		},
-		[=] {
-			window->show(Box([](not_null<Ui::GenericBox*> box) {
-				box->setTitle(rpl::single(u"Руководство Vim keymap"_q));
-				box->setWidth(st::vimGuideWidth);
-				box->addRow(CreateVimKeymapGuide(box));
-				box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 			}));
 		});
 	Ui::ResizeFitChild(this, _editor);

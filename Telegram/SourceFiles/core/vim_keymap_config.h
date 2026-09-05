@@ -32,7 +32,6 @@ struct ConfigValidation {
 [[nodiscard]] std::span<const ConfigOption> ConfigOptions();
 [[nodiscard]] QJsonObject ConfigSnapshot(bool defaults = false);
 [[nodiscard]] QJsonObject ConfigSchema();
-[[nodiscard]] QString ConfigGuide();
 [[nodiscard]] ConfigValidation ValidateConfig(const QByteArray &json);
 [[nodiscard]] QString ApplyConfig(const QByteArray &json);
 

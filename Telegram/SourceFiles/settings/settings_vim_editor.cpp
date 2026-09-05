@@ -20,31 +20,162 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_vim_keymap.h"
 
 #include <QtCore/QJsonDocument>
+#include <QtCore/QRegularExpression>
+#include <QtGui/QPainter>
 #include <QtGui/QPalette>
+#include <QtGui/QSyntaxHighlighter>
+#include <QtGui/QTextBlock>
 #include <QtWidgets/QPlainTextEdit>
-#include <QtWidgets/QTextBrowser>
+#include <QtWidgets/QScrollBar>
 
 namespace Settings {
 namespace {
 
-void SetEditorPalette(not_null<QWidget*> widget) {
-	auto palette = widget->palette();
-	palette.setColor(QPalette::Base, st::windowBg->c);
-	palette.setColor(QPalette::Text, st::windowFg->c);
-	palette.setColor(QPalette::Highlight, st::windowBgActive->c);
-	palette.setColor(QPalette::HighlightedText, st::windowFgActive->c);
-	widget->setPalette(palette);
-}
+class JsonHighlighter final : public QSyntaxHighlighter {
+public:
+	explicit JsonHighlighter(QTextDocument *document)
+	: QSyntaxHighlighter(document) {
+	}
+
+protected:
+	void highlightBlock(const QString &text) override {
+		static const auto tokens = QRegularExpression(
+			uR"json("(?:[^"\\]|\\.)*"|\b(?:true|false|null)\b|-?\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)json"_q);
+		auto matches = tokens.globalMatch(text);
+		while (matches.hasNext()) {
+			const auto match = matches.next();
+			const auto token = match.captured();
+			const auto quoted = token.startsWith('"');
+			const auto key = quoted
+				&& text.mid(match.capturedEnd()).trimmed().startsWith(':');
+			const auto color = key ? st::windowFg->c
+				: quoted ? st::boxTextFgGood->c : st::windowActiveTextFg->c;
+			setFormat(match.capturedStart(), match.capturedLength(), color);
+		}
+	}
+
+};
+
+class JsonEditor final : public QPlainTextEdit {
+public:
+	explicit JsonEditor(QWidget *parent)
+	: QPlainTextEdit(parent)
+	, _gutter(Ui::CreateChild<Ui::RpWidget>(this))
+	, _highlighter(new JsonHighlighter(document())) {
+		setFrameShape(QFrame::NoFrame);
+		setFont(st::normalFont->monospace()->f);
+		setTabChangesFocus(true);
+		setLineWrapMode(QPlainTextEdit::NoWrap);
+		document()->setDocumentMargin(st::vimJsonPadding);
+		_gutter->setObjectName(u"vim-json-lines"_q);
+		_gutter->setAttribute(Qt::WA_TransparentForMouseEvents);
+		_gutter->paintRequest() | rpl::on_next([=] { paintGutter(); }, _gutter->lifetime());
+		QObject::connect(this, &QPlainTextEdit::blockCountChanged, this, [=] {
+			updateGutter();
+		});
+		QObject::connect(this, &QPlainTextEdit::updateRequest, this, [=] {
+			_gutter->update();
+		});
+		QObject::connect(this, &QPlainTextEdit::cursorPositionChanged, this, [=] {
+			updateCurrentLine();
+			_gutter->update();
+		});
+		updateGutter();
+		refreshPalette();
+	}
+
+	void refreshPalette() {
+		auto colors = palette();
+		colors.setColor(QPalette::Base, st::windowBg->c);
+		colors.setColor(QPalette::Text, st::windowFg->c);
+		colors.setColor(QPalette::Highlight, st::windowBgActive->c);
+		colors.setColor(QPalette::HighlightedText, st::windowFgActive->c);
+		setStyleSheet(uR"(
+QScrollBar { background: transparent; border: none; margin: 0; }
+QScrollBar:vertical { width: %1px; }
+QScrollBar:horizontal { height: %1px; }
+QScrollBar::handle { background: %2; border-radius: %3px; }
+QScrollBar::handle:vertical { min-height: %4px; }
+QScrollBar::handle:horizontal { min-width: %4px; }
+QScrollBar::handle:hover { background: %5; }
+QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
+QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
+QAbstractScrollArea::corner { background: transparent; }
+)"_q.arg(st::vimJsonScrollWidth)
+			.arg(st::scrollBarBg->c.name(QColor::HexArgb))
+			.arg(st::vimJsonScrollRadius)
+			.arg(st::vimJsonScrollMin)
+			.arg(st::scrollBarBgOver->c.name(QColor::HexArgb)));
+		setPalette(colors);
+		viewport()->setPalette(colors);
+		_highlighter->rehighlight();
+		updateCurrentLine();
+		_gutter->update();
+	}
+
+protected:
+	void resizeEvent(QResizeEvent *event) override {
+		QPlainTextEdit::resizeEvent(event);
+		updateGutter();
+	}
+
+private:
+	void updateGutter() {
+		const auto digits = QString::number(blockCount()).size();
+		const auto width = st::vimJsonGutterPadding * 2
+			+ fontMetrics().horizontalAdvance('9') * digits;
+		setViewportMargins(width, 0, 0, 0);
+		_gutter->setGeometry(0, viewport()->y(), width, viewport()->height());
+	}
+
+	void updateCurrentLine() {
+		auto line = QTextEdit::ExtraSelection();
+		line.format.setBackground(st::windowBgOver->c);
+		line.format.setProperty(QTextFormat::FullWidthSelection, true);
+		line.cursor = textCursor();
+		line.cursor.clearSelection();
+		setExtraSelections({ line });
+	}
+
+	void paintGutter() {
+		auto painter = QPainter(_gutter);
+		painter.fillRect(_gutter->rect(), st::windowBg->c);
+		painter.setFont(font());
+		auto block = firstVisibleBlock();
+		while (block.isValid()) {
+			const auto top = blockBoundingGeometry(block).translated(contentOffset()).top();
+			if (top >= _gutter->height()) {
+				break;
+			}
+			if (block.isVisible()) {
+				painter.setPen(block.blockNumber() == textCursor().blockNumber()
+					? st::windowActiveTextFg->c : st::windowSubTextFg->c);
+				painter.drawText(QRectF(0, top,
+					_gutter->width() - st::vimJsonGutterPadding,
+					fontMetrics().height()), Qt::AlignRight,
+					QString::number(block.blockNumber() + 1));
+			}
+			block = block.next();
+		}
+	}
+
+	Ui::RpWidget *_gutter = nullptr;
+	JsonHighlighter *_highlighter = nullptr;
+
+};
 
 } // namespace
 
 VimKeymapEditor::VimKeymapEditor(
 	QWidget *parent,
 	Fn<void(not_null<Ui::VerticalLayout*>)> fillUi,
-	Fn<void(Fn<void()>)> confirmDiscard,
-	Fn<void()> showGuide)
+	Fn<void(Fn<void()>)> confirmDiscard)
 : Ui::RpWidget(parent)
 , _confirmDiscard(std::move(confirmDiscard)) {
+	paintRequest() | rpl::on_next([=] {
+		auto painter = QPainter(this);
+		painter.fillRect(rect(), st::windowBg->c);
+	}, lifetime());
 	const auto layout = Ui::CreateChild<Ui::VerticalLayout>(this);
 	_tabs = layout->add(object_ptr<Ui::SettingsSlider>(layout));
 	_tabs->addSection(u"UI"_q);
@@ -64,39 +195,53 @@ VimKeymapEditor::VimKeymapEditor(
 			target->setGeometry(left, 0, size.width() * (i + 1) / 2 - left, size.height());
 		}, target->lifetime());
 	}
-	const auto guide = layout->add(object_ptr<Ui::SettingsButton>(layout, rpl::single(u"Руководство"_q)));
-	guide->setObjectName(u"vim-guide"_q);
-	guide->setClickedCallback(std::move(showGuide));
 	_ui = layout->add(object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
 		layout, object_ptr<Ui::VerticalLayout>(layout)));
 	fillUi(_ui->entity());
 	_json = layout->add(object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
 		layout, object_ptr<Ui::VerticalLayout>(layout)));
 	const auto json = _json->entity();
+	const auto header = json->add(object_ptr<Ui::RpWidget>(json));
+	header->resize(0, st::vimJsonHeaderHeight);
+	const auto filename = Ui::CreateChild<Ui::FlatLabel>(
+		header, u"vim-keymap.json"_q, st::defaultSubTextLabel);
+	filename->move(st::vimJsonPadding, (header->height() - filename->height()) / 2);
 	const auto field = json->add(object_ptr<Ui::RpWidget>(json));
 	field->resize(0, st::vimJsonEditorHeight);
-	_text = new QPlainTextEdit(field);
+	const auto editor = new JsonEditor(field);
+	_text = editor;
 	_text->setObjectName(u"vim-json-editor"_q);
 	_text->setAccessibleName(u"Конфигурация Vim JSON"_q);
-	_text->setFont(st::normalFont->monospace()->f);
-	_text->setTabChangesFocus(true);
-	_text->setLineWrapMode(QPlainTextEdit::WidgetWidth);
-	SetEditorPalette(_text);
 	style::PaletteChanged() | rpl::on_next([=] {
-		SetEditorPalette(_text);
+		editor->refreshPalette();
+		updateState();
+		update();
 	}, lifetime());
 	field->sizeValue() | rpl::on_next([=](QSize size) {
 		_text->setGeometry(QRect(QPoint(), size));
 	}, field->lifetime());
-	_status = json->add(object_ptr<Ui::FlatLabel>(json));
+	_status = json->add(object_ptr<Ui::FlatLabel>(json),
+		style::margins(st::vimJsonPadding, 0, st::vimJsonPadding, 0));
 	_status->setObjectName(u"vim-json-status"_q);
 	_status->setBreakEverywhere(true);
-	_apply = json->add(object_ptr<Ui::SettingsButton>(json, rpl::single(u"Применить"_q)));
+	_status->setTextColorOverride(st::boxTextFgError->c);
+	const auto footer = json->add(object_ptr<Ui::RpWidget>(json));
+	footer->resize(0, st::vimJsonFooterHeight);
+	_apply = Ui::CreateChild<Ui::RoundButton>(footer,
+		rpl::single(u"Применить"_q), st::vimJsonButton);
+	_apply->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
 	_apply->setObjectName(u"vim-json-apply"_q);
 	_apply->setClickedCallback([=] { apply(); });
-	const auto reread = json->add(object_ptr<Ui::SettingsButton>(json, rpl::single(u"Перечитать"_q)));
+	const auto reread = Ui::CreateChild<Ui::RoundButton>(footer,
+		rpl::single(u"Перечитать"_q), st::vimJsonSecondaryButton);
+	reread->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
 	reread->setObjectName(u"vim-json-reload"_q);
 	reread->setClickedCallback([=] { checkBeforeClose([=] { reload(); }); });
+	footer->sizeValue() | rpl::on_next([=](QSize size) {
+		_apply->move(size.width() - st::vimJsonPadding - _apply->width(),
+			(size.height() - _apply->height()) / 2);
+		reread->move(st::vimJsonPadding, (size.height() - reread->height()) / 2);
+	}, footer->lifetime());
 	QObject::connect(_text, &QPlainTextEdit::textChanged, this, [=] {
 		_status->setText({});
 		updateState();
@@ -170,10 +315,15 @@ void VimKeymapEditor::reload() {
 
 void VimKeymapEditor::updateState() {
 	_apply->setDisabled(!dirty());
+	_apply->setTextFgOverride(dirty()
+		? std::nullopt : std::make_optional(st::windowSubTextFg->c));
+	_apply->setBrushOverride(dirty()
+		? std::nullopt : std::make_optional(QBrush(st::windowBgOver->c)));
 }
 
 void VimKeymapEditor::apply() {
 	if (_baseline != Core::VimKeymap::ConfigSnapshot()) {
+		_status->setTextColorOverride(st::boxTextFgError->c);
 		_status->setText(u"Настройки изменены в другом окне. Перечитайте конфигурацию перед применением."_q);
 		return;
 	}
@@ -181,31 +331,13 @@ void VimKeymapEditor::apply() {
 	const auto error = Core::VimKeymap::ApplyConfig(_text->toPlainText().toUtf8());
 	_applying = false;
 	if (!error.isEmpty()) {
+		_status->setTextColorOverride(st::boxTextFgError->c);
 		_status->setText(error);
 		return;
 	}
 	reload();
+	_status->setTextColorOverride(st::boxTextFgGood->c);
 	_status->setText(u"Настройки применены."_q);
-}
-
-object_ptr<Ui::RpWidget> CreateVimKeymapGuide(QWidget *parent) {
-	auto result = object_ptr<Ui::RpWidget>(parent);
-	const auto view = new QTextBrowser(result);
-	view->setObjectName(u"vim-guide-text"_q);
-	view->setAccessibleName(u"Руководство Vim keymap"_q);
-	view->setReadOnly(true);
-	view->setOpenExternalLinks(false);
-	view->setOpenLinks(false);
-	view->setMarkdown(Core::VimKeymap::ConfigGuide());
-	SetEditorPalette(view);
-	style::PaletteChanged() | rpl::on_next([=] {
-		SetEditorPalette(view);
-	}, result->lifetime());
-	result->resize(0, st::vimGuideHeight);
-	result->sizeValue() | rpl::on_next([=](QSize size) {
-		view->setGeometry(QRect(QPoint(), size));
-	}, result->lifetime());
-	return result;
 }
 
 } // namespace Settings

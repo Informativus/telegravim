@@ -56,7 +56,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtWidgets/QScrollBar>
 #include <QtWidgets/QSlider>
 #include <QtWidgets/QPlainTextEdit>
-#include <QtWidgets/QTextBrowser>
+#include <QtGui/QSyntaxHighlighter>
 
 #include <iostream>
 #include <algorithm>

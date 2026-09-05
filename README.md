@@ -1,12 +1,12 @@
-# [Telegram Desktop][telegram_desktop] – Official Messenger
+# Telegravim
 
-This is the complete source code and the build instructions for the official [Telegram][telegram] messenger desktop client, based on the [Telegram API][telegram_api] and the [MTProto][telegram_proto] secure protocol.
+Telegram Desktop with Vim navigation, keyboard focus hints, message text
+selection, and configurable keymaps. This is an independent fork, not an
+official Telegram release.
 
-[![Version](https://badge.fury.io/gh/telegramdesktop%2Ftdesktop.svg)](https://github.com/telegramdesktop/tdesktop/releases)
-[![Build Status](https://github.com/telegramdesktop/tdesktop/workflows/Windows./badge.svg)](https://github.com/telegramdesktop/tdesktop/actions)
-[![Build Status](https://github.com/telegramdesktop/tdesktop/workflows/MacOS./badge.svg)](https://github.com/telegramdesktop/tdesktop/actions)
-[![Build Status](https://github.com/telegramdesktop/tdesktop/workflows/Linux./badge.svg)](https://github.com/telegramdesktop/tdesktop/actions)
-[![Built with Depot](https://img.shields.io/badge/Built%20with-Depot.dev-46A75A)](https://depot.dev)
+[macOS downloads](https://github.com/Informativus/telegravim/releases) |
+[User guide (Russian)](docs/vim-keymap.md) |
+[Upstream Telegram Desktop][telegram_desktop]
 
 [![Preview of Telegram Desktop][preview_image]][preview_image_url]
 
@@ -17,7 +17,20 @@ The source code is published under GPLv3 with OpenSSL exception, the license is 
 [User guide (Russian)](docs/vim-keymap.md),
 [complete JSON example](docs/vim-keymap.example.json), and
 [JSON Schema](docs/vim-keymap.schema.json).
-The same guide is available inside Settings > Vim keymap.
+The guide is maintained as a separate file, not embedded in the settings UI.
+
+## Getting the source
+
+```sh
+git clone --recurse-submodules https://github.com/Informativus/telegravim.git
+```
+
+The `Telegram/lib_ui` submodule uses
+[Telegravim's UI patches](https://github.com/Informativus/telegravim-lib-ui).
+While these repositories are private, authenticate with an account that has
+access to both. All other submodules retain their upstream repositories.
+Use your own [API credentials](docs/api_credentials.md) for builds; local
+credentials, application data and build caches are not part of this repository.
 
 ## Supported systems
 

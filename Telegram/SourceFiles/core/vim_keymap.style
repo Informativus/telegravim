@@ -5,6 +5,7 @@
 // https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 using "ui/basic.style";
+using "ui/widgets/widgets.style";
 
 vimHintMargin: 4px;
 vimHintGap: 3px;
@@ -21,5 +22,16 @@ vimStickerFocusWidth: 2px;
 vimStickerFocusHalo: 1px;
 
 vimJsonEditorHeight: 360px;
-vimGuideHeight: 480px;
-vimGuideWidth: 640px;
+vimJsonPadding: 12px;
+vimJsonGutterPadding: 8px;
+vimJsonScrollWidth: 6px;
+vimJsonScrollMin: 32px;
+vimJsonScrollRadius: 3px;
+vimJsonHeaderHeight: 36px;
+vimJsonFooterHeight: 58px;
+vimJsonButton: RoundButton(defaultActiveButton) {
+	radius: 6px;
+}
+vimJsonSecondaryButton: RoundButton(defaultLightButton) {
+	radius: 6px;
+}

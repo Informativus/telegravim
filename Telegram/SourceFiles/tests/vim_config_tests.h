@@ -17,12 +17,17 @@ void TestVimConfig() {
 		"JSON includes all 37 real Vim options, including undo and redo");
 	Check(ValidateConfig(encode(defaults)).error.isEmpty(), "actual defaults are valid JSON config");
 	const auto schema = ConfigSchema().value(u"properties"_q).toObject();
-	const auto guide = ConfigGuide();
+	auto guideFile = QFile(QString::fromUtf8(VIM_KEYMAP_DOCS_DIR) + u"/vim-keymap.md"_q);
+	Check(guideFile.open(QIODevice::ReadOnly), "standalone user guide exists in the repository");
+	const auto guide = QString::fromUtf8(guideFile.readAll());
 	auto changed = defaults;
 	for (const auto &field : fields) {
 		const auto key = QString::fromLatin1(field.id);
 		Check(schema.contains(key) && !field.description.isEmpty()
 			&& guide.contains(u"### `%1`"_q.arg(key)), "every option has a schema and a guide entry");
+		Check(guide.contains(field.description)
+			&& guide.contains(QString::fromUtf8(encode({ { key, defaults.value(key) } }))),
+			"guide describes each current option and its exact default example");
 		Check(!ValidateConfig(encode({ { key, QJsonValue::Null } })).error.isEmpty(),
 			"null is rejected for every option");
 		const auto value = defaults.value(key);
@@ -92,13 +97,11 @@ void TestVimConfigEditor() {
 	window.resize(720, 850);
 	auto pendingDiscard = Fn<void()>();
 	auto confirmations = 0;
-	auto guides = 0;
 	auto editor = Settings::VimKeymapEditor(&window,
 		[](not_null<Ui::VerticalLayout*> layout) {
 			layout->add(object_ptr<Ui::AbstractButton>(layout));
 		},
-		[&](Fn<void()> done) { ++confirmations; pendingDiscard = std::move(done); },
-		[&] { ++guides; });
+		[&](Fn<void()> done) { ++confirmations; pendingDiscard = std::move(done); });
 	editor.resizeToWidth(400);
 	window.show();
 	QApplication::setActiveWindow(&window);
@@ -162,41 +165,79 @@ void TestVimConfigEditor() {
 		base::take(pendingDiscard)();
 	}
 	Check(closed && !editor.dirty(), "confirmed discard permits closing");
-	click(u"vim-guide"_q);
-	Check(guides == 1, "guide button uses its local guide callback");
+	Check(!find(u"vim-guide"_q), "settings no longer embed the user guide");
+	Check(text->frameShape() == QFrame::NoFrame
+		&& text->lineWrapMode() == QPlainTextEdit::NoWrap,
+		"code editor has no system frame or broken key wrapping");
+	Check(text->findChild<QWidget*>(u"vim-json-lines"_q)
+		&& text->document()->findChild<QSyntaxHighlighter*>(),
+		"JSON editor supplies line numbers and incremental highlighting");
 	const auto output = qEnvironmentVariable("VIM_KEYMAP_FOCUS_SNAPSHOTS");
 	for (const auto width : { 320, 400, 720 }) {
 		editor.resizeToWidth(width);
 		DrainMainQueue();
 		Check(text->width() <= width && text->height() > 0 && editor.height() < window.height(),
 			"JSON editor fits narrow and wide settings panels");
+		const auto apply = find(u"vim-json-apply"_q);
+		const auto reload = find(u"vim-json-reload"_q);
+		Check(!apply->geometry().intersects(reload->geometry())
+			&& apply->x() >= 0 && apply->geometry().right() < width,
+			"footer actions do not overlap at any supported width");
+		text->horizontalScrollBar()->setValue(text->horizontalScrollBar()->maximum());
+		Check(text->horizontalScrollBar()->value() > 0,
+			"long JSON lines remain reachable with horizontal scrolling");
+		text->horizontalScrollBar()->setValue(0);
 		if (!output.isEmpty()) {
 			Check(editor.grab().save(output + u"/json-%1.png"_q.arg(width)), "JSON editor screenshot saved");
 		}
 	}
+	const auto originalPalette = style::main_palette::save();
+	for (const auto dark : { false, true }) {
+		auto palette = style::palette();
+		const auto background = QColor(dark ? "#101418" : "#ffffff");
+		palette.setColor(QLatin1String("windowBg"), background);
+		palette.setColor(QLatin1String("windowFg"), QColor(dark ? "#e4e8ec" : "#222222"));
+		palette.setColor(QLatin1String("windowBgOver"), QColor(dark ? "#1b242d" : "#f2f5f8"));
+		palette.setColor(QLatin1String("scrollBarBg"), QColor(dark ? "#53606b" : "#b8c1ca"));
+		palette.setColor(QLatin1String("scrollBarBgOver"), QColor(dark ? "#85939f" : "#7c8894"));
+		palette.finalize();
+		style::main_palette::apply(palette);
+		style::NotifyPaletteChanged();
+		DrainMainQueue();
+		Check(text->palette().color(QPalette::Base) == background,
+			"open JSON editor follows live light and dark theme changes");
+		editor.resizeToWidth(400);
+		text->verticalScrollBar()->setValue(0);
+		text->setFocus();
+		if (!output.isEmpty()) {
+			Check(editor.grab().save(output + (dark ? u"/json-dark.png"_q : u"/json-light.png"_q)),
+				"theme-aware editor screenshot saved");
+		}
+		text->verticalScrollBar()->setValue(text->verticalScrollBar()->maximum());
+		Check(text->verticalScrollBar()->value() > 0, "JSON bottom remains reachable after a theme switch");
+		if (!output.isEmpty()) {
+			Check(editor.grab().save(output + (dark ? u"/json-dark-bottom.png"_q : u"/json-light-bottom.png"_q)),
+				"scrolled editor and gutter screenshot saved");
+		}
+	}
+	Check(style::main_palette::load(originalPalette), "JSON tests restore the active palette");
+	style::NotifyPaletteChanged();
+	text->setPlainText(u"{\n  \"vim-keymap\": true,\n  \"vim-keymap-key-copy-message\": \"y, н\"\n}"_q);
+	DrainMainQueue();
+	const auto stringBlock = text->document()->findBlockByNumber(2);
+	Check(stringBlock.layout()->formats().size() >= 2
+		&& text->toPlainText().contains(u"\"y, н\""_q),
+		"incremental highlighting distinguishes strings without modifying JSON");
+	click(u"vim-json-apply"_q);
+	Check(!editor.dirty(), "highlighted JSON still applies through full validation");
 	click(u"vim-mode-ui"_q);
 	Check(!text->isVisible(), "clean JSON switches directly back to UI");
-	auto guide = Settings::CreateVimKeymapGuide(&window);
-	guide->resize(640, 480);
-	guide->show();
-	const auto browser = guide->findChild<QTextBrowser*>();
-	browser->setFocus();
-	DrainMainQueue();
-	Check(browser->isReadOnly() && !KeyboardScopeHasTextInput(guide, browser), "guide allows scrolling rather than text-input mode");
-	Check(KeyboardNavigation::Get(guide)->scroll(100, false, 0)
-		&& browser->verticalScrollBar()->value() > 0, "j/k scrolling reaches the local guide text");
-	Check(browser->toPlainText().contains(u"vim-keymap-key-redo"_q) && !browser->openExternalLinks(),
-		"offline guide includes all parameter descriptions without external navigation");
-	if (!output.isEmpty()) {
-		Check(guide->grab().save(output + u"/json-guide.png"_q), "offline guide screenshot saved");
-	}
 	Check(ApplyConfig(QJsonDocument(saved).toJson()).isEmpty(), "restore original values after editor tests");
 }
 
 void TestVimConfigDocuments() {
 	using namespace Core::VimKeymap;
 	const auto files = std::vector<std::pair<QString, QByteArray>>{
-		{ u"vim-keymap.md"_q, ConfigGuide().trimmed().toUtf8() + '\n' },
 		{ u"vim-keymap.example.json"_q, QJsonDocument(ConfigSnapshot(true)).toJson() },
 		{ u"vim-keymap.schema.json"_q, QJsonDocument(ConfigSchema()).toJson() },
 	};

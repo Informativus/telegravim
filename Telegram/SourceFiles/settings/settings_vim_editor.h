@@ -15,7 +15,7 @@ class QPlainTextEdit;
 namespace Ui {
 class VerticalLayout;
 class SettingsSlider;
-class SettingsButton;
+class RoundButton;
 class FlatLabel;
 template <typename Widget> class SlideWrap;
 } // namespace Ui
@@ -27,8 +27,7 @@ public:
 	VimKeymapEditor(
 		QWidget *parent,
 		Fn<void(not_null<Ui::VerticalLayout*>)> fillUi,
-		Fn<void(Fn<void()>)> confirmDiscard,
-		Fn<void()> showGuide);
+		Fn<void(Fn<void()>)> confirmDiscard);
 	[[nodiscard]] bool dirty() const;
 	void checkBeforeClose(Fn<void()> close);
 
@@ -44,7 +43,7 @@ private:
 	Ui::SlideWrap<Ui::VerticalLayout> *_json = nullptr;
 	QPlainTextEdit *_text = nullptr;
 	Ui::FlatLabel *_status = nullptr;
-	Ui::SettingsButton *_apply = nullptr;
+	Ui::RoundButton *_apply = nullptr;
 	Fn<void(Fn<void()>)> _confirmDiscard;
 	QJsonObject _baseline;
 	QString _cleanText;
@@ -53,7 +52,5 @@ private:
 	bool _applying = false;
 
 };
-
-[[nodiscard]] object_ptr<Ui::RpWidget> CreateVimKeymapGuide(QWidget *parent);
 
 } // namespace Settings
