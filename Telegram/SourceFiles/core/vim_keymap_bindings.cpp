@@ -445,6 +445,28 @@ int PickerNavigationDelta(not_null<QKeyEvent*> e) {
 	return 0;
 }
 
+StickerGridAction StickerGridActionKey(not_null<QKeyEvent*> e) {
+	const auto modifiers = CleanModifiers(e);
+	const auto previous = KeyIs(e, Qt::Key_K, u"k"_q, u"\u043B"_q);
+	const auto next = KeyIs(e, Qt::Key_J, u"j"_q, u"\u043E"_q);
+	if (modifiers == Qt::ControlModifier && previous) {
+		return StickerGridAction::ScrollUp;
+	} else if (modifiers == Qt::ControlModifier && next) {
+		return StickerGridAction::ScrollDown;
+	} else if (modifiers == Qt::NoModifier && previous) {
+		return StickerGridAction::Previous;
+	} else if (modifiers == Qt::NoModifier && next) {
+		return StickerGridAction::Next;
+	} else if (IsPlainEnter(e)) {
+		return StickerGridAction::Choose;
+	} else if (!e->isAutoRepeat()
+		&& modifiers == Qt::NoModifier
+		&& KeyIs(e, Qt::Key_W, u"w"_q, u"\u0446"_q)) {
+		return StickerGridAction::Preview;
+	}
+	return StickerGridAction::None;
+}
+
 int MediaNavigationDelta(not_null<QKeyEvent*> e) {
 	const auto modifiers = CleanModifiers(e);
 	if (modifiers != Qt::ControlModifier

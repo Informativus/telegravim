@@ -4663,7 +4663,7 @@ void HistoryInner::vimKeymapAddLinkHints(not_null<Element*> view) {
 			}
 		}
 		if (const auto document = media->getDocument()) {
-			if (document->isVoiceMessage()) {
+			if (document->isVoiceMessage() || document->isVideoMessage()) {
 				auto request = StateRequest();
 				const auto fromY = std::max(0, _visibleAreaTop - top);
 				const auto tillY = std::min(
@@ -4677,7 +4677,8 @@ void HistoryInner::vimKeymapAddLinkHints(not_null<Element*> view) {
 						const auto state = view->textState(
 							QPoint(x, y),
 							request);
-						if (IsVimKeymapVoiceDocumentLink(state.link)) {
+						if (document->isVoiceMessage()
+							&& IsVimKeymapVoiceDocumentLink(state.link)) {
 							add(state.link, QPoint(x, top + y));
 							added = true;
 							break;
@@ -4686,19 +4687,32 @@ void HistoryInner::vimKeymapAddLinkHints(not_null<Element*> view) {
 				}
 				const auto file = dynamic_cast<HistoryView::File*>(media);
 				const auto directLink = file ? file->openLink() : nullptr;
-				if (Core::VimKeymap::ShouldAddVoicePlaybackFallback(
-						document->isVoiceMessage(),
+				if (Core::VimKeymap::ShouldAddInlinePlaybackHint(
+						document->isVoiceMessage()
+							|| document->isVideoMessage(),
 						!visibleMediaRect.isEmpty(),
 						added,
 						directLink != nullptr)) {
 					add(directLink, mediaBadgePoint);
 				}
 			} else if (document->isVideoFile()
-				|| document->isAnimation()
-				|| document->isVideoMessage()) {
+				|| document->isAnimation()) {
 				if (!addedGroupedMedia && visibleMediaRect.width() >= 24
 					&& visibleMediaRect.height() >= 24) {
 					addMedia(itemId, mediaBadgePoint, nullptr, document);
+				}
+			} else if (document->sticker()) {
+				auto request = StateRequest();
+				const auto state = view->textState(
+					mediaTopLeft + QPoint(
+						media->width() / 2,
+						media->height() / 2),
+					request);
+				if (Core::VimKeymap::ShouldAddStickerHint(
+						true,
+						!visibleMediaRect.isEmpty(),
+						state.link != nullptr)) {
+					add(state.link, mediaBadgePoint);
 				}
 			}
 		}

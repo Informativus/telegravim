@@ -45,11 +45,19 @@ struct VisualSelectionRange {
 	bool serviceMessage,
 	bool hasLink,
 	bool overMessageText);
-[[nodiscard]] bool ShouldAddVoicePlaybackFallback(
-	bool voiceMessage,
+[[nodiscard]] bool ShouldAddInlinePlaybackHint(
+	bool voiceOrVideoMessage,
 	bool mediaVisible,
 	bool scannedPlaybackLink,
 	bool directPlaybackLink);
+[[nodiscard]] bool ShouldAddStickerHint(
+	bool sticker,
+	bool mediaVisible,
+	bool hasLink);
+[[nodiscard]] int MoveStickerGridSelection(
+	int selected,
+	int count,
+	int delta);
 [[nodiscard]] QRect GroupedMediaHintRect(
 	QRect groupItemRect,
 	QPoint itemInnerTopLeft,

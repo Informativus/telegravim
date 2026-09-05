@@ -22,6 +22,16 @@ struct MatchOptions {
 	bool allowMacControlCommandEquivalent = true;
 };
 
+enum class StickerGridAction {
+	None,
+	Previous,
+	Next,
+	ScrollUp,
+	ScrollDown,
+	Choose,
+	Preview,
+};
+
 [[nodiscard]] Qt::KeyboardModifiers CleanModifiers(not_null<QKeyEvent*> e);
 [[nodiscard]] QString PlainText(not_null<QKeyEvent*> e);
 [[nodiscard]] QString HintCharacter(not_null<QKeyEvent*> e);
@@ -44,5 +54,7 @@ struct MatchOptions {
 [[nodiscard]] int TabNavigationDelta(not_null<QKeyEvent*> e);
 [[nodiscard]] int PickerNavigationDelta(not_null<QKeyEvent*> e);
 [[nodiscard]] int MediaNavigationDelta(not_null<QKeyEvent*> e);
+[[nodiscard]] StickerGridAction StickerGridActionKey(
+	not_null<QKeyEvent*> e);
 
 } // namespace Core::VimKeymap::Bindings

@@ -12,6 +12,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/stickers/data_stickers.h"
 #include "ui/rect_part.h"
 
+class QKeyEvent;
+
 namespace Window {
 class SessionController;
 } // namespace Window
@@ -70,6 +72,7 @@ public:
 		QWidget*,
 		std::shared_ptr<ChatHelpers::Show> show,
 		not_null<Data::StickersSet*> set);
+	~StickerSetBox();
 
 	static base::weak_qptr<Ui::BoxContent> Show(
 		std::shared_ptr<ChatHelpers::Show> show,
@@ -91,6 +94,7 @@ private:
 	void addStickers();
 	void copyStickersLink();
 	void handleError(Error error);
+	[[nodiscard]] bool handleVimKey(not_null<QKeyEvent*> e);
 
 	const std::shared_ptr<ChatHelpers::Show> _show;
 	const not_null<Main::Session*> _session;

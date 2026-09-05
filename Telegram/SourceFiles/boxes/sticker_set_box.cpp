@@ -20,6 +20,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/stickers_lottie.h"
 #include "core/application.h"
 #include "core/click_handler_types.h"
+#include "core/vim_keymap.h"
+#include "core/vim_keymap_bindings.h"
+#include "core/vim_keymap_geometry.h"
 #include "data/data_document.h"
 #include "data/data_document_media.h"
 #include "data/data_file_origin.h"
@@ -41,6 +44,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings/sections/settings_premium.h"
 #include "storage/storage_account.h"
 #include "ui/boxes/confirm_box.h"
+#include "ui/abstract_button.h"
 #include "ui/cached_round_corners.h"
 #include "ui/effects/animation_value_f.h"
 #include "ui/effects/path_shift_gradient.h"
@@ -318,6 +322,9 @@ public:
 
 	void install();
 	void showPreviewForDocument(DocumentId documentId);
+	[[nodiscard]] QRect moveKeyboardSelection(int delta);
+	[[nodiscard]] bool chooseKeyboardSelection();
+	[[nodiscard]] bool previewKeyboardSelection();
 	[[nodiscard]] rpl::producer<uint64> setInstalled() const;
 	[[nodiscard]] rpl::producer<uint64> setArchived() const;
 	[[nodiscard]] rpl::producer<> updateControls() const;
@@ -575,6 +582,10 @@ void StickerSetBox::prepare() {
 	_inner = setInnerWidget(
 		object_ptr<Inner>(this, _show, _set, _type),
 		st::stickersScroll);
+	Core::VimKeymap::RegisterPreLayerKeyHandler(this, [=](
+			not_null<QKeyEvent*> e) {
+		return handleVimKey(e);
+	});
 	_inner->setOuterContainer(getDelegate()->outerContainer());
 	if (const auto previewId = base::take(_previewDocumentId)) {
 		_inner->showPreviewForDocument(previewId);
@@ -660,6 +671,56 @@ void StickerSetBox::prepare() {
 			window->widget()->hideMediaPreview();
 		}
 	}, lifetime());
+}
+
+StickerSetBox::~StickerSetBox() {
+	Core::VimKeymap::UnregisterPreLayerKeyHandler(this);
+}
+
+bool StickerSetBox::handleVimKey(not_null<QKeyEvent*> e) {
+	using Action = Core::VimKeymap::Bindings::StickerGridAction;
+	if (!_inner || !isVisible()) {
+		return false;
+	}
+	const auto top = window();
+	if (!top || !top->isActiveWindow() || !isVisibleTo(top)) {
+		return false;
+	}
+	const auto action
+		= Core::VimKeymap::Bindings::StickerGridActionKey(e);
+	if (action == Action::None) {
+		return false;
+	} else if (action == Action::Choose
+		&& dynamic_cast<Ui::AbstractButton*>(QApplication::focusWidget())) {
+		return false;
+	}
+	if (action == Action::Previous || action == Action::Next) {
+		_inner->setFocus(Qt::OtherFocusReason);
+		const auto rect = _inner->moveKeyboardSelection(
+			action == Action::Next ? 1 : -1);
+		if (rect.isEmpty()) {
+			return false;
+		}
+		scrollTo({ rect.top(), rect.bottom() }, anim::type::normal);
+	} else if (action == Action::ScrollUp
+		|| action == Action::ScrollDown) {
+		const auto direction = (action == Action::ScrollDown) ? 1 : -1;
+		const auto target = scrollTop()
+			+ direction * Core::VimKeymap::ScrollStep();
+		scrollTo(
+			{ target, target + scrollHeight() },
+			anim::type::normal);
+	} else if (action == Action::Choose) {
+		if (!_inner->chooseKeyboardSelection()) {
+			return false;
+		}
+	} else if (action == Action::Preview) {
+		if (!_inner->previewKeyboardSelection()) {
+			return false;
+		}
+	}
+	Core::VimKeymap::TraceKey(e, u"sticker set navigation"_q);
+	return true;
 }
 
 void StickerSetBox::addStickers() {
@@ -1165,6 +1226,7 @@ StickerSetBox::Inner::Inner(
 	: st::stickersPadding)
 , _previewTimer([=] { showPreview(); }) {
 	setAttribute(Qt::WA_OpaquePaintEvent);
+	setFocusPolicy(Qt::StrongFocus);
 
 	_api.request(MTPmessages_GetStickerSet(
 		Data::InputStickerSet(_input),
@@ -2009,6 +2071,39 @@ void StickerSetBox::Inner::setSelected(int selected) {
 			? style::cur_sizeall
 			: style::cur_pointer);
 	}
+}
+
+QRect StickerSetBox::Inner::moveKeyboardSelection(int delta) {
+	if (_dragging.enabled) {
+		return {};
+	}
+	const auto selected = Core::VimKeymap::MoveStickerGridSelection(
+		_selected,
+		int(_elements.size()),
+		delta);
+	if (selected < 0) {
+		return {};
+	}
+	setSelected(selected);
+	return QRect(posFromIndex(selected), _singleSize);
+}
+
+bool StickerSetBox::Inner::chooseKeyboardSelection() {
+	const auto document = elementDocument(_selected);
+	if (!document || _dragging.enabled) {
+		return false;
+	}
+	chosen(_selected, document, {});
+	return true;
+}
+
+bool StickerSetBox::Inner::previewKeyboardSelection() {
+	const auto document = elementDocument(_selected);
+	if (!document || _dragging.enabled) {
+		return false;
+	}
+	showPreviewForDocument(document->id);
+	return true;
 }
 
 void StickerSetBox::Inner::startOverAnimation(int index, float64 from, float64 to) {

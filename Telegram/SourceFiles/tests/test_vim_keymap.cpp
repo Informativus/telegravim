@@ -451,40 +451,49 @@ void TestVimKeymapTransientUiKeys() {
 		!Core::VimKeymap::ShouldAddScannedLinkHint(false, true, false),
 		"regular non-text link is not added by the text scan");
 	Check(
-		Core::VimKeymap::ShouldAddVoicePlaybackFallback(
+		Core::VimKeymap::ShouldAddInlinePlaybackHint(
 			true,
 			true,
 			false,
 			true),
-		"voice playback uses the direct link when scanning misses");
+		"inline media playback uses the direct link when scanning misses");
 	Check(
-		!Core::VimKeymap::ShouldAddVoicePlaybackFallback(
+		!Core::VimKeymap::ShouldAddInlinePlaybackHint(
 			true,
 			true,
 			true,
 			true),
-		"voice playback does not duplicate a scanned hint");
+		"inline media playback does not duplicate a scanned hint");
 	Check(
-		!Core::VimKeymap::ShouldAddVoicePlaybackFallback(
+		!Core::VimKeymap::ShouldAddInlinePlaybackHint(
 			true,
 			true,
 			false,
 			false),
-		"voice playback skips a missing direct link");
+		"inline media playback skips a missing direct link");
 	Check(
-		!Core::VimKeymap::ShouldAddVoicePlaybackFallback(
+		!Core::VimKeymap::ShouldAddInlinePlaybackHint(
 			false,
 			true,
 			false,
 			true),
-		"non-voice media does not use the voice fallback");
+		"non-inline media does not use the playback fallback");
 	Check(
-		!Core::VimKeymap::ShouldAddVoicePlaybackFallback(
+		!Core::VimKeymap::ShouldAddInlinePlaybackHint(
 			true,
 			false,
 			false,
 			true),
-		"hidden voice media does not receive a playback hint");
+		"hidden inline media does not receive a playback hint");
+	Check(
+		Core::VimKeymap::ShouldAddStickerHint(true, true, true),
+		"visible clickable sticker receives a link hint");
+	Check(
+		!Core::VimKeymap::ShouldAddStickerHint(true, false, true),
+		"hidden sticker does not receive a link hint");
+	Check(
+		!Core::VimKeymap::ShouldAddStickerHint(true, true, false),
+		"sticker without an action does not receive a link hint");
 	auto enter = QKeyEvent(
 		QEvent::KeyPress,
 		Qt::Key_Return,
@@ -715,6 +724,68 @@ void TestVimKeymapPickerNavigation() {
 #endif // Q_OS_MAC
 }
 
+void TestVimKeymapStickerSetNavigation() {
+	using Action = Core::VimKeymap::Bindings::StickerGridAction;
+	const auto action = [](Qt::Key key, Qt::KeyboardModifiers modifiers,
+			const QString &text = QString()) {
+		auto event = QKeyEvent(QEvent::KeyPress, key, modifiers, text);
+		return Core::VimKeymap::Bindings::StickerGridActionKey(&event);
+	};
+	Check(
+		action(Qt::Key_J, Qt::NoModifier, u"j"_q) == Action::Next,
+		"j selects the next sticker");
+	Check(
+		action(Qt::Key_K, Qt::NoModifier, u"k"_q) == Action::Previous,
+		"k selects the previous sticker");
+	Check(
+		action(Qt::Key_J, Qt::ControlModifier, u"j"_q)
+			== Action::ScrollDown,
+		"control j scrolls the sticker set down");
+	Check(
+		action(Qt::Key_K, Qt::ControlModifier, u"k"_q)
+			== Action::ScrollUp,
+		"control k scrolls the sticker set up");
+	Check(
+		action(Qt::Key_Return, Qt::NoModifier) == Action::Choose,
+		"enter chooses the selected sticker");
+	Check(
+		action(Qt::Key_W, Qt::NoModifier, u"w"_q) == Action::Preview,
+		"w previews the selected sticker");
+	Check(
+		action(Qt::Key_W, Qt::ControlModifier, u"w"_q) == Action::None,
+		"modified w leaves the sticker preview unchanged");
+	Check(
+		action(Qt::Key_unknown, Qt::NoModifier, u"\u043E"_q)
+			== Action::Next,
+		"cyrillic j position selects the next sticker");
+	Check(
+		action(Qt::Key_unknown, Qt::NoModifier, u"\u043B"_q)
+			== Action::Previous,
+		"cyrillic k position selects the previous sticker");
+	Check(
+		action(Qt::Key_unknown, Qt::NoModifier, u"\u0446"_q)
+			== Action::Preview,
+		"cyrillic w position previews the selected sticker");
+	Check(
+		Core::VimKeymap::MoveStickerGridSelection(-1, 17, 1) == 0,
+		"next starts sticker selection at the first item");
+	Check(
+		Core::VimKeymap::MoveStickerGridSelection(-1, 17, -1) == 16,
+		"previous starts sticker selection at the last item");
+	Check(
+		Core::VimKeymap::MoveStickerGridSelection(7, 17, 1) == 8,
+		"next advances sticker selection by one item");
+	Check(
+		Core::VimKeymap::MoveStickerGridSelection(16, 17, 1) == 16,
+		"sticker selection stops at the last item");
+	Check(
+		Core::VimKeymap::MoveStickerGridSelection(0, 17, -1) == 0,
+		"sticker selection stops at the first item");
+	Check(
+		Core::VimKeymap::MoveStickerGridSelection(-1, 0, 1) == -1,
+		"empty sticker set has no keyboard selection");
+}
+
 void TestVimKeymapMediaNavigation() {
 	auto previous = QKeyEvent(
 		QEvent::KeyPress,
@@ -865,6 +936,7 @@ int main(int, char *[]) {
 	TestVimKeymapTransientUiKeys();
 	TestVimKeymapCursorGeometry();
 	TestVimKeymapPickerNavigation();
+	TestVimKeymapStickerSetNavigation();
 	TestVimKeymapMediaNavigation();
 
 	std::cout << (TotalChecks - FailedChecks) << "/" << TotalChecks

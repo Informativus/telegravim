@@ -73,15 +73,31 @@ bool ShouldAddScannedLinkHint(
 	return hasLink && (serviceMessage || overMessageText);
 }
 
-bool ShouldAddVoicePlaybackFallback(
-		bool voiceMessage,
+bool ShouldAddInlinePlaybackHint(
+		bool voiceOrVideoMessage,
 		bool mediaVisible,
 		bool scannedPlaybackLink,
 		bool directPlaybackLink) {
-	return voiceMessage
+	return voiceOrVideoMessage
 		&& mediaVisible
 		&& !scannedPlaybackLink
 		&& directPlaybackLink;
+}
+
+bool ShouldAddStickerHint(
+		bool sticker,
+		bool mediaVisible,
+		bool hasLink) {
+	return sticker && mediaVisible && hasLink;
+}
+
+int MoveStickerGridSelection(int selected, int count, int delta) {
+	if (count <= 0 || !delta) {
+		return -1;
+	} else if (selected < 0 || selected >= count) {
+		return (delta > 0) ? 0 : (count - 1);
+	}
+	return std::clamp(selected + delta, 0, count - 1);
 }
 
 QRect GroupedMediaHintRect(
