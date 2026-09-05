@@ -1069,6 +1069,125 @@ void TestHintBadgeLayoutAndPainting() {
 	}
 }
 
+void TestHintTargetAnchoring() {
+	using namespace Core::VimKeymap;
+	const auto viewport = QRect(0, 1000, 900, 500);
+	const auto url = QRect(113, 1055, 330, 17);
+	const auto avatar = QRect(65, 1048, 34, 34);
+	const auto media = QRect(113, 1124, 224, 224);
+	const auto matches = [&](QPoint point) { return url.contains(point); };
+	Check(LinkHintTargetRect({ 144, 1062 }, viewport, matches) == url,
+		"coarse link hit resolves to exact visible URL bounds");
+	Check(LinkHintTargetRect({ 12, 1012 }, viewport, matches).isEmpty(),
+		"placeholder in message margin cannot become a link target");
+	const auto clipped = QRect(0, 1060, 900, 500);
+	Check(LinkHintTargetRect({ 144, 1062 }, clipped, matches)
+			== url.intersected(clipped),
+		"partially scrolled link stays on its visible portion");
+	const auto nextLine = QRect(113, 1072, 120, 17);
+	Check(LinkHintTargetRect({ 144, 1062 }, viewport, [&](QPoint point) {
+		return url.contains(point) || nextLine.contains(point);
+	}) == url, "wrapped link does not include empty space beside its next line");
+	const auto desired = std::vector<QRect>{
+		QRect(url.topLeft(), QSize(25, 24)),
+		QRect(avatar.topLeft(), QSize(25, 24)),
+		QRect(media.topLeft() + QPoint(8, 8), QSize(25, 24)),
+	};
+	const auto targets = std::vector<QRect>{ url, avatar, media };
+	const auto placed = LayoutHintBadges(desired, viewport, 3, targets);
+	Check(placed == desired,
+		"separate URL, avatar and media badges keep their original target positions");
+	const auto crowded = LayoutHintBadges(
+		{ desired[0], desired[0], desired[0] },
+		viewport,
+		3,
+		{ url, url, url });
+	Check(std::ranges::all_of(crowded, [&](QRect rect) {
+		return !rect.isEmpty() && url.contains(rect.center());
+	}), "colliding link badges move along the link, never into the margin");
+	const auto small = QRect(113, 1055, 8, 17);
+	const auto overflow = LayoutHintBadges(
+		{ desired[0], desired[0] }, viewport, 3, { small, small });
+	Check(!overflow[0].isEmpty() && small.contains(overflow[0].center())
+		&& overflow[1].isEmpty(),
+		"crowded small target never sends a badge to unrelated content");
+	auto random = QRandomGenerator(92051);
+	auto anchored = true;
+	for (auto run = 0; run != 200; ++run) {
+		auto inputs = std::vector<QRect>();
+		auto areas = std::vector<QRect>();
+		for (auto i = 0; i != 40; ++i) {
+			const auto area = QRect(random.bounded(900), 1000 + random.bounded(500),
+				random.bounded(8, 300), random.bounded(8, 100));
+			areas.push_back(area);
+			inputs.emplace_back(area.topLeft(), QSize(random.bounded(20, 100), 28));
+		}
+		const auto rects = LayoutHintBadges(inputs, viewport, 3, areas);
+		for (auto i = 0; i != rects.size(); ++i) {
+			if (rects[i].isEmpty()) {
+				continue;
+			}
+			anchored &= areas[i].contains(rects[i].center())
+				&& viewport.contains(rects[i]);
+			for (auto j = 0; j != i; ++j) {
+				anchored &= rects[j].isEmpty()
+					|| !rects[i].marginsAdded({ 3, 3, 3, 3 }).intersects(rects[j]);
+			}
+		}
+	}
+	Check(anchored, "randomized target layouts preserve anchoring and separation");
+	for (const auto dpr : { 1, 2, 3 }) {
+		auto canvas = QImage(QSize(900, 500) * dpr, QImage::Format_ARGB32_Premultiplied);
+		canvas.setDevicePixelRatio(dpr);
+		canvas.fill(Qt::transparent);
+		const auto font = QFont(u"Menlo"_q, 13, QFont::DemiBold);
+		const auto hints = std::vector<HintBadge>{
+			{ u"f"_q, avatar.topLeft(), avatar },
+			{ u"s"_q, url.topLeft(), url },
+			{ u"d"_q, media.topLeft() + QPoint(8, 8), media },
+		};
+		auto expected = std::vector<QRect>();
+		auto areas = std::vector<QRect>();
+		const auto metrics = QFontMetrics(font);
+		for (const auto &hint : hints) {
+			expected.emplace_back(hint.anchor, QSize(
+				metrics.horizontalAdvance(hint.label) + 14,
+				metrics.height() + 6));
+			areas.push_back(hint.target);
+		}
+		expected = LayoutHintBadges(expected, viewport, 3, areas);
+		{
+			auto painter = QPainter(&canvas);
+			painter.translate(0, -1000);
+			PaintHintBadges(painter, hints, {}, font, viewport, { 7, 3 }, 3, false);
+		}
+		auto ink = std::array<int, 3>();
+		auto located = true;
+		for (auto i = 0; i != expected.size(); ++i) {
+			located &= !expected[i].isEmpty()
+				&& areas[i].contains(expected[i].center());
+		}
+		for (auto y = 0; y != canvas.height(); ++y) {
+			for (auto x = 0; x != canvas.width(); ++x) {
+				if (!canvas.pixelColor(x, y).alpha()) {
+					continue;
+				}
+				const auto point = QPoint(x / dpr, 1000 + y / dpr);
+				auto found = false;
+				for (auto i = 0; i != expected.size(); ++i) {
+					if (expected[i].contains(point)) {
+						++ink[i];
+						found = true;
+					}
+				}
+				located &= found;
+			}
+		}
+		Check(located && std::ranges::all_of(ink, [](int count) { return count > 0; }),
+			"painted badges remain beside URL, avatar and media at each DPR");
+	}
+}
+
 void TestModalTabCycle() {
 	auto root = Ui::RpWidget(nullptr);
 	root.setAttribute(Qt::WA_DontShowOnScreen);
@@ -1235,6 +1354,7 @@ int main(int argc, char *argv[]) {
 	TestVimKeymapMediaNavigation();
 	TestAbstractButtonKeyboardActivation();
 	TestHintBadgeLayoutAndPainting();
+	TestHintTargetAnchoring();
 	TestModalTabCycle();
 	TestPopupMenuKeyboardCycle();
 	TestPopupHandlerScope();

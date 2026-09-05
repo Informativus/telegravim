@@ -20,12 +20,18 @@ namespace Core::VimKeymap {
 struct HintBadge {
 	QString label;
 	QPoint anchor;
+	QRect target;
 };
 
+[[nodiscard]] QRect LinkHintTargetRect(
+	QPoint hit,
+	QRect bounds,
+	Fn<bool(QPoint)> matches);
 [[nodiscard]] std::vector<QRect> LayoutHintBadges(
 	const std::vector<QRect> &desired,
 	QRect bounds,
-	int gap);
+	int gap,
+	const std::vector<QRect> &targets = {});
 void PaintHintBadges(
 	QPainter &p,
 	const std::vector<HintBadge> &hints,

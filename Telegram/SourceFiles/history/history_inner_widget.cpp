@@ -4483,6 +4483,7 @@ void HistoryInner::vimKeymapBuildLinkHints(not_null<Element*> view) {
 	_vimKeymapHints.clear();
 	_vimKeymapHintPrefix.clear();
 	vimKeymapAddLinkHints(view);
+	vimKeymapAddUserpicHints(view);
 	if (_vimKeymapHints.empty()) {
 		_vimKeymapHintMode = VimKeymapHintMode::None;
 	}
@@ -4504,6 +4505,7 @@ void HistoryInner::vimKeymapBuildVisibleLinkHints() {
 		}
 		vimKeymapAddLinkHints(view);
 	}
+	vimKeymapAddUserpicHints();
 	if (_vimKeymapHints.empty()) {
 		_vimKeymapHintMode = VimKeymapHintMode::None;
 	}
@@ -4511,66 +4513,85 @@ void HistoryInner::vimKeymapBuildVisibleLinkHints() {
 	update();
 }
 
+void HistoryInner::vimKeymapAddUserpicHints(Element *onlyView) {
+	enumerateUserpics([&](not_null<Element*> view, int userpicTop) {
+		if (userpicTop >= _visibleAreaBottom) {
+			return false;
+		}
+		if ((onlyView && view != onlyView)
+			|| userpicTop + st::msgPhotoSize <= _visibleAreaTop) {
+			return true;
+		}
+		const auto link = view->fromPhotoLink();
+		if (!link) {
+			return true;
+		}
+		const auto rect = style::rtlrect(
+			st::historyPhotoLeft,
+			userpicTop,
+			st::msgPhotoSize,
+			st::msgPhotoSize,
+			width());
+		_vimKeymapHints.push_back({
+			.itemId = view->data()->fullId(),
+			.badge = rect,
+			.target = rect,
+			.link = link,
+		});
+		return true;
+	});
+}
+
 void HistoryInner::vimKeymapAddLinkHints(not_null<Element*> view) {
 	const auto item = view->data();
 	const auto itemId = item->fullId();
 	const auto top = itemTop(view);
+	const auto visibleArea = QRect(
+		0,
+		_visibleAreaTop,
+		width(),
+		_visibleAreaBottom - _visibleAreaTop);
+	const auto itemBounds = QRect(0, top, width(), view->height())
+		.intersected(visibleArea);
 	auto seen = base::flat_set<ClickHandler*>();
-	const auto add = [&](ClickHandlerPtr link, QPoint point) {
+	const auto add = [&](ClickHandlerPtr link, QPoint point, QRect target = {}) {
 		if (!link || seen.contains(link.get())) {
 			return;
+		}
+		if (target.isEmpty()) {
+			target = Core::VimKeymap::LinkHintTargetRect(
+				point,
+				itemBounds,
+				[&](QPoint test) {
+					return view->textState(test - QPoint(0, top), {}).link == link;
+				});
+			if (target.isEmpty()) {
+				return;
+			}
+			point = target.topLeft();
 		}
 		seen.emplace(link.get());
 		_vimKeymapHints.push_back({
 			.itemId = itemId,
 			.badge = QRect(point, QSize(1, 1)),
+			.target = target,
 			.link = std::move(link),
 		});
 	};
-	if (const auto reply = item->Get<HistoryMessageReply>()) {
-		if (const auto replyView = view->Get<HistoryView::Reply>()) {
-			add(
-				replyView->link(),
-				QPoint(12, std::max(top + 34, _visibleAreaTop + 6)));
-		} else if (const auto resolved = reply->resolvedMessage.get()) {
-			add(
-				JumpToMessageClickHandler(resolved, itemId),
-				QPoint(12, std::max(top + 34, _visibleAreaTop + 6)));
-		}
-	}
-	if (const auto forwarded = item->Get<HistoryMessageForwarded>()) {
-		const auto sender = forwarded->forwardOfForward()
-			? forwarded->savedFromSender
-			: forwarded->originalSender;
-		const auto hidden = forwarded->forwardOfForward()
-			? forwarded->savedFromHiddenSenderInfo.get()
-			: forwarded->originalHiddenSenderInfo.get();
-		const auto y = std::min(
-			std::max(top + 12, _visibleAreaTop + 6),
-			_visibleAreaBottom - 24);
-		if (sender) {
-			add(sender->openLink(), QPoint(12, y));
-		} else if (hidden) {
-			add(HiddenSenderInfo::ForwardClickHandler(), QPoint(12, y));
-		}
-	}
+	auto visibleMediaRect = QRect();
 	if (const auto media = view->media()) {
 		const auto mediaTopLeft = view->mediaTopLeft();
 		const auto mediaRect = QRect(
 			mediaTopLeft + QPoint(0, top),
 			QSize(media->width(), media->height()));
-		const auto visibleArea = QRect(
-			0,
-			_visibleAreaTop,
-			width(),
-			_visibleAreaBottom - _visibleAreaTop);
-		const auto visibleMediaRect = mediaRect.intersected(visibleArea);
+		visibleMediaRect = mediaRect.intersected(visibleArea);
 		const auto mediaBadgePoint = QPoint(
-			visibleMediaRect.left() + 8,
-			visibleMediaRect.top() + 8);
+			visibleMediaRect.left() + st::vimHintTargetInset,
+			visibleMediaRect.top() + st::vimHintTargetInset);
 		const auto addMedia = [&](
 				FullMsgId hintItemId,
 				QPoint badgePoint,
+				QRect target,
 				PhotoData *photo,
 				DocumentData *document) {
 			if (!hintItemId
@@ -4580,6 +4601,7 @@ void HistoryInner::vimKeymapAddLinkHints(not_null<Element*> view) {
 			_vimKeymapHints.push_back({
 				.itemId = hintItemId,
 				.badge = QRect(badgePoint, QSize(1, 1)),
+				.target = target,
 				.photo = photo,
 				.document = document,
 			});
@@ -4587,6 +4609,7 @@ void HistoryInner::vimKeymapAddLinkHints(not_null<Element*> view) {
 		const auto addClickPoint = [&](
 				FullMsgId hintItemId,
 				QPoint badgePoint,
+				QRect target,
 				QPoint clickPoint) {
 			if (!hintItemId) {
 				return;
@@ -4594,6 +4617,7 @@ void HistoryInner::vimKeymapAddLinkHints(not_null<Element*> view) {
 			_vimKeymapHints.push_back({
 				.itemId = hintItemId,
 				.badge = QRect(badgePoint, QSize(1, 1)),
+				.target = target,
 				.clickPoint = clickPoint,
 				.useClickPoint = true,
 			});
@@ -4618,8 +4642,8 @@ void HistoryInner::vimKeymapAddLinkHints(not_null<Element*> view) {
 					continue;
 				}
 				const auto badgePoint = QPoint(
-					visibleRect.left() + 8,
-					visibleRect.top() + 8);
+					visibleRect.left() + st::vimHintTargetInset,
+					visibleRect.top() + st::vimHintTargetInset);
 				const auto localGroupCenter
 					= itemInnerTopLeft + groupRect.center();
 				auto state = view->textState(localGroupCenter, request);
@@ -4634,7 +4658,12 @@ void HistoryInner::vimKeymapAddLinkHints(not_null<Element*> view) {
 							&& (document->isVideoFile()
 								|| document->isAnimation()
 								|| document->isVideoMessage()))) {
-						addMedia(hintItemId, badgePoint, photo, document);
+						addMedia(
+							hintItemId,
+							badgePoint,
+							visibleRect,
+							photo,
+							document);
 						addedGroupedMedia = true;
 						addedPart = true;
 					}
@@ -4643,6 +4672,7 @@ void HistoryInner::vimKeymapAddLinkHints(not_null<Element*> view) {
 					_vimKeymapHints.push_back({
 						.itemId = hintItemId,
 						.badge = QRect(badgePoint, QSize(1, 1)),
+						.target = visibleRect,
 						.link = std::move(state.link),
 					});
 					addedGroupedMedia = true;
@@ -4652,6 +4682,7 @@ void HistoryInner::vimKeymapAddLinkHints(not_null<Element*> view) {
 					addClickPoint(
 						hintItemId,
 						badgePoint,
+						visibleRect,
 						QPoint(0, top) + localGroupCenter);
 					addedGroupedMedia = true;
 				}
@@ -4660,7 +4691,12 @@ void HistoryInner::vimKeymapAddLinkHints(not_null<Element*> view) {
 		if (!addedGroupedMedia && visibleMediaRect.width() >= 24
 			&& visibleMediaRect.height() >= 24) {
 			if (const auto photo = media->getPhoto()) {
-				addMedia(itemId, mediaBadgePoint, photo, nullptr);
+				addMedia(
+					itemId,
+					mediaBadgePoint,
+					visibleMediaRect,
+					photo,
+					nullptr);
 			}
 		}
 		if (const auto document = media->getDocument()) {
@@ -4694,13 +4730,18 @@ void HistoryInner::vimKeymapAddLinkHints(not_null<Element*> view) {
 						!visibleMediaRect.isEmpty(),
 						added,
 						directLink != nullptr)) {
-					add(directLink, mediaBadgePoint);
+					add(directLink, mediaBadgePoint, visibleMediaRect);
 				}
 			} else if (document->isVideoFile()
 				|| document->isAnimation()) {
 				if (!addedGroupedMedia && visibleMediaRect.width() >= 24
 					&& visibleMediaRect.height() >= 24) {
-					addMedia(itemId, mediaBadgePoint, nullptr, document);
+					addMedia(
+						itemId,
+						mediaBadgePoint,
+						visibleMediaRect,
+						nullptr,
+						document);
 				}
 			} else if (document->sticker()) {
 				auto request = StateRequest();
@@ -4713,7 +4754,7 @@ void HistoryInner::vimKeymapAddLinkHints(not_null<Element*> view) {
 						true,
 						!visibleMediaRect.isEmpty(),
 						state.link != nullptr)) {
-					add(state.link, mediaBadgePoint);
+					add(state.link, mediaBadgePoint, visibleMediaRect);
 				}
 			}
 		}
@@ -4752,15 +4793,27 @@ void HistoryInner::vimKeymapAddLinkHints(not_null<Element*> view) {
 	}
 	auto request = StateRequest();
 	request.onlyMessageText = !item->isService();
+	const auto forwarded = item->Get<HistoryMessageForwarded>();
+	const auto reply = view->Get<HistoryView::Reply>();
+	const auto via = item->Get<HistoryMessageVia>();
 	const auto fromY = std::max(0, _visibleAreaTop - top);
 	const auto tillY = std::min(view->height(), _visibleAreaBottom - top);
-	for (auto y = fromY; y < tillY; y += 18) {
-		for (auto x = 0; x < width(); x += 24) {
+	for (auto y = fromY; y < tillY; y += st::vimHintScanStep.height()) {
+		for (auto x = 0; x < width(); x += st::vimHintScanStep.width()) {
 			const auto state = view->textState(QPoint(x, y), request);
+			const auto forwardedRange = (state.link && forwarded)
+				? forwarded->text.linkRangeFor(state.link)
+				: TextSelection();
+			const auto headerLink = state.link
+				&& ((reply && state.link == reply->link())
+					|| (via && state.link == via->link)
+					|| (forwardedRange.from < forwardedRange.to)
+					|| !visibleMediaRect.contains(QPoint(x, top + y)));
 			if (Core::VimKeymap::ShouldAddScannedLinkHint(
 					item->isService(),
 					state.link != nullptr,
-					state.overMessageText)) {
+					state.overMessageText)
+				|| headerLink) {
 				add(state.link, QPoint(x, top + y));
 			}
 		}
@@ -4915,7 +4968,7 @@ void HistoryInner::vimKeymapPaintHints(Painter &p) const {
 	auto badges = std::vector<Core::VimKeymap::HintBadge>();
 	badges.reserve(_vimKeymapHints.size());
 	for (const auto &hint : _vimKeymapHints) {
-		badges.push_back({ hint.label, hint.badge.topLeft() });
+		badges.push_back({ hint.label, hint.badge.topLeft(), hint.target });
 	}
 	const auto margin = st::vimHintMargin;
 	Core::VimKeymap::PaintHintBadges(

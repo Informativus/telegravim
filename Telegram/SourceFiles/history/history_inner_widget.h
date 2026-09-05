@@ -604,6 +604,7 @@ private:
 		QString label;
 		FullMsgId itemId;
 		QRect badge;
+		QRect target;
 		ClickHandlerPtr link;
 		PhotoData *photo = nullptr;
 		DocumentData *document = nullptr;
@@ -615,6 +616,7 @@ private:
 	void vimKeymapBuildLinkHints(not_null<Element*> view);
 	void vimKeymapBuildVisibleLinkHints();
 	void vimKeymapAddLinkHints(not_null<Element*> view);
+	void vimKeymapAddUserpicHints(Element *onlyView = nullptr);
 	void vimKeymapAssignHintLabels();
 	[[nodiscard]] bool vimKeymapTriggerHint(const VimKeymapHint &hint);
 	void vimKeymapPaintHints(Painter &p) const;

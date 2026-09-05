@@ -6437,7 +6437,7 @@ QRect Message::innerGeometry() const {
 }
 
 QPoint Message::mediaTopLeft() const {
-	return _lastMediaPosition;
+	return drawBubble() ? _lastMediaPosition : countGeometry().topLeft();
 }
 
 bool Message::isCommentsRootView() const {

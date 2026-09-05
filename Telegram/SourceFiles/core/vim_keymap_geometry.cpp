@@ -15,10 +15,41 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace Core::VimKeymap {
 
+QRect LinkHintTargetRect(
+		QPoint hit,
+		QRect bounds,
+		Fn<bool(QPoint)> matches) {
+	if (!bounds.contains(hit) || !matches(hit)) {
+		return {};
+	}
+	auto left = hit.x();
+	auto right = left;
+	auto top = hit.y();
+	auto bottom = top;
+	while (left > bounds.left() && matches({ left - 1, hit.y() })) {
+		--left;
+	}
+	while (right < bounds.right() && matches({ right + 1, hit.y() })) {
+		++right;
+	}
+	const auto rowMatches = [&](int y) {
+		return matches({ left, y }) && matches({ right, y });
+	};
+	while (top > bounds.top() && rowMatches(top - 1)) {
+		--top;
+	}
+	while (bottom < bounds.bottom() && rowMatches(bottom + 1)) {
+		++bottom;
+	}
+	return QRect(QPoint(left, top), QPoint(right, bottom));
+}
+
 std::vector<QRect> LayoutHintBadges(
 		const std::vector<QRect> &desired,
 		QRect bounds,
-		int gap) {
+		int gap,
+		const std::vector<QRect> &targets) {
+	Expects(targets.empty() || targets.size() == desired.size());
 	auto result = std::vector<QRect>();
 	result.reserve(desired.size());
 	gap = std::max(gap, 0);
@@ -29,10 +60,28 @@ std::vector<QRect> LayoutHintBadges(
 			result.emplace_back();
 			continue;
 		}
-		const auto maxX = bounds.right() - rect.width() + 1;
-		const auto maxY = bounds.bottom() - rect.height() + 1;
-		rect.moveLeft(std::clamp(rect.x(), bounds.left(), maxX));
-		rect.moveTop(std::clamp(rect.y(), bounds.top(), maxY));
+		auto minX = bounds.left();
+		auto minY = bounds.top();
+		auto maxX = bounds.right() - rect.width() + 1;
+		auto maxY = bounds.bottom() - rect.height() + 1;
+		if (!targets.empty() && !targets[result.size()].isNull()) {
+			const auto target = targets[result.size()].intersected(bounds);
+			if (target.isEmpty()) {
+				result.emplace_back();
+				continue;
+			}
+			const auto center = QRect(QPoint(), rect.size()).center();
+			minX = std::max(minX, target.left() - center.x());
+			maxX = std::min(maxX, target.right() - center.x());
+			minY = std::max(minY, target.top() - center.y());
+			maxY = std::min(maxY, target.bottom() - center.y());
+		}
+		if (minX > maxX || minY > maxY) {
+			result.emplace_back();
+			continue;
+		}
+		rect.moveLeft(std::clamp(rect.x(), minX, maxX));
+		rect.moveTop(std::clamp(rect.y(), minY, maxY));
 		const auto free = [&](QRect candidate) {
 			return std::ranges::none_of(result, [&](QRect placed) {
 				return !placed.isEmpty()
@@ -44,13 +93,13 @@ std::vector<QRect> LayoutHintBadges(
 			result.push_back(rect);
 			continue;
 		}
-		auto rows = std::vector<int>{ rect.y(), bounds.top(), maxY };
+		auto rows = std::vector<int>{ rect.y(), minY, maxY };
 		for (const auto placed : result) {
 			if (!placed.isEmpty()) {
 				rows.push_back(std::clamp(
-					placed.top() - gap - rect.height(), bounds.top(), maxY));
+					placed.top() - gap - rect.height(), minY, maxY));
 				rows.push_back(std::clamp(
-					placed.bottom() + gap + 1, bounds.top(), maxY));
+					placed.bottom() + gap + 1, minY, maxY));
 			}
 		}
 		std::ranges::sort(rows);
@@ -83,7 +132,7 @@ std::vector<QRect> LayoutHintBadges(
 					best = QRect(QPoint(x, y), rect.size());
 				}
 			};
-			auto left = bounds.left();
+			auto left = minX;
 			for (const auto &[from, till] : blocked) {
 				consider(left, std::min(maxX, from - 1));
 				left = std::max(left, till + 1);
@@ -107,17 +156,19 @@ void PaintHintBadges(
 	const auto metrics = QFontMetrics(font);
 	auto labels = std::vector<QString>();
 	auto desired = std::vector<QRect>();
+	auto targets = std::vector<QRect>();
 	for (const auto &hint : hints) {
 		if (!hint.label.startsWith(prefix)) {
 			continue;
 		}
 		const auto remaining = hint.label.mid(prefix.size());
 		labels.push_back(remaining.isEmpty() ? hint.label : remaining);
+		targets.push_back(hint.target);
 		desired.emplace_back(hint.anchor, QSize(
 			metrics.horizontalAdvance(labels.back()) + 2 * padding.width(),
 			metrics.height() + 2 * padding.height()));
 	}
-	const auto rects = LayoutHintBadges(desired, bounds, gap);
+	const auto rects = LayoutHintBadges(desired, bounds, gap, targets);
 	p.save();
 	p.setClipRect(bounds, Qt::IntersectClip);
 	p.setFont(font);
