@@ -1,2 +1,7 @@
 [extend]
 useDefault = true
+
+[[allowlists]]
+description = "Official Telegram public CI API hash; upstream 80158983dba09d3bf5d96701f21473d6c34bf5f5"
+regexTarget = "match"
+regexes = ['TDESKTOP_API_HASH=d524b414d21f4d37f08684c1df41ac9c']

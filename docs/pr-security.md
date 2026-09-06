@@ -11,7 +11,9 @@ policy commit. Only GitHub-hosted runners are used.
 - Gitleaks scans the complete bounded PR diff and introduced commit patches,
   including secrets added and later removed. The trusted configuration disables
   contributor allow comments and ignore files. Findings and scanner output are
-  not printed, to avoid exposing credentials.
+  not printed, to avoid exposing credentials. One exact public Telegram CI API
+  hash is allowlisted after comparison with the official upstream commit recorded
+  in `gitleaks.toml`; other API hashes remain checked.
 - Actionlint validates changed active workflows. Zizmor checks their security with
   contributor configuration and inline suppressions disabled. Its generic
   `dangerous-triggers` finding is accepted only for this policy's exact

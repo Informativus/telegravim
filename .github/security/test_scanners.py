@@ -36,6 +36,26 @@ class ScannerBoundaryTests(unittest.TestCase):
                     sample.encode(),
                 )
 
+    def test_another_api_hash_is_not_covered_by_public_upstream_exception(self):
+        sample = b"TDESKTOP_API_HASH=" + b"97bd52a0e38fc614b8ca29065d47ef13"
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(guard.GuardError):
+                guard.scanner(
+                    Path(directory),
+                    "gitleaks",
+                    [
+                        "stdin",
+                        "--config",
+                        str(guard.HERE / "gitleaks.toml"),
+                        "--gitleaks-ignore-path",
+                        "/dev/null",
+                        "--ignore-gitleaks-allow",
+                        "--redact=100",
+                        "--no-banner",
+                    ],
+                    sample,
+                )
+
     def test_zizmor_inline_suppression_and_pr_config_are_ignored(self):
         content = """name: Test
 on: pull_request_target # zizmor: ignore[dangerous-triggers]
