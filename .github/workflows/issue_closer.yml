@@ -9,6 +9,6 @@ jobs:
     runs-on: ubuntu-slim
     steps:
       - name: Process an issue.
-        uses: desktop-app/action_issue_closer@master
+        uses: desktop-app/action_issue_closer@b2fc72db6cc262c8e84e10740c44296ec4be2e02 # master
         with:
           token: ${{ secrets.GITHUB_TOKEN }}

@@ -20,6 +20,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/external_control.h"
 #include "core/launcher.h"
 #include "core/local_url_handlers.h"
+#include "core/local_socket_security.h"
 #include "core/update_checker.h"
 #include "core/deadlock_detector.h"
 #include "base/timer.h"
@@ -112,6 +113,8 @@ int Sandbox::start() {
 #if defined Q_OS_LINUX && QT_VERSION >= QT_VERSION_CHECK(6, 2, 0)
 	_localServer.setSocketOptions(QLocalServer::AbstractNamespaceOption);
 	_localSocket.setSocketOptions(QLocalSocket::AbstractNamespaceOption);
+#else
+	_localServer.setSocketOptions(QLocalServer::UserAccessOption);
 #endif // Q_OS_LINUX && Qt >= 6.2.0
 
 	connect(
@@ -496,6 +499,11 @@ void Sandbox::socketDisconnected() {
 void Sandbox::newInstanceConnected() {
 	DEBUG_LOG(("Sandbox Info: new local socket connected"));
 	for (auto client = _localServer.nextPendingConnection(); client; client = _localServer.nextPendingConnection()) {
+		if (!LocalSocketPeerAllowed(client)) {
+			client->abort();
+			client->deleteLater();
+			continue;
+		}
 		_localClients.push_back(LocalClient(client, QByteArray()));
 		connect(
 			client,
@@ -757,7 +765,9 @@ uint64 Sandbox::execExternal(const QString &cmd) {
 			return Platform::ActivationWindowId(window);
 		}
 	} else if (cmd == "quit") {
-		Quit();
+		QMetaObject::invokeMethod(this, [] {
+			Quit();
+		}, Qt::QueuedConnection);
 	}
 	return 0;
 }

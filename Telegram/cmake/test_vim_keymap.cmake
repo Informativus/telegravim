@@ -19,6 +19,10 @@ target_compile_definitions(test_vim_keymap PRIVATE
 
 nice_target_sources(test_vim_keymap ${src_loc}
 PRIVATE
+    core/vim_keymap_log.cpp
+    core/vim_keymap_log.h
+    core/local_socket_security.cpp
+    core/local_socket_security.h
     core/vim_keymap_bindings.cpp
     core/vim_keymap_bindings.h
     core/vim_keymap_options.cpp
@@ -33,6 +37,7 @@ PRIVATE
     core/vim_keymap_widgets.h
     tests/test_vim_keymap.cpp
     tests/vim_config_tests.h
+    tests/vim_security_tests.h
     tests/vim_focus_labels_tests.h
     ui/widgets/continuous_sliders.cpp
     ui/widgets/continuous_sliders.h

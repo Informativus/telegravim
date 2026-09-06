@@ -565,6 +565,11 @@ ListWidget::ListWidget(
 		[=] { mouseActionUpdate(QCursor::pos()); setCursor(_cursor); },
 		[=] { return window()->isActiveWindow(); })
 , _vimKeymapScrollTimer([=] { vimKeymapScrollTick(); }) {
+	Core::App().passcodeLockChanges() | rpl::on_next([=](bool locked) {
+		if (locked) {
+			_vimKeymapPhotoCopyLifetime.destroy();
+		}
+	}, lifetime());
 	setAttribute(Qt::WA_AcceptTouchEvents);
 	setMouseTracking(true);
 	setAccessibleName(tr::lng_sr_message_list(tr::now));
@@ -3661,6 +3666,11 @@ bool ListWidget::vimKeymapCopyTarget() {
 				return media->loaded();
 			}) | rpl::take(1) | rpl::on_next([=] {
 				const auto current = session().data().message(id);
+				const auto currentMedia = current ? current->media() : nullptr;
+				if (Core::App().passcodeLocked()
+					|| !currentMedia || currentMedia->photo() != photo) {
+					return;
+				}
 				if (current && !showCopyMediaRestriction(current)) {
 					media->setToClipboard();
 				}

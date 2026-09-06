@@ -150,5 +150,50 @@ foreach(key IN LISTS keys)
         "\\{ ${key},"
         "Every registered Vim setting must have JSON support and documentation")
 endforeach()
+
+expect(core/vim_keymap.cpp
+    "App\\(\\).passcodeLocked\\(\\) \\|\\| \\(active && active->locked\\(\\)\\)"
+    "Vim dispatch must reject locked application and session windows")
+expect(core/vim_keymap.cpp
+    "KeyLog.setSuppressed\\(wasSuppressed \\|\\| KeyboardInputActive\\(object\\)\\)"
+    "Input privacy must be captured before handlers can move focus")
+expect(core/application.cpp
+    "void Application::lockByPasscode\\(\\) \\{[\n\t ]*VimKeymap::ClearKeyLog\\(\\)"
+    "Locking must clear prior keyboard diagnostics")
+expect(core/application.cpp
+    "void Application::logout\\(Main::Account \\*account\\) \\{[\n\t ]*VimKeymap::ClearKeyLog\\(\\)"
+    "Logout must clear keyboard diagnostics")
+foreach(history IN ITEMS history/history_inner_widget.cpp history/view/history_view_list_widget.cpp)
+    expect(${history}
+        "Core::App\\(\\).passcodeLockChanges\\(\\)[^{]*\\{[^}]*_vimKeymapPhotoCopyLifetime.destroy\\(\\)"
+        "Locking must cancel delayed image copies permanently")
+    expect(${history}
+        "currentMedia->photo\\(\\) != photo"
+        "A changed message must not copy its old photo after download")
+endforeach()
+expect(history/history_inner_widget.cpp
+    "void HistoryInner::viewRemoved[^{]*[{][^}]*}[^{]*[{][^}]*vimKeymapClearHints"
+    "Destroyed message views must invalidate captured hint actions")
+expect(core/external_control.cpp
+    "App\\(\\).passcodeLocked\\(\\)[^{]*\\{[^}]*application is locked"
+    "Local control must not expose settings while locked")
+expect(window/window_session_controller.cpp
+    "item->forbidsSaving\\(\\)[^;]*allowsForwarding"
+    "External viewers must respect protected and expiring media")
+expect(menu/menu_item_download_files.cpp
+    "item->forbidsSaving\\(\\)"
+    "Bulk exports must exclude self-destructing media")
+expect(core/sandbox.cpp
+    "if [(]!LocalSocketPeerAllowed[(]client[)][)] [^{]*[{][^}]*client->abort[(][)];[^}]*continue;"
+    "Unauthenticated local peers must be rejected before command processing")
+expect(core/sandbox.cpp
+    "QLocalServer::UserAccessOption"
+    "Filesystem and Windows local sockets must restrict access to the user")
+expect(core/sandbox.cpp
+    "cmd == \"quit\"[^}]*}[ \t,\n]*Qt::QueuedConnection"
+    "Local quit must finish its socket dispatch before application teardown")
+expect(storage/file_download.cpp
+    "_data.left[(]_loadSize[)]"
+    "Image reads must be bounded by the available byte array")
 get_property(count GLOBAL PROPERTY vim_wiring_count)
 message(STATUS "${count} Vim application wiring checks passed (source-level).")

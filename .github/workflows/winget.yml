@@ -7,13 +7,13 @@ jobs:
     runs-on: windows-latest # action can only be run on windows
     steps:
       - if: github.event.action == 'released'
-        uses: telegramdesktop/winget-releaser@main
+        uses: telegramdesktop/winget-releaser@4ffc7888bffd451b357355dc214d43bb9f23917e # main
         with:
           identifier: Telegram.TelegramDesktop
           installers-regex: 't(setup|portable).*(exe|zip)$'
           token: ${{ secrets.WINGET_TOKEN }}
       - if: github.event.action == 'prereleased'
-        uses: telegramdesktop/winget-releaser@main
+        uses: telegramdesktop/winget-releaser@4ffc7888bffd451b357355dc214d43bb9f23917e # main
         with:
           identifier: Telegram.TelegramDesktop.Beta
           installers-regex: 't(setup|portable).*(exe|zip)$'
