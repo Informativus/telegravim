@@ -28,6 +28,17 @@ These rules supersede the old `vim-keymap` branch and rebase workflow in
 historical fork plans. The separate `ai-tdesktop` task repository retains its
 own branch rules.
 
+## Local project layout
+
+Keep auxiliary Telegravim data inside the primary checkout's ignored `.local/`
+directory: task worktrees under `.local/worktrees/`, Wiki checkout and drafts
+under `.local/wiki/`, and local repository backups under `.local/backups/`.
+Do not create sibling task checkouts, Wiki folders, or backups in `Projects/`.
+Use `git worktree move` when relocating a registered worktree and update local
+remote paths when moving a backup. The existing `../Libraries` and
+`../ThirdParty` dependency paths belong to the build layout below; relocating
+them requires a separate build-path migration.
+
 ## Working from Codex on Windows + WSL
 
 This checkout may be opened in Codex Desktop through the Windows UNC path `\\wsl.localhost\{distro}\home\{user}\Telegram\tdesktop`, while the real Linux path is `/home/{user}/Telegram/tdesktop`. Treat it as a WSL/Linux checkout first, not as a native Windows checkout.

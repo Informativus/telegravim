@@ -1,0 +1,6 @@
+name: Telegravim security and quality
+queries:
+  - uses: security-and-quality
+paths-ignore:
+  - Telegram/ThirdParty
+  - .github/upstream-workflows
