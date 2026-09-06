@@ -299,3 +299,44 @@ class EnvironmentTests(unittest.TestCase):
         environment["protection_rules"][0]["prevent_self_review"] = True
         with self.assertRaises(guard.GuardError):
             self.verify(environment)
+
+
+class ExportScopeTests(unittest.TestCase):
+    def setUp(self):
+        self.entries = {
+            "Telegram/SourceFiles/a.cpp": ("100644", "a" * 40),
+            "Telegram/SourceFiles/b.cpp": ("100644", "b" * 40),
+            "Telegram/SourceFiles/common.h": ("100644", "c" * 40),
+            "Telegram/SourceFiles/nested.h": ("100644", "d" * 40),
+        }
+        self.blobs = {
+            "a" * 40: b'#include "common.h"\n',
+            "b" * 40: b"int b;",
+            "c" * 40: b'#include "nested.h"\n',
+            "d" * 40: b"int helper();",
+        }
+
+    def paths(self, changed):
+        with (
+            patch.object(guard, "tree", return_value=self.entries),
+            patch.object(
+                guard,
+                "read_blob",
+                side_effect=lambda repo, blob, limit: self.blobs[blob],
+            ),
+        ):
+            return guard.export_paths(Path("/unused"), "a" * 40, changed)[0]
+
+    def test_changed_translation_unit_keeps_recursive_headers(self):
+        result = self.paths(["Telegram/SourceFiles/a.cpp"])
+        self.assertEqual(
+            set(result), set(self.entries) - {"Telegram/SourceFiles/b.cpp"}
+        )
+
+    def test_header_and_build_changes_retain_complete_tree(self):
+        for path in ["Telegram/SourceFiles/common.h", "CMakeLists.txt", ".gitmodules"]:
+            with self.subTest(path=path):
+                self.assertEqual(self.paths([path]), self.entries)
+
+    def test_deleted_translation_unit_falls_back_to_full_tree(self):
+        self.assertEqual(self.paths(["Telegram/SourceFiles/deleted.cpp"]), self.entries)
