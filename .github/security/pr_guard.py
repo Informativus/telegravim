@@ -5,6 +5,7 @@ import difflib
 import html
 import json
 import os
+import posixpath
 from pathlib import Path, PurePosixPath
 import re
 import subprocess
@@ -39,6 +40,7 @@ SOURCE_SUFFIXES = {
     ".m",
     ".mm",
 }
+HEADER_SUFFIXES = {".h", ".hh", ".hpp", ".hxx"}
 DOCUMENT_NAMES = {"README.md", "LICENSE", "NOTICE", "LEGAL", "COPYING"}
 
 
@@ -539,16 +541,62 @@ def inspect(repo: Path, root: Path, head: str, merge_base: str, upstream: str) -
     }
 
 
-def export_source(repo: Path, root: Path, head: str):
-    total, count = 0, 0
-    for path, (mode, blob) in tree(repo, head).items():
-        if (
-            mode not in {"100644", "100755"}
-            or PurePosixPath(path).suffix not in SOURCE_SUFFIXES
+def export_paths(repo: Path, head: str, changed: list[str]):
+    entries = {
+        path: value
+        for path, value in tree(repo, head).items()
+        if value[0] in {"100644", "100755"}
+        and PurePosixPath(path).suffix in SOURCE_SUFFIXES
+        and not path.startswith("Telegram/ThirdParty/")
+    }
+    relevant = [
+        path
+        for path in changed
+        if not documentation(path, "100644")
+        and (
+            not path.startswith(".github/")
+            or PurePosixPath(path).suffix in SOURCE_SUFFIXES
+        )
+    ]
+    narrow = (
+        relevant
+        and all(
+            PurePosixPath(path).suffix in SOURCE_SUFFIXES - HEADER_SUFFIXES
+            for path in relevant
+        )
+        and any(path in entries for path in relevant)
+    )
+    if not narrow:
+        return entries, "full source tree"
+    suffixes = {}
+    for path in entries:
+        parts = PurePosixPath(path).parts
+        for index in range(len(parts)):
+            suffixes.setdefault("/".join(parts[index:]), set()).add(path)
+    selected = {path for path in relevant if path in entries}
+    pending = list(selected)
+    while pending:
+        path = pending.pop()
+        content = read_blob(repo, entries[path][1], 10_000_000).decode(
+            "utf-8", errors="replace"
+        )
+        for include in re.findall(
+            r'^\s*#\s*include\s*[<"]([^">]+)[">]', content, re.MULTILINE
         ):
-            continue
-        if path.startswith("Telegram/ThirdParty/"):
-            continue
+            local = posixpath.normpath(str(PurePosixPath(path).parent / include))
+            candidates = {local} if local in entries else suffixes.get(include, set())
+            for candidate in candidates - selected:
+                selected.add(candidate)
+                pending.append(candidate)
+    return {
+        path: entries[path] for path in sorted(selected)
+    }, "changed translation units and included source files"
+
+
+def export_source(repo: Path, root: Path, head: str, changed: list[str]):
+    entries, scope = export_paths(repo, head, changed)
+    total, count = 0, 0
+    for path, (mode, blob) in entries.items():
         destination = root / "source" / safe_path(path)
         data = read_blob(repo, blob, 10_000_000)
         count += 1
@@ -559,6 +607,7 @@ def export_source(repo: Path, root: Path, head: str):
         destination.write_bytes(data)
     if not count:
         raise GuardError("No C/C++ source exported; analysis cannot run")
+    print(f"CodeQL scope: {scope}; {count} source files")
 
 
 def codeql_required(changed: list[str]) -> bool:
@@ -642,7 +691,7 @@ def run_audit(api: GitHub, number: int, root: Path):
         output("scan_ok", state["scan_ok"])
         output("codeql_required", codeql_required(state["changed"]))
         if state["scan_ok"] and codeql_required(state["changed"]):
-            export_source(repo, root, head)
+            export_source(repo, root, head, state["changed"])
         elif not state["scan_ok"]:
             api.status(
                 head,

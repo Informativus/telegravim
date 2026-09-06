@@ -22,7 +22,12 @@ policy commit. Only GitHub-hosted runners are used.
   findings and newly introduced privileged workflows still fail the check.
 - `git diff --check` detects whitespace errors and introduced conflict markers.
 - CodeQL runs C/C++ `security-and-quality` analysis with `build-mode: none` on an
-  export containing only regular source files. Warnings and errors in changed
+  export containing only regular source files. For changes confined to translation
+  units (.c/.cpp/.mm), the export includes those files and recursively resolved
+  repository includes; interprocedural behavior in other translation units is not
+  covered by that run. Header/build/dependency changes retain full-tree analysis.
+  Macro-generated or missing external includes still limit no-build extraction.
+  Warnings and errors in changed
   files fail the gate; findings in untouched files remain in the SARIF artifact.
   This is source analysis, not a build or runtime test. Generated sources,
   submodule contents, bundled third-party code, Objective-C-specific behavior,
