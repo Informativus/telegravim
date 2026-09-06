@@ -299,7 +299,7 @@ Selector::Selector(
 , _skipy((st::reactStripHeight - st::reactStripSize) / 2) {
 	setMouseTracking(true);
 	Core::VimKeymap::RegisterKeyHandler(this, [=](not_null<QKeyEvent*> e) {
-		return _keyboardNavigation && isVisible() && handleKeyboardNavigation(e);
+		return isVisible() && handleKeyboardNavigation(e);
 	});
 
 	if (_about) {
@@ -968,6 +968,15 @@ void Selector::startKeyboardNavigation() {
 
 bool Selector::handleKeyboardNavigation(not_null<QKeyEvent*> e) {
 	using namespace Core::VimKeymap::Bindings;
+	if (_list && _expandFinished && Matches(u"Ctrl+F, Ctrl+\u0430"_q, e)) {
+		if (!_list->vimKeymapFocusSearch()) {
+			return false;
+		}
+		_keyboardNavigation = true;
+		return true;
+	} else if (!_keyboardNavigation) {
+		return false;
+	}
 	const auto tab = TabNavigationDelta(e);
 	if (tab && _list && _expandFinished) {
 		if (Core::VimKeymap::KeyboardScopeHasTextInput(this, nullptr)) {
