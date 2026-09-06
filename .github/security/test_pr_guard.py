@@ -2,7 +2,6 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
 
 import pr_guard as guard
 
@@ -102,14 +101,6 @@ class BoundaryTests(unittest.TestCase):
             pr = {"head": {"sha": state["head"]}, "base": {"sha": state["base"]}}
             pr[field]["sha"] = "c" * 40
             self.assertFalse(guard.same_snapshot(pr, state))
-
-    def test_missing_key_and_large_diff_do_not_call_provider(self):
-        with patch("urllib.request.urlopen") as request:
-            self.assertIn("unavailable", guard.ai_recommendation({}, "small diff", ""))
-            self.assertIn(
-                "unavailable", guard.ai_recommendation({}, "x" * 60_001, "key")
-            )
-            request.assert_not_called()
 
     def test_comment_output_cannot_inject_marker_or_mention(self):
         text = guard.safe_text("@owner\n<!-- forged -->`x`")

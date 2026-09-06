@@ -6,7 +6,7 @@ initializes its submodules, installs its dependencies, or executes its build scr
 The workflow and Python policy come from `main`. Downstream jobs use that exact
 policy commit. Only GitHub-hosted runners are used.
 
-## Checks and the short AI recommendation
+## Checks
 
 - Gitleaks scans the complete bounded PR diff and introduced commit patches,
   including secrets added and later removed. The trusted configuration disables
@@ -28,24 +28,10 @@ policy commit. Only GitHub-hosted runners are used.
   submodule contents, bundled third-party code, Objective-C-specific behavior,
   and dependency CVEs are not comprehensively covered. Submodule and dependency
   control changes require owner review.
-- OpenAI Responses API returns one short recommendation in Russian in one
-  updated PR comment. The public PR diff is sent only after prechecks pass.
-  No repository tools, GitHub token or shell are available to the model. The
-  reply is screened before posting. Model advice never grants merge approval.
 
-Set the repository secret `OPENAI_API_KEY` to enable AI analysis. Optionally set
-`OPENAI_REVIEW_MODEL`; the default is `gpt-5.4-mini`. Use a project key with a
-budget suitable for public PR traffic. `store: false` disables response storage;
-it is not a promise of zero provider retention. Secret detection is best effort,
-not proof that input contains no sensitive information. Never put credentials in
-PRs. The API key is not included in request content or logs.
-
-The AI request has a 90-second timeout and a 60,000-character complete-diff limit.
-Missing credentials, provider errors, or an oversized diff produce an explicit
-**AI unavailable** sentence. AI availability does not bypass or block deterministic
-checks. Completed recommendations are reused only for the same head, base,
-policy and upstream snapshot. Public PRs can still consume API quota; enforce
-billing limits at the provider.
+No paid AI service, API key, or model review is used. Checks run on standard
+GitHub-hosted Linux runners for this public repository. The PR comment contains
+scanner results and the owner-review requirement.
 
 ## Mandatory owner review
 
@@ -76,7 +62,7 @@ The default is conservative:
    context produce an explicit network-related reason. Unknown code, resources,
    scripts and binary changes say that network effects **cannot be excluded**.
    This deliberately includes more than proven networking changes: textual
-   matching and AI cannot prove that an arbitrary helper has no network effects.
+   matching cannot prove that an arbitrary helper has no network effects.
 
 New commits require a new approval. The final status checks the live PR head,
 base and policy SHA again. Branch protection must require an up-to-date branch;
@@ -106,16 +92,15 @@ activate checks or protect merging. Bootstrap once, in this order:
 2. In Settings → Environments, create `network-review` with the exact protection
    above. Leave deployment branch restrictions unrestricted: the workflow runs
    on the protected PR base, and reviewer protection supplies the authorization.
-3. Add `OPENAI_API_KEY` in Settings → Secrets and variables → Actions.
-4. Enable GitHub Actions. `.github/upstream-workflows/` is an inert archive, not
+3. Enable GitHub Actions. `.github/upstream-workflows/` is an inert archive, not
    an Actions directory; the old upstream builds, publishers and issue bots must
    stay there unless individually adapted and reviewed.
-5. Open a small PR and run the workflow. Verify a real AI sentence, the CodeQL
-   result, and a blocked owner-review environment for a custom network change.
+4. Open a small PR and run the workflow. Verify the CodeQL result and a blocked
+   owner-review environment for a custom network change.
    Only Informativus should be able to approve it. Push another commit and verify
    that approval is requested again. A documentation-only PR should require no
    network approval. Fork PRs must also be tested as read-only source inputs.
-6. Add these **required status checks** to both protected branches, retain all
+5. Add these **required status checks** to both protected branches, retain all
    existing protections, enable **Require branches to be up to date before
    merging**, and keep administrator enforcement enabled:
 
@@ -172,8 +157,8 @@ paths, stale approvals, scanner suppression and removed secrets.
 
 ## Design decisions
 
-The implementation uses deterministic checks plus advisory AI. AI-only network
-classification was rejected because prompt injection and missed helper calls
+The implementation uses deterministic checks without a paid AI service.
+Network-only textual classification was rejected because missed helper calls
 could waive a mandatory review. Blanket CODEOWNERS approval was rejected because
 it cannot cover arbitrary new files reliably and cannot approve Ivan's own PRs.
 A protected environment gives an explicit owner action without parsing mutable

@@ -60,14 +60,6 @@ jobs:
           CONTROL_SHA: ${{ steps.control.outputs.sha }}
           SCANNER_BIN: ${{ runner.temp }}/pr-scanners
         run: python3 .github/security/pr_guard.py audit
-      - name: Publish one short AI recommendation
-        if: steps.audit.outputs.scan_ok == 'true'
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_REVIEW_MODEL: ${{ vars.OPENAI_REVIEW_MODEL }}
-          SCANNER_BIN: ${{ runner.temp }}/pr-scanners
-        run: python3 .github/security/pr_guard.py ai
       - name: Copy non-secret inspection metadata
         if: steps.audit.outputs.scan_ok == 'true'
         run: cp "$RUNNER_TEMP/pr-inspection/state.json" "$RUNNER_TEMP/pr-inspection/source/inspection-state.json"
