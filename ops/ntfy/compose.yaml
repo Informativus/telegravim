@@ -1,0 +1,65 @@
+name: notify
+
+services:
+  ntfy:
+    image: binwiederhier/ntfy:v2.28.0@sha256:6ef4b819f722fccdc036af611c4774cfdc2de821ab74fdd48bbf4c9d6f8973da
+    command: [serve]
+    user: "${SERVICE_UID:?Set SERVICE_UID}:${SERVICE_GID:?Set SERVICE_GID}"
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    cpus: 0.50
+    pids_limit: 128
+    volumes:
+      - ./config/server.yml:/etc/ntfy/server.yml:ro
+      - ./data/ntfy:/var/lib/ntfy
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    networks: [notify]
+    healthcheck:
+      test: [CMD, wget, -q, --spider, http://localhost:8080/v1/health]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    logging:
+      driver: local
+      options:
+        max-size: 5m
+        max-file: "3"
+
+  caddy:
+    image: caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
+    user: "${SERVICE_UID:?Set SERVICE_UID}:${SERVICE_GID:?Set SERVICE_GID}"
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 192m
+    cpus: 0.25
+    pids_limit: 128
+    environment:
+      NOTIFY_DOMAIN: "${NOTIFY_DOMAIN:?Set NOTIFY_DOMAIN}"
+    ports:
+      - "443:8443/tcp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./data/caddy:/data
+      - ./data/caddy-config:/config
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    networks: [notify]
+    depends_on:
+      ntfy:
+        condition: service_healthy
+    logging:
+      driver: local
+      options:
+        max-size: 5m
+        max-file: "3"
+
+networks:
+  notify: {}
