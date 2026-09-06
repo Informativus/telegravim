@@ -45,6 +45,24 @@ class ClassificationTests(unittest.TestCase):
             "Network-related", self.classify(before=b"QNetworkAccessManager manager;")
         )
 
+    def test_unchanged_copyright_url_does_not_claim_network_code(self):
+        header = b"// https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL\n"
+        self.assertIn(
+            "cannot be excluded",
+            self.classify(
+                before=header + b"int value = 1;", after=header + b"int value = 2;"
+            ),
+        )
+
+    def test_changed_endpoint_is_explicitly_network_related(self):
+        self.assertIn(
+            "Network-related",
+            self.classify(
+                before=b'auto url = "https://old.example";',
+                after=b'auto url = "https://new.example";',
+            ),
+        )
+
     def test_custom_code_without_detectable_network_fails_closed(self):
         self.assertIn("cannot be excluded", self.classify(after=b"opaqueHelper();"))
 
@@ -101,6 +119,25 @@ class BoundaryTests(unittest.TestCase):
             pr = {"head": {"sha": state["head"]}, "base": {"sha": state["base"]}}
             pr[field]["sha"] = "c" * 40
             self.assertFalse(guard.same_snapshot(pr, state))
+
+    def test_current_pr_uses_live_branch_tip_instead_of_stale_pr_base(self):
+        class API:
+            def repo(self, suffix):
+                if suffix == "pulls/11":
+                    return {
+                        "state": "open",
+                        "head": {"sha": "a" * 40},
+                        "base": {
+                            "ref": "develop",
+                            "sha": "b" * 40,
+                            "repo": {"full_name": guard.POLICY["repository"]},
+                        },
+                    }
+                if suffix == "branches/develop":
+                    return {"commit": {"sha": "c" * 40}}
+                raise AssertionError(suffix)
+
+        self.assertEqual(guard.current_pr(API(), 11)["base"]["sha"], "c" * 40)
 
     def test_comment_output_cannot_inject_marker_or_mention(self):
         text = guard.safe_text("@owner\n<!-- forged -->`x`")
