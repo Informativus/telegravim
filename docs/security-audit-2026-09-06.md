@@ -106,7 +106,7 @@ zlib и четырёх модулей Qt совпадений OSV не полу�
 точных используемых версиях и перенос проверенного upstream-исправления.
 
 Исходные старые библиотеки и установленные файлы LCMS сохранены в:
-`/Users/ivan/Documents/Projects/Libraries/.telegravim-security-backups/20260906T110935Z`.
+`<build-root>/Libraries/.telegravim-security-backups/<backup-timestamp>`.
 Обновлённый `Libraries` общий для соседних checkout, использующих этот путь.
 Собранные archives и headers установлены; внутренние build metadata библиотек
 могут содержать прежние `/tmp` paths и перед их повторной сборкой требуют
