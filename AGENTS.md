@@ -21,7 +21,7 @@ including documentation, dependencies, upstream updates, and agent tasks.
 - Integrate `upstream/dev` on a task branch and submit a PR to `develop`;
   never rebase the shared branches onto upstream.
 - `origin` is `https://github.com/Informativus/telegravim.git`. `upstream`
-  is the official Telegram repository with pushes disabled. In Ivan's local
+  is the official Telegram repository with pushes disabled. In the primary local
   checkout, `backup` is the existing local bare repository, not a PR target.
 
 These rules supersede the old `vim-keymap` branch and rebase workflow in
@@ -38,6 +38,14 @@ Use `git worktree move` when relocating a registered worktree and update local
 remote paths when moving a backup. The existing `../Libraries` and
 `../ThirdParty` dependency paths belong to the build layout below; relocating
 them requires a separate build-path migration.
+
+Keep personal domains, SSH aliases, local usernames and absolute home paths,
+device details, deployment state, and credentials out of tracked files, PR
+descriptions, comments, logs, and Wiki pages. Public examples use reserved
+example domains and generic account names. Keep installation-specific notes
+and configuration under the primary checkout's ignored `.local/private/`
+directory with private filesystem permissions, or on the deployment host.
+Do not publish private recovery bundles or copy them into a source branch.
 
 ## Working from Codex on Windows + WSL
 
@@ -102,7 +110,7 @@ not needed for testing changes. The exception is a final macOS user DMG.
 
 ### macOS user DMG
 
-When code changes are intended for Ivan to install and test on macOS, finish
+When code changes are intended for the user to install and test on macOS, finish
 with a fresh `Telegravim.dmg`; never report completion with an older DMG. To
 avoid the recurring post-update lag from Debug artifacts, build the macOS app
 from `Release`, strip the executable, re-sign the bundle with

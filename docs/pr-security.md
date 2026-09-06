@@ -40,7 +40,7 @@ needed, the PR comment names **@Informativus**, lists the files and reasons, and
 the workflow waits at **REQUIRED — Informativus must review network or custom code**.
 After reading the changes, open the run and select **Review deployments →
 network-review → Approve**. Rejection keeps merging blocked. This also supports
-Ivan's own PRs; GitHub does not permit approving one's own PR as a PR review.
+the owner's own PRs; GitHub does not permit approving one's own PR as a PR review.
 
 The `network-review` environment must have exactly one required reviewer,
 `Informativus`, with self-review allowed and administrator bypass disabled.
@@ -160,7 +160,7 @@ paths, stale approvals, scanner suppression and removed secrets.
 The implementation uses deterministic checks without a paid AI service.
 Network-only textual classification was rejected because missed helper calls
 could waive a mandatory review. Blanket CODEOWNERS approval was rejected because
-it cannot cover arbitrary new files reliably and cannot approve Ivan's own PRs.
+it cannot cover arbitrary new files reliably and cannot approve the owner's own PRs.
 A protected environment gives an explicit owner action without parsing mutable
 approval comments. The conservative unknown-code rule favors missed-risk
 prevention over minimizing the number of manual reviews.

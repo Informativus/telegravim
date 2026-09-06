@@ -40,7 +40,7 @@ diff и ссылок; для поведения приложения нужны 
 
 Проверки PR и порядок их первоначального включения описаны в
 [PR security checks](pr-security.md). После включения они проверяют безопасность,
-публикуют результаты и требуют отдельного подтверждения Ивана для
+публикуют результаты и требуют отдельного подтверждения владельца для
 сетевых изменений вне проверенного Telegram upstream и для неоднозначных
 изменений исполняемого кода. Старые workflow upstream перенесены в
 `.github/upstream-workflows/` и автоматически не запускаются.
@@ -114,13 +114,13 @@ gh pr create --repo Informativus/telegravim --base develop
 репозиторий Telegram. Изменения собственного submodule сначала опубликуйте
 в его репозитории, затем обновите указатель через PR в Telegravim.
 
-## Remotes в локальной рабочей копии Ивана
+## Remotes в локальной рабочей копии
 
 | Remote | Адрес | Назначение |
 | --- | --- | --- |
 | `origin` | `https://github.com/Informativus/telegravim.git` | Рабочие ветки, PR и релизы |
 | `upstream` | `https://github.com/telegramdesktop/tdesktop.git` | Получение обновлений; push URL — `DISABLED` |
-| `backup` | `/Users/ivan/Documents/Projects/telegram-lite-vim/.local/backups/repository.git` | Локальная резервная копия |
+| `backup` | `<checkout>/.local/backups/repository.git` | Локальная резервная копия |
 
 Локальные `main` и `develop` отслеживают одноимённые ветки `origin`.
 Дополнительные рабочие деревья создавайте внутри основного checkout в
