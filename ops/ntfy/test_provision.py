@@ -115,9 +115,11 @@ class ProvisionTests(unittest.TestCase):
 
     def test_prepare_requires_explicit_domain_before_creating_files(self):
         with (
-            patch.object(provision.sys, "argv", [
-                "provision.py", "prepare", "--root", str(self.service)
-            ]),
+            patch.object(
+                provision.sys,
+                "argv",
+                ["provision.py", "prepare", "--root", str(self.service)],
+            ),
             patch.object(provision.sys, "stderr", new_callable=io.StringIO),
             patch.object(provision, "ntfy") as generate,
             self.assertRaises(SystemExit) as error,
