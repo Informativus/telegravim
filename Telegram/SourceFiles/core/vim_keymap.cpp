@@ -1029,6 +1029,7 @@ void ShowHelpBox() {
 			result += selectMessageText
 				+ u" - подсказки для visual-выделения текста сообщения\n"_q;
 			result += reply + u" - подсказки для ответа на сообщение\n"_q;
+			result += u"Shift+R - реакции: метка сообщения, h/j/k/l или стрелки, Enter, Esc\n"_q;
 			result += edit
 				+ u" - подсказки для редактирования своих сообщений\n"_q;
 			result += deleteMessage
@@ -1092,6 +1093,7 @@ void ShowHelpBox() {
 			result += selectMessageText
 				+ u" - show message text visual selection hints\n"_q;
 			result += reply + u" - show reply message hints\n"_q;
+			result += u"Shift+R - reactions: message hint, h/j/k/l or arrows, Enter, Esc\n"_q;
 			result += edit + u" - show edit message hints\n"_q;
 			result += deleteMessage + u" - show delete message hints\n"_q;
 			result += focus
@@ -1780,6 +1782,10 @@ std::optional<Qt::Key> NavigationKey(not_null<QKeyEvent*> e) {
 std::optional<Action> ActionKey(not_null<QKeyEvent*> e) {
 	if (!NormalMode()) {
 		return std::nullopt;
+	} else if (Bindings::Matches(u"Shift+r, Shift+к"_q, e)) {
+		return e->isAutoRepeat()
+			? std::nullopt
+			: std::make_optional(Action::ReactToMessage);
 	} else if (MatchesBindings(VimKeymapKeyCopyMessageOption, e, true)) {
 		return Action::CopyMessage;
 	} else if (ChatPreviewKey(e)) {

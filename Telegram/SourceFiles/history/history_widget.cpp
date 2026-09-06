@@ -9920,7 +9920,11 @@ bool HistoryWidget::vimKeymapHandleComposeTextKey(not_null<QKeyEvent*> e) {
 	const auto stateActive = _vimKeymapComposeOperator
 		|| _vimKeymapComposeVisualMode
 		|| _vimKeymapComposePending;
-	const auto messageAction = Core::VimKeymap::ActionKey(e).has_value();
+	const auto action = Core::VimKeymap::ActionKey(e);
+	if (!stateActive && action == Core::VimKeymap::Action::ReactToMessage) {
+		return false;
+	}
+	const auto messageAction = action.has_value();
 	if (Core::VimKeymap::EmptyComposeDefersToMessageAction(
 			stateActive,
 			_field->empty(),

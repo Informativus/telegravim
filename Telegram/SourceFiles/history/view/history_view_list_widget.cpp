@@ -633,6 +633,8 @@ ListWidget::ListWidget(
 			return vimKeymapShareTarget();
 		case Core::VimKeymap::Action::ReplyToMessage:
 			return vimKeymapReplyToTarget();
+		case Core::VimKeymap::Action::ReactToMessage:
+			return vimKeymapReactToTarget();
 		case Core::VimKeymap::Action::EditMessage:
 			return vimKeymapEditTarget();
 		case Core::VimKeymap::Action::DeleteMessage:
@@ -3715,6 +3717,22 @@ bool ListWidget::vimKeymapReplyToTarget() {
 	return true;
 }
 
+bool ListWidget::vimKeymapReactToTarget() {
+	const auto view = vimKeymapTargetView();
+	if (!view || !view->data()->canReact() || controller()->showFrozenError()) {
+		return false;
+	}
+	const auto bounds = view->innerGeometry().translated(0, itemTop(view))
+		.intersected(QRect(0, _visibleTop, width(), _visibleBottom - _visibleTop));
+	_menu = Reactions::ShowKeyboardSelector(
+		this,
+		controller(),
+		mapToGlobal(bounds.center()),
+		view->data(),
+		[=](ChosenReaction reaction) { reactionChosen(reaction); });
+	return _menu != nullptr;
+}
+
 bool ListWidget::vimKeymapEditTarget() {
 	const auto view = vimKeymapTargetView();
 	if (!view) {
@@ -3859,6 +3877,13 @@ void ListWidget::keyPressEvent(QKeyEvent *e) {
 			return;
 		case Core::VimKeymap::Action::ReplyToMessage:
 			if (vimKeymapReplyToTarget()) {
+				e->accept();
+			} else {
+				e->ignore();
+			}
+			return;
+		case Core::VimKeymap::Action::ReactToMessage:
+			if (vimKeymapReactToTarget()) {
 				e->accept();
 			} else {
 				e->ignore();

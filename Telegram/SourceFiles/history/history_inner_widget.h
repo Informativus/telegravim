@@ -595,6 +595,7 @@ private:
 		CopyMessage,
 		ShareMessage,
 		ReplyToMessage,
+		ReactToMessage,
 		EditMessage,
 		DeleteMessage,
 		SelectMessageText,
@@ -626,6 +627,7 @@ private:
 	void vimKeymapPaintHints(Painter &p) const;
 	[[nodiscard]] bool vimKeymapCopyItem(not_null<HistoryItem*> item);
 	[[nodiscard]] bool vimKeymapReplyToItem(not_null<HistoryItem*> item);
+	[[nodiscard]] bool vimKeymapReactToItem(not_null<HistoryItem*> item);
 	[[nodiscard]] bool vimKeymapEditItem(not_null<HistoryItem*> item);
 	[[nodiscard]] bool vimKeymapDeleteItem(not_null<HistoryItem*> item);
 
