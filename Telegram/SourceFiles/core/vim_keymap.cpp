@@ -1409,6 +1409,9 @@ bool HandleApplicationKeyPress(
 				FocusModalNextPrevChild(scope, delta > 0);
 				e->accept();
 				return true;
+			} else if (!input && HandleRegisteredKey(e, scope)) {
+				e->accept();
+				return true;
 			}
 			return false;
 		}

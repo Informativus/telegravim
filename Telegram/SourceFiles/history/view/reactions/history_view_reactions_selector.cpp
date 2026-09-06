@@ -968,10 +968,11 @@ void Selector::startKeyboardNavigation() {
 
 bool Selector::handleKeyboardNavigation(not_null<QKeyEvent*> e) {
 	using namespace Core::VimKeymap::Bindings;
-	if (CleanModifiers(e) != Qt::NoModifier) {
+	const auto tab = TabNavigationDelta(e);
+	if (!tab && CleanModifiers(e) != Qt::NoModifier) {
 		return false;
 	}
-	const auto dx = (e->key() == Qt::Key_Left
+	const auto dx = tab ? tab : (e->key() == Qt::Key_Left
 			|| KeyIs(e, Qt::Key_H, u"h"_q, u"р"_q)) ? -1
 		: (e->key() == Qt::Key_Right
 			|| KeyIs(e, Qt::Key_L, u"l"_q, u"д"_q)) ? 1 : 0;
