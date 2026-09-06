@@ -2,6 +2,32 @@
 
 This guide defines repository-wide instructions for coding agents working with the Telegram Desktop codebase.
 
+## Telegravim branches and pull requests
+
+Follow [the branch workflow](docs/branch-flow.md) for all source changes,
+including documentation, dependencies, upstream updates, and agent tasks.
+
+- `main` is the default branch and contains stable releases.
+- `develop` contains integration work and beta versions.
+- Start a separate `feature/*`, `fix/*`, `docs/*`, or `chore/*` branch from
+  current `origin/develop`, then open a pull request into `develop`.
+- Release through a `develop` -> `main` pull request using a merge commit.
+  Never squash or rebase this merge. Publishing a release is a separate step
+  that requires a release request; merging documentation does not publish one.
+- Never commit or push directly to `main` or `develop`, force-push either
+  branch, bypass their protection, or replace PRs with local integration merges.
+- Create stable release tags from the merged `main` commit. Create beta tags
+  from `develop` and mark GitHub beta releases as prereleases.
+- Integrate `upstream/dev` on a task branch and submit a PR to `develop`;
+  never rebase the shared branches onto upstream.
+- `origin` is `https://github.com/Informativus/telegravim.git`. `upstream`
+  is the official Telegram repository with pushes disabled. In Ivan's local
+  checkout, `backup` is the existing local bare repository, not a PR target.
+
+These rules supersede the old `vim-keymap` branch and rebase workflow in
+historical fork plans. The separate `ai-tdesktop` task repository retains its
+own branch rules.
+
 ## Working from Codex on Windows + WSL
 
 This checkout may be opened in Codex Desktop through the Windows UNC path `\\wsl.localhost\{distro}\home\{user}\Telegram\tdesktop`, while the real Linux path is `/home/{user}/Telegram/tdesktop`. Treat it as a WSL/Linux checkout first, not as a native Windows checkout.
