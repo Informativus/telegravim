@@ -1521,6 +1521,7 @@ base::unique_qptr<Ui::PopupMenu> ShowKeyboardSelector(
 		return nullptr;
 	}
 	auto menu = base::make_unique_q<Ui::PopupMenu>(parent, st::popupMenuWithIcons);
+	menu->addAction(tr::lng_close(tr::now), [] {});
 	const auto result = AttachSelectorToMenu(
 		menu.get(),
 		position,
