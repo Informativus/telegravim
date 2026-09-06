@@ -27,7 +27,9 @@ policy commit. Only GitHub-hosted runners are used.
   This is source analysis, not a build or runtime test. Generated sources,
   submodule contents, bundled third-party code, Objective-C-specific behavior,
   and dependency CVEs are not comprehensively covered. Submodule and dependency
-  control changes require owner review.
+  control changes require owner review. PRs confined to documentation and CI
+  configuration skip C/C++ analysis only when no C/C++ source changes; their
+  secret/workflow checks and applicable owner approval remain required.
 
 No paid AI service, API key, or model review is used. Checks run on standard
 GitHub-hosted Linux runners for this public repository. The PR comment contains

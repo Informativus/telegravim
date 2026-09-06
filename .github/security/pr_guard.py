@@ -561,6 +561,14 @@ def export_source(repo: Path, root: Path, head: str):
         raise GuardError("No C/C++ source exported; analysis cannot run")
 
 
+def codeql_required(changed: list[str]) -> bool:
+    return any(
+        PurePosixPath(path).suffix in SOURCE_SUFFIXES
+        or (not documentation(path, "100644") and not path.startswith(".github/"))
+        for path in changed
+    )
+
+
 def comment_body(state: dict) -> str:
     if state["reasons"]:
         network = (
@@ -632,9 +640,10 @@ def run_audit(api: GitHub, number: int, root: Path):
                     summary.write(f"- {safe_text(item['path'])}: {item['reason']}\n")
         output("requires_review", bool(state["reasons"]))
         output("scan_ok", state["scan_ok"])
-        if state["scan_ok"]:
+        output("codeql_required", codeql_required(state["changed"]))
+        if state["scan_ok"] and codeql_required(state["changed"]):
             export_source(repo, root, head)
-        else:
+        elif not state["scan_ok"]:
             api.status(
                 head,
                 SECURITY_STATUS,
@@ -678,14 +687,20 @@ def finish(api: GitHub, kind: str):
             else "No owner network approval required"
         )
     else:
-        passed = fresh and all(
-            os.environ.get(name) == "success"
-            for name in ["AUDIT_RESULT", "CODEQL_RESULT"]
+        required = os.environ.get("CODEQL_REQUIRED")
+        analyzed = required == "true" and os.environ.get("CODEQL_RESULT") == "success"
+        exempt = required == "false" and os.environ.get("CODEQL_RESULT") == "skipped"
+        passed = (
+            fresh
+            and os.environ.get("AUDIT_RESULT") == "success"
+            and os.environ.get("SCAN_OK") == "true"
+            and (analyzed or exempt)
         )
-        passed = passed and os.environ.get("SCAN_OK") == "true"
-        context, detail = (
-            SECURITY_STATUS,
-            "Secret, workflow, diff and CodeQL checks passed",
+        context = SECURITY_STATUS
+        detail = (
+            "Secret, workflow, diff and CodeQL checks passed"
+            if analyzed
+            else "Secret, workflow and diff checks passed; C/C++ sources unchanged"
         )
     api.status(
         state["head"],
