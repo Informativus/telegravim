@@ -27,7 +27,9 @@ policy commit. Only GitHub-hosted runners are used.
   This is source analysis, not a build or runtime test. Generated sources,
   submodule contents, bundled third-party code, Objective-C-specific behavior,
   and dependency CVEs are not comprehensively covered. Submodule and dependency
-  control changes require owner review.
+  control changes require owner review. PRs confined to documentation and CI
+  configuration skip C/C++ analysis only when no C/C++ source changes; their
+  secret/workflow checks and applicable owner approval remain required.
 
 No paid AI service, API key, or model review is used. Checks run on standard
 GitHub-hosted Linux runners for this public repository. The PR comment contains
@@ -58,14 +60,15 @@ The default is conservative:
    upstream remotes are never evidence of provenance.
 3. Non-executable Markdown/text under `docs/` and a narrow set of top-level
    documentation files do not require network review.
-4. Other changes require owner review. Network APIs, URLs and existing network
-   context produce an explicit network-related reason. Unknown code, resources,
+4. Other changes require owner review. Network APIs, changed URLs and existing network
+   API context produce an explicit network-related reason. Unknown code, resources,
    scripts and binary changes say that network effects **cannot be excluded**.
    This deliberately includes more than proven networking changes: textual
    matching cannot prove that an arbitrary helper has no network effects.
 
 New commits require a new approval. The final status checks the live PR head,
-base and policy SHA again. Branch protection must require an up-to-date branch;
+base and policy SHA again. The base SHA is read from the live branch API because
+GitHub may retain an older base SHA in the PR object. Branch protection must require an up-to-date branch;
 otherwise a green check could survive a later base advance. Cancellation or
 resource limits never produce success; a cancelled current run may leave a
 pending status and must be rerun. Changing a PR base also starts a fresh run.

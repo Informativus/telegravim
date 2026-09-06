@@ -35,6 +35,7 @@ jobs:
       control: ${{ steps.control.outputs.sha }}
       requires_review: ${{ steps.audit.outputs.requires_review }}
       scan_ok: ${{ steps.audit.outputs.scan_ok }}
+      codeql_required: ${{ steps.audit.outputs.codeql_required }}
     steps:
       - name: Check out trusted policy from the default branch
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -61,10 +62,10 @@ jobs:
           SCANNER_BIN: ${{ runner.temp }}/pr-scanners
         run: python3 .github/security/pr_guard.py audit
       - name: Copy non-secret inspection metadata
-        if: steps.audit.outputs.scan_ok == 'true'
+        if: steps.audit.outputs.scan_ok == 'true' && steps.audit.outputs.codeql_required == 'true'
         run: cp "$RUNNER_TEMP/pr-inspection/state.json" "$RUNNER_TEMP/pr-inspection/source/inspection-state.json"
       - name: Upload inert C and C++ sources for CodeQL
-        if: steps.audit.outputs.scan_ok == 'true'
+        if: steps.audit.outputs.scan_ok == 'true' && steps.audit.outputs.codeql_required == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: inspection-source-${{ github.run_id }}-${{ github.run_attempt }}
@@ -75,7 +76,7 @@ jobs:
   codeql:
     name: CodeQL security and correctness
     needs: inspect
-    if: needs.inspect.outputs.scan_ok == 'true'
+    if: needs.inspect.outputs.scan_ok == 'true' && needs.inspect.outputs.codeql_required == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -177,5 +178,6 @@ jobs:
           CONTROL_SHA: ${{ needs.inspect.outputs.control }}
           AUDIT_RESULT: ${{ needs.inspect.result }}
           CODEQL_RESULT: ${{ needs.codeql.result }}
+          CODEQL_REQUIRED: ${{ needs.inspect.outputs.codeql_required }}
           SCAN_OK: ${{ needs.inspect.outputs.scan_ok }}
         run: python3 .github/security/pr_guard.py finish-security
