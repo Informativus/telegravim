@@ -1034,6 +1034,7 @@ rpl::producer<FullMsgId> Application::floatPlayerClosed() const {
 }
 
 void Application::logout(Main::Account *account) {
+	VimKeymap::ClearKeyLog();
 	if (account) {
 		account->logOut();
 	} else {
@@ -1356,6 +1357,7 @@ void Application::updateWindowTitles() {
 }
 
 void Application::lockByPasscode() {
+	VimKeymap::ClearKeyLog();
 	_passcodeLock = true;
 	enumerateWindows([&](not_null<Window::Controller*> w) {
 		w->setupPasscodeLock();

@@ -45,6 +45,26 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace Core::VimKeymap {
 
+bool KeyboardInputActive(QObject *receiver) {
+	const auto isInput = [](QObject *object) {
+		for (auto current = object; current; current = current->parent()) {
+			if (qobject_cast<QLineEdit*>(current)
+				|| qobject_cast<QTextEdit*>(current)
+				|| qobject_cast<QPlainTextEdit*>(current)
+				|| dynamic_cast<Ui::InputField*>(current)) {
+				return true;
+			} else if (const auto widget = qobject_cast<QWidget*>(current)) {
+				if (widget->inputMethodHints()
+					& (Qt::ImhHiddenText | Qt::ImhSensitiveData)) {
+					return true;
+				}
+			}
+		}
+		return false;
+	};
+	return isInput(receiver) || isInput(QApplication::focusWidget());
+}
+
 bool KeyHandlerInScope(QObject *owner, QWidget *scope) {
 	if (!scope) {
 		return true;

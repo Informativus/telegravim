@@ -445,6 +445,12 @@ HistoryInner::HistoryInner(
 	}, lifetime());
 	Assert(_theme != nullptr);
 
+	Core::App().passcodeLockChanges() | rpl::on_next([=](bool locked) {
+		if (locked) {
+			_vimKeymapPhotoCopyLifetime.destroy();
+			vimKeymapClearHints();
+		}
+	}, lifetime());
 	setAttribute(Qt::WA_AcceptTouchEvents);
 
 	refreshAboutView();
@@ -536,6 +542,7 @@ HistoryInner::HistoryInner(
 	) | rpl::filter([=](not_null<const Element*> view) {
 		return (view == viewByItem(view->data()));
 	}) | rpl::on_next([=](not_null<const Element*> view) {
+		vimKeymapClearHints();
 		markReadMetricsStale();
 		if (view->isUnderCursor()) {
 			mouseActionUpdate();
@@ -545,6 +552,7 @@ HistoryInner::HistoryInner(
 	session().data().itemDataChanges(
 	) | rpl::on_next([=](not_null<HistoryItem*> item) {
 		if (const auto view = viewByItem(item)) {
+			vimKeymapClearHints();
 			view->itemDataChanged();
 		}
 	}, lifetime());
@@ -2611,6 +2619,11 @@ void HistoryInner::performDrag() {
 }
 
 void HistoryInner::itemRemoved(not_null<const HistoryItem*> item) {
+	if (ranges::any_of(_vimKeymapHints, [&](const VimKeymapHint &hint) {
+		return hint.itemId == item->fullId();
+	})) {
+		vimKeymapClearHints();
+	}
 	if (_pinnedItem == item) {
 		_pinnedItem = nullptr;
 	}
@@ -2671,6 +2684,11 @@ void HistoryInner::itemRemoved(not_null<const HistoryItem*> item) {
 }
 
 void HistoryInner::viewRemoved(not_null<const Element*> view) {
+	if (ranges::any_of(_vimKeymapHints, [&](const VimKeymapHint &hint) {
+		return hint.itemId == view->data()->fullId();
+	})) {
+		vimKeymapClearHints();
+	}
 	if (_overlayHost) {
 		_overlayHost->viewGone(view);
 	}
@@ -4207,6 +4225,11 @@ bool HistoryInner::vimKeymapCopyItem(not_null<HistoryItem*> item) {
 				return media->loaded();
 			}) | rpl::take(1) | rpl::on_next([=] {
 				const auto current = session().data().message(id);
+				const auto currentMedia = current ? current->media() : nullptr;
+				if (Core::App().passcodeLocked()
+					|| !currentMedia || currentMedia->photo() != photo) {
+					return;
+				}
 				if (current && !showCopyRestriction(current)
 					&& !showCopyMediaRestriction(current)) {
 					media->setToClipboard();
@@ -4944,6 +4967,12 @@ bool HistoryInner::vimKeymapBeginHints(Core::VimKeymap::Action action) {
 }
 
 bool HistoryInner::vimKeymapTriggerHint(VimKeymapHint hint) {
+	const auto item = hint.itemId ? session().data().message(hint.itemId) : nullptr;
+	if (Core::App().passcodeLocked()
+		|| (hint.itemId && (!item || !viewByItem(item)))) {
+		vimKeymapClearHints();
+		return false;
+	}
 	const auto mode = _vimKeymapHintMode;
 	if (mode == VimKeymapHintMode::ActivateLink) {
 		if (hint.widget) {
@@ -4982,7 +5011,6 @@ bool HistoryInner::vimKeymapTriggerHint(VimKeymapHint hint) {
 		vimKeymapClearHints();
 		return false;
 	}
-	const auto item = session().data().message(hint.itemId);
 	if (!item) {
 		vimKeymapClearHints();
 		return false;
@@ -5682,6 +5710,9 @@ bool HistoryInner::wasSelectedText() const {
 }
 
 void HistoryInner::visibleAreaUpdated(int top, int bottom) {
+	if (_visibleAreaTop != top || _visibleAreaBottom != bottom) {
+		vimKeymapClearHints();
+	}
 	auto scrolledUp = (top < _visibleAreaTop);
 	_visibleAreaTop = top;
 	_visibleAreaBottom = bottom;

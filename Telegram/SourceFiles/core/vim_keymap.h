@@ -95,6 +95,7 @@ enum class ChatNavigation {
 };
 
 [[nodiscard]] bool Enabled();
+void ClearKeyLog();
 [[nodiscard]] bool NormalMode();
 [[nodiscard]] bool EscapeClosesComposer();
 void MigrateLegacyDefaults();

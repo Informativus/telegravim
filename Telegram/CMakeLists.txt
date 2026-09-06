@@ -609,6 +609,10 @@ PRIVATE
     core/vim_keymap_config.cpp
     core/vim_keymap_config.h
     core/vim_keymap.h
+    core/vim_keymap_log.cpp
+    core/vim_keymap_log.h
+    core/local_socket_security.cpp
+    core/local_socket_security.h
     core/vim_keymap_bindings.cpp
     core/vim_keymap_bindings.h
     core/vim_keymap_geometry.cpp

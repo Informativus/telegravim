@@ -8,6 +8,6 @@ jobs:
   User-agent:
     runs-on: ubuntu-slim
     steps:
-      - uses: desktop-app/action_code_updater@master
+      - uses: desktop-app/action_code_updater@0a8d3ebb437e5c77cf5d066d4a54cc93d34b534a # master
         with:
           type: "dev-to-master"

@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "core/vim_keymap.h"
 #include "core/vim_keymap_options.h"
+#include "core/vim_keymap_log.h"
 
 #include "core/vim_keymap_bindings.h"
 #include "core/vim_keymap_geometry.h"
@@ -54,19 +55,12 @@ namespace {
 constexpr auto kHoldScrollTickMs = 16;
 constexpr auto kHoldScrollStartDelayMs = 90;
 constexpr auto kSingleScrollDurationMs = 190;
-constexpr auto kTelegraVimBuild = "2026.09.06-99";
-constexpr auto kKeyLogLimit = 200;
+constexpr auto kTelegraVimBuild = "2026.09.06-100";
 
 bool NormalModeEnabled = false;
 bool LegacyDefaultsMigrated = false;
 
-struct KeyLogEntry {
-	QString text;
-};
-
-std::vector<KeyLogEntry> KeyLog;
-int KeyLogGeneration = 0;
-int KeyLogSequence = 0;
+KeyEventLog KeyLog;
 
 struct ActionHandler {
 	QPointer<QObject> owner;
@@ -106,110 +100,6 @@ QPointer<QWidget> LastKeyboardScope;
 
 [[nodiscard]] QString PlainText(not_null<QKeyEvent*> e) {
 	return e->text().toCaseFolded();
-}
-
-[[nodiscard]] QString MacPhysicalLatinKey(not_null<QKeyEvent*> e) {
-#ifdef Q_OS_MAC
-	switch (e->nativeVirtualKey()) {
-	case 0: return u"A"_q;
-	case 11: return u"B"_q;
-	case 8: return u"C"_q;
-	case 2: return u"D"_q;
-	case 14: return u"E"_q;
-	case 3: return u"F"_q;
-	case 5: return u"G"_q;
-	case 4: return u"H"_q;
-	case 34: return u"I"_q;
-	case 38: return u"J"_q;
-	case 40: return u"K"_q;
-	case 37: return u"L"_q;
-	case 46: return u"M"_q;
-	case 45: return u"N"_q;
-	case 31: return u"O"_q;
-	case 35: return u"P"_q;
-	case 12: return u"Q"_q;
-	case 15: return u"R"_q;
-	case 1: return u"S"_q;
-	case 17: return u"T"_q;
-	case 32: return u"U"_q;
-	case 9: return u"V"_q;
-	case 13: return u"W"_q;
-	case 7: return u"X"_q;
-	case 16: return u"Y"_q;
-	case 6: return u"Z"_q;
-	default: return QString();
-	}
-#else // Q_OS_MAC
-	return QString();
-#endif // Q_OS_MAC
-}
-
-[[nodiscard]] QString SpecialKeyName(not_null<QKeyEvent*> e) {
-	switch (e->key()) {
-	case Qt::Key_Control: return u"Ctrl"_q;
-	case Qt::Key_Shift: return u"Shift"_q;
-	case Qt::Key_Meta: return u"Cmd"_q;
-	case Qt::Key_Alt: return u"Alt"_q;
-	case Qt::Key_AltGr: return u"AltGr"_q;
-	case Qt::Key_Escape: return u"Esc"_q;
-	case Qt::Key_Tab: return u"Tab"_q;
-	case Qt::Key_Backtab: return u"Shift+Tab"_q;
-	case Qt::Key_Return: return u"Return"_q;
-	case Qt::Key_Enter: return u"Enter"_q;
-	case Qt::Key_Space: return u"Space"_q;
-	case Qt::Key_Backspace: return u"Backspace"_q;
-	case Qt::Key_Delete: return u"Delete"_q;
-	case Qt::Key_Up: return u"Up"_q;
-	case Qt::Key_Down: return u"Down"_q;
-	case Qt::Key_Left: return u"Left"_q;
-	case Qt::Key_Right: return u"Right"_q;
-	default: return QString();
-	}
-}
-
-[[nodiscard]] QString KeyNameForLog(not_null<QKeyEvent*> e) {
-	auto key = MacPhysicalLatinKey(e);
-	if (key.isEmpty()) {
-		if (e->key() >= Qt::Key_A && e->key() <= Qt::Key_Z) {
-			key = QString(QChar('A' + e->key() - Qt::Key_A));
-		} else if (e->key() >= Qt::Key_0 && e->key() <= Qt::Key_9) {
-			key = QString(QChar('0' + e->key() - Qt::Key_0));
-		} else {
-			key = SpecialKeyName(e);
-		}
-	}
-	const auto text = PlainText(e);
-	if (key.isEmpty()) {
-		key = text.isEmpty() ? u"key:%1"_q.arg(e->key()) : text;
-	} else if (!text.isEmpty()
-		&& text != key.toCaseFolded()
-		&& text != u" "_q) {
-		key += u"/"_q + text;
-	}
-	return key;
-}
-
-[[nodiscard]] QString KeyEventForLog(not_null<QKeyEvent*> e) {
-	auto parts = QStringList();
-	const auto modifiers = CleanModifiers(e);
-	if (modifiers & Qt::ControlModifier) {
-		parts.push_back(u"Ctrl"_q);
-	}
-	if (modifiers & Qt::MetaModifier) {
-		parts.push_back(u"Cmd"_q);
-	}
-	if (modifiers & Qt::AltModifier) {
-		parts.push_back(u"Alt"_q);
-	}
-	if ((modifiers & Qt::ShiftModifier) && e->key() != Qt::Key_Backtab) {
-		parts.push_back(u"Shift"_q);
-	}
-	parts.push_back(KeyNameForLog(e));
-	auto result = parts.join(u"+"_q);
-	if (e->isAutoRepeat()) {
-		result += u" repeat"_q;
-	}
-	return result;
 }
 
 [[nodiscard]] bool ShouldLogIgnoredKey(not_null<QKeyEvent*> e) {
@@ -254,14 +144,11 @@ void RecordKeyEvent(
 	if (!force && !ShouldLogIgnoredKey(e)) {
 		return;
 	}
-	const auto entry = QString::number(++KeyLogSequence).rightJustified(
-		2,
-		QChar('0')) + u". "_q + KeyEventForLog(e) + u" -> "_q + status;
-	KeyLog.insert(KeyLog.begin(), { entry });
-	if (KeyLog.size() > kKeyLogLimit) {
-		KeyLog.pop_back();
+	if (App().passcodeLocked()) {
+		KeyLog.clear();
+		return;
 	}
-	++KeyLogGeneration;
+	KeyLog.record(e, status);
 }
 
 [[nodiscard]] bool MatchesBindings(
@@ -607,8 +494,9 @@ void CleanupScrollAnimations() {
 	ActionHandlers.erase(
 		std::remove_if(begin(ActionHandlers), end(ActionHandlers), remove),
 		end(ActionHandlers));
-	for (auto i = ActionHandlers.rbegin(); i != ActionHandlers.rend(); ++i) {
-		if (i->handler(action)) {
+	const auto handlers = ActionHandlers;
+	for (auto i = handlers.rbegin(); i != handlers.rend(); ++i) {
+		if (i->owner && i->handler(action)) {
 			return true;
 		}
 	}
@@ -618,6 +506,7 @@ void CleanupScrollAnimations() {
 [[nodiscard]] bool HandleRegisteredKey(
 		not_null<QKeyEvent*> e,
 		QWidget *scope = nullptr) {
+	const auto guardedScope = QPointer<QWidget>(scope);
 	const auto handle = [&](std::vector<KeyHandler> &handlers) {
 		const auto remove = [](const KeyHandler &handler) {
 			return !handler.owner;
@@ -625,12 +514,17 @@ void CleanupScrollAnimations() {
 		handlers.erase(
 			std::remove_if(begin(handlers), end(handlers), remove),
 			end(handlers));
-		for (auto i = handlers.rbegin(); i != handlers.rend(); ++i) {
-			if (KeyHandlerInScope(i->owner, scope) && i->handler(e)) {
+		const auto snapshot = handlers;
+		for (auto i = snapshot.rbegin(); i != snapshot.rend(); ++i) {
+			if (scope && !guardedScope) {
+				return true;
+			} else if (i->owner
+				&& KeyHandlerInScope(i->owner, guardedScope)
+				&& i->handler(e)) {
 				return true;
 			}
 		}
-		return false;
+		return scope && !guardedScope;
 	};
 	return handle(KeyHandlers);
 }
@@ -638,6 +532,7 @@ void CleanupScrollAnimations() {
 [[nodiscard]] bool HandlePreLayerKey(
 		not_null<QKeyEvent*> e,
 		QWidget *scope = nullptr) {
+	const auto guardedScope = QPointer<QWidget>(scope);
 	const auto remove = [](const KeyHandler &handler) {
 		return !handler.owner;
 	};
@@ -647,14 +542,19 @@ void CleanupScrollAnimations() {
 			end(PreLayerKeyHandlers),
 			remove),
 		end(PreLayerKeyHandlers));
-	for (auto i = PreLayerKeyHandlers.rbegin();
-		i != PreLayerKeyHandlers.rend();
+	const auto handlers = PreLayerKeyHandlers;
+	for (auto i = handlers.rbegin();
+		i != handlers.rend();
 		++i) {
-		if (KeyHandlerInScope(i->owner, scope) && i->handler(e)) {
+		if (scope && !guardedScope) {
+			return true;
+		} else if (i->owner
+			&& KeyHandlerInScope(i->owner, guardedScope)
+			&& i->handler(e)) {
 			return true;
 		}
 	}
-	return false;
+	return scope && !guardedScope;
 }
 
 [[nodiscard]] bool TextInputPassthroughRequested(not_null<QKeyEvent*> e) {
@@ -667,10 +567,9 @@ void CleanupScrollAnimations() {
 			end(TextInputPassthroughHandlers),
 			remove),
 		end(TextInputPassthroughHandlers));
-	for (auto i = TextInputPassthroughHandlers.rbegin();
-			i != TextInputPassthroughHandlers.rend();
-			++i) {
-		if (i->handler(e)) {
+	const auto handlers = TextInputPassthroughHandlers;
+	for (auto i = handlers.rbegin(); i != handlers.rend(); ++i) {
+		if (i->owner && i->handler(e)) {
 			return true;
 		}
 	}
@@ -687,8 +586,9 @@ void CleanupScrollAnimations() {
 			end(ForcedNormalModeHandlers),
 			remove),
 		end(ForcedNormalModeHandlers));
-	for (const auto &handler : ForcedNormalModeHandlers) {
-		if (handler.handler && handler.handler()) {
+	const auto handlers = ForcedNormalModeHandlers;
+	for (const auto &handler : handlers) {
+		if (handler.owner && handler.handler && handler.handler()) {
 			return true;
 		}
 	}
@@ -1026,7 +926,7 @@ private:
 		auto result = QString();
 		if (_russian) {
 			result += u"Последние "_q
-				+ QString::number(kKeyLogLimit)
+				+ QString::number(KeyEventLog::kLimit)
 				+ u" клавиш:\n"_q;
 			result += u"Самое свежее нажатие находится внизу.\n\n"_q;
 			if (const auto recent = RecentKeyLogText(); !recent.isEmpty()) {
@@ -1036,7 +936,7 @@ private:
 			}
 		} else {
 			result += u"Last "_q
-				+ QString::number(kKeyLogLimit)
+				+ QString::number(KeyEventLog::kLimit)
 				+ u" keys:\n"_q;
 			result += u"The latest key is at the bottom.\n\n"_q;
 			if (const auto recent = RecentKeyLogText(); !recent.isEmpty()) {
@@ -1266,11 +1166,11 @@ void TraceKey(not_null<QKeyEvent*> e, const QString &status) {
 }
 
 QString RecentKeyLogText() {
-	auto lines = QStringList();
-	for (auto i = KeyLog.rbegin(); i != KeyLog.rend(); ++i) {
-		lines.push_back(i->text);
-	}
-	return lines.join(u"\n"_q);
+	return App().passcodeLocked() ? QString() : KeyLog.text();
+}
+
+void ClearKeyLog() {
+	KeyLog.clear();
 }
 
 QString NormalizeBindingToken(QString value) {
@@ -1436,9 +1336,19 @@ int SingleScrollDurationMs() {
 bool HandleApplicationKeyPress(
 		not_null<QObject*> object,
 		not_null<QKeyEvent*> e) {
+	const auto active = App().activeWindow();
+	if (App().passcodeLocked() || (active && active->locked())) {
+		KeyLog.clear();
+		return false;
+	}
 	if (!Enabled()) {
 		return false;
 	}
+	const auto wasSuppressed = KeyLog.suppressed();
+	KeyLog.setSuppressed(wasSuppressed || KeyboardInputActive(object));
+	const auto restoreLogging = gsl::finally([&] {
+		KeyLog.setSuppressed(wasSuppressed);
+	});
 	if (IsModifierOnlyKey(e)) {
 		return false;
 	}
@@ -1560,9 +1470,9 @@ bool HandleApplicationKeyPress(
 		RecordKeyEvent(e, u"Telegram layer/popup"_q, true);
 		return false;
 	}
-	const auto logGeneration = KeyLogGeneration;
+	const auto logGeneration = KeyLog.generation();
 	if (HandleRegisteredKey(e)) {
-		if (KeyLogGeneration == logGeneration) {
+		if (KeyLog.generation() == logGeneration) {
 			RecordKeyEvent(e, u"registered handler"_q, true);
 		}
 		e->accept();

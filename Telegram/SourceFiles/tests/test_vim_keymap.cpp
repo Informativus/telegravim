@@ -10,6 +10,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/vim_keymap_widgets.h"
 #include "core/vim_keymap.h"
 #include "core/vim_keymap_config.h"
+#include "core/vim_keymap_log.h"
+#include "core/local_socket_security.h"
 #include "core/vim_keymap_options.h"
 #include "settings/settings_vim_editor.h"
 #include "ui/widgets/discrete_sliders.h"
@@ -50,6 +52,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QJsonArray>
 #include <QtCore/QSaveFile>
 #include <QtCore/QDir>
+#include <QtCore/QTemporaryDir>
+#include <QtNetwork/QLocalServer>
+#include <QtNetwork/QLocalSocket>
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QLineEdit>
 #include <QtWidgets/QScrollArea>
@@ -2475,6 +2480,7 @@ void TestVimKeymapCommandBindings() {
 }
 
 #include "tests/vim_config_tests.h"
+#include "tests/vim_security_tests.h"
 
 } // namespace
 
@@ -2525,6 +2531,8 @@ int main(int argc, char *argv[]) {
 	TestVimConfig();
 	TestVimConfigEditor();
 	TestVimConfigDocuments();
+	TestVimKeyLogPrivacy();
+	TestLocalSocketSecurity();
 
 	std::cout << (TotalChecks - FailedChecks) << "/" << TotalChecks
 		<< " checks passed." << std::endl;
