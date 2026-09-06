@@ -115,9 +115,14 @@ gh pr create --repo Informativus/telegravim --base develop
 | --- | --- | --- |
 | `origin` | `https://github.com/Informativus/telegravim.git` | Рабочие ветки, PR и релизы |
 | `upstream` | `https://github.com/telegramdesktop/tdesktop.git` | Получение обновлений; push URL — `DISABLED` |
-| `backup` | `/Users/ivan/Documents/Projects/telegram-lite-vim.git` | Локальная резервная копия |
+| `backup` | `/Users/ivan/Documents/Projects/telegram-lite-vim/.local/backups/repository.git` | Локальная резервная копия |
 
 Локальные `main` и `develop` отслеживают одноимённые ветки `origin`.
+Дополнительные рабочие деревья создавайте внутри основного checkout в
+`.local/worktrees/`, копию Wiki и черновики храните в `.local/wiki/`, резервные
+копии — в `.local/backups/`. Каталог `.local/` исключён из Git. Не создавайте
+для этих данных соседние папки в `Projects/`.
+
 Резервная копия обновляется вручную и не заменяет PR. После получения актуальных
 веток GitHub её можно обновить командой `git push backup main develop`.
 В новом клоне `origin` уже указывает на GitHub; `upstream` добавляется отдельно.
