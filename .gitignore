@@ -1,4 +1,5 @@
 /out/
+/.local/
 Debug/
 Release/
 /ThirdParty/
