@@ -32,6 +32,18 @@ access to both. All other submodules retain their upstream repositories.
 Use your own [API credentials](docs/api_credentials.md) for builds; local
 credentials, application data and build caches are not part of this repository.
 
+## Development and releases
+
+`main` contains stable releases and is the default branch. `develop` contains
+beta versions and ongoing integration. All changes go through a pull request:
+`feature/*`, `fix/*`, `docs/*`, or `chore/*` -> `develop`; a release goes through
+`develop` -> `main` using a merge commit. Direct pushes to either shared branch
+are prohibited.
+
+See the [branch and release workflow](docs/branch-flow.md) for commands, beta
+publication, upstream updates, and the local backup remote, and
+[Contributing](.github/CONTRIBUTING.md) for review requirements.
+
 ## Supported systems
 
 The latest version is available for
