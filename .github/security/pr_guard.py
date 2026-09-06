@@ -1,6 +1,7 @@
 """Trusted PR inspection. Contributor files are read as data, never executed."""
 
 import argparse
+import difflib
 import html
 import json
 import os
@@ -19,7 +20,7 @@ SECURITY_STATUS = "Telegravim / security"
 NETWORK_STATUS = "Telegravim / owner network review"
 SHA = re.compile(r"[0-9a-f]{40}")
 NETWORK = re.compile(
-    r"https?://|wss?://|\b(?:QNetwork\w*|Q\w*Socket|QTcp\w*|QUdp\w*|"
+    r"\b(?:QNetwork\w*|Q\w*Socket|QTcp\w*|QUdp\w*|"
     r"curl_\w+|SSL_\w+|MTP[A-Z]\w*|fetch|XMLHttpRequest|WebSocket|"
     r"connectToHost|sendto|recvfrom|getaddrinfo|socket|WinHttp\w*|"
     r"WinInet\w*|URLSession|NSURLSession)\b|"
@@ -111,7 +112,18 @@ def classify(
         return ""
     if new_mode == "000000" and documentation(path, old_mode):
         return ""
-    if NETWORK.search((before + b"\n" + after).decode("utf-8", errors="replace")):
+    before_text = before.decode("utf-8", errors="replace")
+    after_text = after.decode("utf-8", errors="replace")
+    changed_lines = "\n".join(
+        line[1:]
+        for line in difflib.unified_diff(
+            before_text.splitlines(), after_text.splitlines()
+        )
+        if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
+    )
+    if NETWORK.search(before_text + "\n" + after_text) or re.search(
+        r"https?://|wss?://", changed_lines
+    ):
         return "Network-related code outside verified Telegram upstream changed"
     return "Custom executable code or data changed; network effects cannot be excluded"
 
@@ -269,7 +281,9 @@ def current_pr(api: GitHub, number: int):
     if pr["base"]["repo"]["full_name"] != POLICY["repository"]:
         raise GuardError("Unexpected base repository")
     valid_sha(pr["head"]["sha"])
-    valid_sha(pr["base"]["sha"])
+    pr["base"]["sha"] = valid_sha(
+        api.repo(f"branches/{pr['base']['ref']}")["commit"]["sha"]
+    )
     return pr
 
 
@@ -547,6 +561,14 @@ def export_source(repo: Path, root: Path, head: str):
         raise GuardError("No C/C++ source exported; analysis cannot run")
 
 
+def codeql_required(changed: list[str]) -> bool:
+    return any(
+        PurePosixPath(path).suffix in SOURCE_SUFFIXES
+        or (not documentation(path, "100644") and not path.startswith(".github/"))
+        for path in changed
+    )
+
+
 def comment_body(state: dict) -> str:
     if state["reasons"]:
         network = (
@@ -618,9 +640,10 @@ def run_audit(api: GitHub, number: int, root: Path):
                     summary.write(f"- {safe_text(item['path'])}: {item['reason']}\n")
         output("requires_review", bool(state["reasons"]))
         output("scan_ok", state["scan_ok"])
-        if state["scan_ok"]:
+        output("codeql_required", codeql_required(state["changed"]))
+        if state["scan_ok"] and codeql_required(state["changed"]):
             export_source(repo, root, head)
-        else:
+        elif not state["scan_ok"]:
             api.status(
                 head,
                 SECURITY_STATUS,
@@ -664,14 +687,20 @@ def finish(api: GitHub, kind: str):
             else "No owner network approval required"
         )
     else:
-        passed = fresh and all(
-            os.environ.get(name) == "success"
-            for name in ["AUDIT_RESULT", "CODEQL_RESULT"]
+        required = os.environ.get("CODEQL_REQUIRED")
+        analyzed = required == "true" and os.environ.get("CODEQL_RESULT") == "success"
+        exempt = required == "false" and os.environ.get("CODEQL_RESULT") == "skipped"
+        passed = (
+            fresh
+            and os.environ.get("AUDIT_RESULT") == "success"
+            and os.environ.get("SCAN_OK") == "true"
+            and (analyzed or exempt)
         )
-        passed = passed and os.environ.get("SCAN_OK") == "true"
-        context, detail = (
-            SECURITY_STATUS,
-            "Secret, workflow, diff and CodeQL checks passed",
+        context = SECURITY_STATUS
+        detail = (
+            "Secret, workflow, diff and CodeQL checks passed"
+            if analyzed
+            else "Secret, workflow and diff checks passed; C/C++ sources unchanged"
         )
     api.status(
         state["head"],
