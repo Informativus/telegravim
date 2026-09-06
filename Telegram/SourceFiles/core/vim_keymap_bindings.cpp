@@ -558,6 +558,11 @@ int InterfaceHistoryDelta(not_null<QKeyEvent*> e) {
 	return 0;
 }
 
+bool SpellcheckKey(not_null<QKeyEvent*> e) {
+	return CleanModifiers(e) == PhysicalControlModifier()
+		&& KeyIs(e, Qt::Key_E, u"e"_q, u"\u0443"_q);
+}
+
 int MediaNavigationDelta(not_null<QKeyEvent*> e) {
 	const auto modifiers = CleanModifiers(e);
 	if (modifiers != Qt::ControlModifier

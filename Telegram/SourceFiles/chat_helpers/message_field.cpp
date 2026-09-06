@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "chat_helpers/message_field.h"
+#include "chat_helpers/spellchecker_menu.h"
 
 #include "history/history_widget.h"
 #include "history/history.h" // History::session
@@ -753,10 +754,11 @@ void InitSpellchecker(
 		});
 	// The highlighter parents itself to the field's document and registers a
 	// context-menu hook on the field, so it keeps working without holding it.
-	Ui::CreateChild<SpellingHighlighter>(
+	const auto highlighter = Ui::CreateChild<SpellingHighlighter>(
 		field.get(),
 		Core::App().settings().spellcheckerEnabledValue(),
 		menuItem);
+	InitSuggestionsMenu(field, highlighter);
 #endif // TDESKTOP_DISABLE_SPELLCHECK
 }
 

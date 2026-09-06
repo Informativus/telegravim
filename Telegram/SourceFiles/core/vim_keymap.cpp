@@ -1044,6 +1044,7 @@ void ShowHelpBox() {
 			result += redo + u" - вернуть откатанное изменение текста\n"_q;
 			result += u"h/j/k/l, w/b/e, 0/^/$/|, gg/G, {/} - движение в composer\n"_q;
 			result += u"x/X, dd/D, diw, yy/Y, yiw, p/P, u/Ctrl+R - правка текста\n"_q;
+			result += u"Ctrl+E - исправления слова под курсором\n"_q;
 			result += u"c/cw/cc/C/ciw, s/S, r<char>, J, ~ - Vim-команды composer\n"_q;
 			result += u"v/V - visual/visual line заготовка: y копирует, d/x удаляет\n"_q;
 			result += u"i/a/I/A/o/O - вернуться к вводу текста\n"_q;
@@ -1105,6 +1106,7 @@ void ShowHelpBox() {
 			result += redo + u" - redo the last compose text change\n"_q;
 			result += u"h/j/k/l, w/b/e, 0/^/$/|, gg/G, {/} - compose motions\n"_q;
 			result += u"x/X, dd/D, diw, yy/Y, yiw, p/P, u/Ctrl+R - edit text\n"_q;
+			result += u"Ctrl+E - spelling suggestions at the cursor\n"_q;
 			result += u"c/cw/cc/C/ciw, s/S, r<char>, J, ~ - compose Vim commands\n"_q;
 			result += u"v/V - visual/visual line groundwork: y copies, d/x deletes\n"_q;
 			result += u"i/a/I/A/o/O - return to text input\n"_q;

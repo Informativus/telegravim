@@ -1,0 +1,157 @@
+/*
+This file is part of Telegram Desktop,
+the official desktop application for the Telegram messaging service.
+
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
+*/
+#include "chat_helpers/spellchecker_menu.h"
+
+#ifndef TDESKTOP_DISABLE_SPELLCHECK
+
+#include "base/unique_qptr.h"
+#include "core/vim_keymap_bindings.h"
+#include "spellcheck/spelling_highlighter.h"
+#include "ui/widgets/menu/menu.h"
+#include "ui/widgets/popup_menu.h"
+
+#include <QtCore/QPointer>
+#include <QtGui/QKeyEvent>
+#include <QtWidgets/QApplication>
+
+namespace Spellchecker {
+namespace {
+
+class SuggestionsMenu final : public QObject {
+public:
+	SuggestionsMenu(
+		not_null<Ui::InputField*> field,
+		not_null<SpellingHighlighter*> highlighter);
+
+	bool show();
+
+private:
+	bool eventFilter(QObject *object, QEvent *event) override;
+	void cancel();
+
+	const not_null<Ui::InputField*> _field;
+	const not_null<SpellingHighlighter*> _highlighter;
+	base::unique_qptr<Ui::PopupMenu> _menu;
+	int _generation = 0;
+	bool _pending = false;
+	rpl::lifetime _lifetime;
+
+};
+
+SuggestionsMenu::SuggestionsMenu(
+	not_null<Ui::InputField*> field,
+	not_null<SpellingHighlighter*> highlighter)
+: QObject(field)
+, _field(field)
+, _highlighter(highlighter) {
+	field->changes() | rpl::on_next([=] { cancel(); }, _lifetime);
+	connect(field->rawTextEdit(), &QTextEdit::cursorPositionChanged,
+		this, [=] { cancel(); });
+}
+
+void SuggestionsMenu::cancel() {
+	++_generation;
+	if (_pending) {
+		_pending = false;
+		qApp->removeEventFilter(this);
+	}
+	if (_menu) {
+		_menu->hideMenu(true);
+	}
+}
+
+bool SuggestionsMenu::eventFilter(QObject *object, QEvent *event) {
+	if (_pending) {
+		if (event->type() == QEvent::KeyPress
+			|| event->type() == QEvent::MouseButtonPress
+			|| event->type() == QEvent::FocusIn
+			|| event->type() == QEvent::WindowDeactivate) {
+			cancel();
+		}
+		return false;
+	}
+	if (_menu && event->type() == QEvent::KeyPress) {
+		const auto key = static_cast<QKeyEvent*>(event);
+		const auto delta = Core::VimKeymap::Bindings::PickerNavigationDelta(key);
+		if (delta) {
+			auto translated = QKeyEvent(
+				QEvent::KeyPress,
+				(delta > 0) ? Qt::Key_Down : Qt::Key_Up,
+				Qt::NoModifier);
+			_menu->menu()->handleKeyPress(&translated);
+			return true;
+		}
+	}
+	return false;
+}
+
+bool SuggestionsMenu::show() {
+	if (!_highlighter->enabled() || !_field->isVisible()) {
+		return false;
+	}
+	cancel();
+	const auto generation = _generation;
+	const auto weak = QPointer<SuggestionsMenu>(this);
+	const auto focus = QPointer<QWidget>(QApplication::focusWidget());
+	const auto cursor = _field->textCursor();
+	const auto rect = _field->rawTextEdit()->cursorRect(cursor);
+	const auto position = _field->rawTextEdit()->viewport()->mapToGlobal(
+		rect.bottomLeft());
+	auto menu = std::make_unique<QMenu>();
+	const auto raw = menu.get();
+	_pending = true;
+	qApp->installEventFilter(this);
+	_highlighter->fillSpellcheckerMenu(raw, cursor, [=,
+		menu = std::move(menu)
+	](int firstSuggestion) mutable {
+		if (!weak || generation != _generation) {
+			return;
+		}
+		_pending = false;
+		qApp->removeEventFilter(this);
+		if (menu->isEmpty()
+			|| !_highlighter->enabled()
+			|| !_field->isVisible()
+			|| !_field->window()->isActiveWindow()
+			|| focus != QApplication::focusWidget()) {
+			return;
+		}
+		_menu = base::make_unique_q<Ui::PopupMenu>(
+			_field,
+			menu.release(),
+			_field->st().menu);
+		_menu->installEventFilter(this);
+		_menu->menu()->installEventFilter(this);
+		_menu->popup(position);
+		if (_menu && firstSuggestion >= 0) {
+			_menu->menu()->setSelected(firstSuggestion, false);
+		}
+	});
+	return true;
+}
+
+} // namespace
+
+void InitSuggestionsMenu(
+		not_null<Ui::InputField*> field,
+		not_null<SpellingHighlighter*> highlighter) {
+	new SuggestionsMenu(field, highlighter);
+}
+
+bool ShowSuggestionsMenu(not_null<Ui::InputField*> field) {
+	for (const auto child : field->children()) {
+		if (const auto menu = dynamic_cast<SuggestionsMenu*>(child)) {
+			return menu->show();
+		}
+	}
+	return false;
+}
+
+} // namespace Spellchecker
+
+#endif // !TDESKTOP_DISABLE_SPELLCHECK
