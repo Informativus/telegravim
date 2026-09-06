@@ -3,6 +3,11 @@
 This folder tracks the staged work for a maintainable Telegram Desktop fork
 with a full Vim-style keyboard layer and a practical update path for macOS.
 
+These are historical planning notes. Their `vim-keymap` branch and upstream
+rebase instructions are superseded by [the current branch workflow](../../../docs/branch-flow.md):
+task branches -> PR to `develop` (betas) -> release PR to `main` (stable).
+Use an upstream integration branch and PR instead of rebasing shared branches.
+
 The default direction is:
 
 1. Keep the fork easy to rebase on `upstream/dev`.
