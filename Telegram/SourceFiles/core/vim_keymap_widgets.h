@@ -24,6 +24,7 @@ class RpWidget;
 namespace Core::VimKeymap {
 
 [[nodiscard]] bool KeyHandlerInScope(QObject *owner, QWidget *scope);
+[[nodiscard]] bool KeyboardInputActive(QObject *receiver);
 [[nodiscard]] QWidget *FindKeyboardScope(not_null<QWidget*> window);
 [[nodiscard]] bool KeyboardScopeHasTextInput(
 	not_null<QWidget*> scope,

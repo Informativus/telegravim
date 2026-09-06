@@ -621,7 +621,7 @@ mac:
 """)
 
 stage('openssl3', """
-    git clone -b openssl-3.2.1 https://github.com/openssl/openssl openssl3
+    git clone -b openssl-3.5.8 https://github.com/openssl/openssl openssl3
     cd openssl3
 win32:
     perl Configure no-shared no-tests debug-VC-WIN32 /FS
@@ -1134,7 +1134,7 @@ mac:
 """)
 
 stage('liblcms2', """
-    git clone -b lcms2.16 https://github.com/mm2/Little-CMS.git liblcms2
+    git clone -b lcms2.19.1 https://github.com/mm2/Little-CMS.git liblcms2
     cd liblcms2
 win:
 depends:python/Scripts/activate.bat

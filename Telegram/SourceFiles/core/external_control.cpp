@@ -457,6 +457,8 @@ void ShowProxyToast(const QString &text, Fn<void()> undo) {
 QByteArray HandleExternalControl(const QString &command) {
 	if (!IsAppLaunched()) {
 		return Error(u"application is not launched"_q);
+	} else if (App().passcodeLocked()) {
+		return Error(u"application is locked"_q);
 	} else if (!AutomationEnabled()) {
 		RequestEnableAutomation();
 		return Error(u"local automation is disabled — confirm in the "
