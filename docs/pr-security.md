@@ -167,3 +167,5 @@ it cannot cover arbitrary new files reliably and cannot approve Ivan's own PRs.
 A protected environment gives an explicit owner action without parsing mutable
 approval comments. The conservative unknown-code rule favors missed-risk
 prevention over minimizing the number of manual reviews.
+
+CI activation smoke verification.
