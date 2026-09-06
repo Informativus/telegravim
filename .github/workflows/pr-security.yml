@@ -1,0 +1,183 @@
+name: PR security and owner review
+
+on:
+  pull_request_target:
+    branches: [develop, main]
+    types: [opened, reopened, synchronize, ready_for_review, edited]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Open pull request number to inspect again
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: pr-security-${{ github.event.number || inputs.pr_number }}
+  cancel-in-progress: true
+
+jobs:
+  inspect:
+    name: Inspect untrusted PR data
+    if: github.repository == 'Informativus/telegravim'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+      statuses: write
+      pull-requests: write
+    outputs:
+      number: ${{ steps.audit.outputs.number }}
+      head: ${{ steps.audit.outputs.head }}
+      base: ${{ steps.audit.outputs.base }}
+      control: ${{ steps.control.outputs.sha }}
+      requires_review: ${{ steps.audit.outputs.requires_review }}
+      scan_ok: ${{ steps.audit.outputs.scan_ok }}
+      codeql_required: ${{ steps.audit.outputs.codeql_required }}
+    steps:
+      - name: Check out trusted policy from the default branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          submodules: false
+      - name: Record trusted policy revision
+        id: control
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Install verified scanners
+        env:
+          SCANNER_BIN: ${{ runner.temp }}/pr-scanners
+        run: python3 .github/security/install_tools.py
+      - name: Test trusted security boundaries
+        env:
+          SCANNER_BIN: ${{ runner.temp }}/pr-scanners
+        run: python3 -m unittest discover -s .github/security -p 'test_*.py'
+      - name: Inspect diff, history and upstream provenance
+        id: audit
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CONTROL_SHA: ${{ steps.control.outputs.sha }}
+          SCANNER_BIN: ${{ runner.temp }}/pr-scanners
+        run: python3 .github/security/pr_guard.py audit
+      - name: Copy non-secret inspection metadata
+        if: steps.audit.outputs.scan_ok == 'true' && steps.audit.outputs.codeql_required == 'true'
+        run: cp "$RUNNER_TEMP/pr-inspection/state.json" "$RUNNER_TEMP/pr-inspection/source/inspection-state.json"
+      - name: Upload inert C and C++ sources for CodeQL
+        if: steps.audit.outputs.scan_ok == 'true' && steps.audit.outputs.codeql_required == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: inspection-source-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pr-inspection/source
+          retention-days: 1
+          if-no-files-found: error
+
+  codeql:
+    name: CodeQL security and correctness
+    needs: inspect
+    if: needs.inspect.outputs.scan_ok == 'true' && needs.inspect.outputs.codeql_required == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the same trusted policy
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.inspect.outputs.control }}
+          persist-credentials: false
+          submodules: false
+      - name: Download data from this trusted workflow run
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: inspection-source-${{ github.run_id }}-${{ github.run_attempt }}
+          path: inspection-source
+      - name: Initialize analysis without executing a PR build
+        uses: github/codeql-action/init@fddeee1a7ece751b577e409a89057319e3172939 # v4
+        with:
+          languages: c-cpp
+          build-mode: none
+          source-root: inspection-source
+          config-file: ./.github/security/codeql.yml
+      - name: Analyze without publishing findings against the base revision
+        uses: github/codeql-action/analyze@fddeee1a7ece751b577e409a89057319e3172939 # v4
+        with:
+          upload: false
+          output: codeql-results
+      - name: Fail on security or correctness findings
+        run: python3 .github/security/pr_guard.py sarif --root codeql-results --state inspection-source/inspection-state.json
+      - name: Preserve CodeQL findings
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: codeql-findings-${{ github.run_id }}-${{ github.run_attempt }}
+          path: codeql-results
+          retention-days: 7
+          if-no-files-found: ignore
+
+  owner-review:
+    name: REQUIRED — Informativus must review network or custom code
+    needs: inspect
+    if: needs.inspect.outputs.requires_review == 'true' && needs.inspect.outputs.scan_ok == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: network-review
+    permissions: {}
+    steps:
+      - name: Record the owner's environment approval
+        run: echo 'The owner approved the inspected revision through the protected environment.'
+
+  network-result:
+    name: Publish mandatory owner review result
+    needs: [inspect, owner-review]
+    if: always() && needs.inspect.outputs.head != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      statuses: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.inspect.outputs.control }}
+          persist-credentials: false
+      - name: Bind the result to the current head, base and policy
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.inspect.outputs.number }}
+          PR_HEAD: ${{ needs.inspect.outputs.head }}
+          PR_BASE: ${{ needs.inspect.outputs.base }}
+          CONTROL_SHA: ${{ needs.inspect.outputs.control }}
+          REQUIRES_REVIEW: ${{ needs.inspect.outputs.requires_review }}
+          AUDIT_RESULT: ${{ needs.inspect.result }}
+          APPROVAL_RESULT: ${{ needs.owner-review.result }}
+        run: python3 .github/security/pr_guard.py finish-network
+
+  security-result:
+    name: Publish security result
+    needs: [inspect, codeql]
+    if: always() && needs.inspect.outputs.head != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      statuses: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.inspect.outputs.control }}
+          persist-credentials: false
+      - name: Bind the result to the current head, base and policy
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.inspect.outputs.number }}
+          PR_HEAD: ${{ needs.inspect.outputs.head }}
+          PR_BASE: ${{ needs.inspect.outputs.base }}
+          CONTROL_SHA: ${{ needs.inspect.outputs.control }}
+          AUDIT_RESULT: ${{ needs.inspect.result }}
+          CODEQL_RESULT: ${{ needs.codeql.result }}
+          CODEQL_REQUIRED: ${{ needs.inspect.outputs.codeql_required }}
+          SCAN_OK: ${{ needs.inspect.outputs.scan_ok }}
+        run: python3 .github/security/pr_guard.py finish-security
