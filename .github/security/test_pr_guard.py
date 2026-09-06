@@ -1,7 +1,9 @@
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import pr_guard as guard
 
@@ -45,6 +47,24 @@ class ClassificationTests(unittest.TestCase):
             "Network-related", self.classify(before=b"QNetworkAccessManager manager;")
         )
 
+    def test_unchanged_copyright_url_does_not_claim_network_code(self):
+        header = b"// https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL\n"
+        self.assertIn(
+            "cannot be excluded",
+            self.classify(
+                before=header + b"int value = 1;", after=header + b"int value = 2;"
+            ),
+        )
+
+    def test_changed_endpoint_is_explicitly_network_related(self):
+        self.assertIn(
+            "Network-related",
+            self.classify(
+                before=b'auto url = "https://old.example";',
+                after=b'auto url = "https://new.example";',
+            ),
+        )
+
     def test_custom_code_without_detectable_network_fails_closed(self):
         self.assertIn("cannot be excluded", self.classify(after=b"opaqueHelper();"))
 
@@ -70,6 +90,83 @@ class ClassificationTests(unittest.TestCase):
         self.assertTrue(
             self.classify(path=".github/security/policy.json", new_mode="000000")
         )
+
+
+class CodeQLSelectionTests(unittest.TestCase):
+    def test_documentation_and_ci_without_cpp_do_not_scan_unchanged_cpp(self):
+        self.assertFalse(
+            guard.codeql_required(
+                ["docs/pr-security.md", ".github/security/pr_guard.py"]
+            )
+        )
+
+    def test_sources_build_files_and_dependency_changes_require_codeql(self):
+        for path in [
+            "Telegram/main.cpp",
+            ".github/example.cpp",
+            "CMakeLists.txt",
+            ".gitmodules",
+            "cmake/deps.cmake",
+        ]:
+            with self.subTest(path=path):
+                self.assertTrue(guard.codeql_required([path]))
+
+
+class SecurityResultTests(unittest.TestCase):
+    def test_codeql_skip_only_passes_when_explicitly_not_required(self):
+        class API:
+            def repo(self, suffix):
+                if suffix.startswith("pulls/"):
+                    return {
+                        "state": "open",
+                        "head": {"sha": "a" * 40},
+                        "base": {
+                            "ref": "develop",
+                            "sha": "b" * 40,
+                            "repo": {"full_name": guard.POLICY["repository"]},
+                        },
+                    }
+                if suffix == "branches/develop":
+                    return {"commit": {"sha": "b" * 40}}
+                if suffix == "commits/main":
+                    return {"sha": "c" * 40}
+                raise AssertionError(suffix)
+
+            def status(self, head, context, state, detail):
+                self.state = state
+
+        for required, result, expected in [
+            ("false", "skipped", True),
+            ("true", "success", True),
+            ("true", "skipped", False),
+            ("", "skipped", False),
+            ("false", "failure", False),
+            ("true", "cancelled", False),
+        ]:
+            with (
+                self.subTest(required=required, result=result),
+                patch.dict(
+                    os.environ,
+                    {
+                        "PR_HEAD": "a" * 40,
+                        "PR_BASE": "b" * 40,
+                        "PR_NUMBER": "17",
+                        "CONTROL_SHA": "c" * 40,
+                        "AUDIT_RESULT": "success",
+                        "SCAN_OK": "true",
+                        "CODEQL_REQUIRED": required,
+                        "CODEQL_RESULT": result,
+                    },
+                ),
+            ):
+                api = API()
+                if expected:
+                    guard.finish(api, "security")
+                    self.assertEqual(api.state, "success")
+                else:
+                    with self.assertRaises(guard.GuardError):
+                        guard.finish(api, "security")
+                    self.assertEqual(api.state, "failure")
 
 
 class BoundaryTests(unittest.TestCase):
@@ -101,6 +198,25 @@ class BoundaryTests(unittest.TestCase):
             pr = {"head": {"sha": state["head"]}, "base": {"sha": state["base"]}}
             pr[field]["sha"] = "c" * 40
             self.assertFalse(guard.same_snapshot(pr, state))
+
+    def test_current_pr_uses_live_branch_tip_instead_of_stale_pr_base(self):
+        class API:
+            def repo(self, suffix):
+                if suffix == "pulls/11":
+                    return {
+                        "state": "open",
+                        "head": {"sha": "a" * 40},
+                        "base": {
+                            "ref": "develop",
+                            "sha": "b" * 40,
+                            "repo": {"full_name": guard.POLICY["repository"]},
+                        },
+                    }
+                if suffix == "branches/develop":
+                    return {"commit": {"sha": "c" * 40}}
+                raise AssertionError(suffix)
+
+        self.assertEqual(guard.current_pr(API(), 11)["base"]["sha"], "c" * 40)
 
     def test_comment_output_cannot_inject_marker_or_mention(self):
         text = guard.safe_text("@owner\n<!-- forged -->`x`")
