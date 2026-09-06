@@ -1,0 +1,13 @@
+{
+  "repository": "Informativus/telegravim",
+  "owner": "Informativus",
+  "environment": "network-review",
+  "upstream": "https://github.com/telegramdesktop/tdesktop.git",
+  "upstream_ref": "refs/heads/dev",
+  "max_files": 1200,
+  "max_blob_bytes": 2000000,
+  "max_diff_bytes": 8000000,
+  "max_ai_chars": 60000,
+  "max_commits": 250,
+  "ai_model": "gpt-5.4-mini"
+}
