@@ -969,6 +969,16 @@ void Selector::startKeyboardNavigation() {
 bool Selector::handleKeyboardNavigation(not_null<QKeyEvent*> e) {
 	using namespace Core::VimKeymap::Bindings;
 	const auto tab = TabNavigationDelta(e);
+	if (tab && _list && _expandFinished) {
+		if (Core::VimKeymap::KeyboardScopeHasTextInput(this, nullptr)) {
+			_list->setFocus(tab > 0
+				? Qt::TabFocusReason
+				: Qt::BacktabFocusReason);
+			return _list->vimKeymapMoveSelection(0, 0) || _list->hasFocus();
+		} else if (_list->vimKeymapFocusSearch()) {
+			return true;
+		}
+	}
 	if (!tab && CleanModifiers(e) != Qt::NoModifier) {
 		return false;
 	}
