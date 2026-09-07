@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #ifndef TDESKTOP_DISABLE_SPELLCHECK
 
 #include "base/unique_qptr.h"
+#include "chat_helpers/spellchecker_bundled.h"
 #include "core/vim_keymap_bindings.h"
 #include "spellcheck/spelling_highlighter.h"
 #include "ui/widgets/menu/menu.h"
@@ -34,10 +35,12 @@ public:
 private:
 	bool eventFilter(QObject *object, QEvent *event) override;
 	void cancel();
+	void finish(QPoint position, int firstSuggestion);
 
 	const not_null<Ui::InputField*> _field;
 	const not_null<SpellingHighlighter*> _highlighter;
 	base::unique_qptr<Ui::PopupMenu> _menu;
+	std::unique_ptr<QMenu> _lookupMenu;
 	QPointer<QWidget> _pendingFocus;
 	int _generation = 0;
 	bool _pending = false;
@@ -58,6 +61,7 @@ SuggestionsMenu::SuggestionsMenu(
 
 void SuggestionsMenu::cancel() {
 	++_generation;
+	_lookupMenu = nullptr;
 	if (_pending) {
 		_pending = false;
 		qApp->removeEventFilter(this);
@@ -118,27 +122,75 @@ bool SuggestionsMenu::show() {
 		if (!weak || generation != _generation) {
 			return;
 		}
-		_pending = false;
-		qApp->removeEventFilter(this);
-		if (menu->isEmpty()
-			|| !_highlighter->enabled()
-			|| !_field->isVisible()
-			|| !_field->window()->isActiveWindow()
-			|| focus != QApplication::focusWidget()) {
+		_lookupMenu = std::move(menu);
+		if (firstSuggestion < 0) {
+			finish(position, firstSuggestion);
 			return;
 		}
-		_menu = base::make_unique_q<Ui::PopupMenu>(
-			_field,
-			menu.release(),
-			_field->st().menu);
-		_menu->installEventFilter(this);
-		_menu->menu()->installEventFilter(this);
-		_menu->popup(position);
-		if (_menu && firstSuggestion >= 0) {
-			_menu->menu()->setSelected(firstSuggestion, false);
+		auto selection = cursor;
+		selection.select(QTextCursor::WordUnderCursor);
+		const auto word = selection.selectedText();
+		auto suggestions = std::vector<QString>();
+		const auto actions = _lookupMenu->actions();
+		for (auto i = firstSuggestion; i != actions.size(); ++i) {
+			suggestions.push_back(actions[i]->text());
 		}
+		SuggestRussianWords(word, std::move(suggestions), [=](
+				std::vector<QString> improved) {
+			if (!weak || generation != _generation) {
+				return;
+			}
+			const auto menu = _lookupMenu.get();
+			const auto actions = menu->actions().mid(firstSuggestion);
+			for (const auto action : actions) {
+				menu->removeAction(action);
+			}
+			for (const auto &suggestion : improved) {
+				const auto existing = ranges::find(actions, suggestion, &QAction::text);
+				if (existing != actions.end()) {
+					menu->addAction(*existing);
+				} else {
+					menu->addAction(suggestion, [=] {
+						if (generation != _generation || selection.selectedText() != word) {
+							return;
+						}
+						const auto edit = QPointer<QTextEdit>(_field->rawTextEdit());
+						const auto saved = edit->textCursor();
+						auto replacement = selection;
+						replacement.insertText(suggestion);
+						if (edit) {
+							edit->setTextCursor(saved);
+						}
+					});
+				}
+			}
+			finish(position, firstSuggestion);
+		});
 	});
 	return true;
+}
+
+void SuggestionsMenu::finish(QPoint position, int firstSuggestion) {
+	_pending = false;
+	qApp->removeEventFilter(this);
+	auto menu = std::move(_lookupMenu);
+	if (menu->isEmpty()
+		|| !_highlighter->enabled()
+		|| !_field->isVisible()
+		|| !_field->window()->isActiveWindow()
+		|| _pendingFocus != QApplication::focusWidget()) {
+		return;
+	}
+	_menu = base::make_unique_q<Ui::PopupMenu>(
+		_field,
+		menu.release(),
+		_field->st().menu);
+	_menu->installEventFilter(this);
+	_menu->menu()->installEventFilter(this);
+	_menu->popup(position);
+	if (_menu && firstSuggestion >= 0) {
+		_menu->menu()->setSelected(firstSuggestion, false);
+	}
 }
 
 } // namespace
