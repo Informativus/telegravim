@@ -55,7 +55,7 @@ namespace {
 constexpr auto kHoldScrollTickMs = 16;
 constexpr auto kHoldScrollStartDelayMs = 90;
 constexpr auto kSingleScrollDurationMs = 190;
-constexpr auto kTelegraVimBuild = "2026.09.06-100";
+constexpr auto kTelegraVimBuild = "2026.09.07-101";
 
 bool NormalModeEnabled = false;
 bool LegacyDefaultsMigrated = false;
@@ -72,6 +72,7 @@ std::vector<ActionHandler> ActionHandlers;
 struct KeyHandler {
 	QPointer<QObject> owner;
 	Fn<bool(not_null<QKeyEvent*>)> handler;
+	bool acceptShortcutOverride = false;
 };
 
 std::vector<KeyHandler> KeyHandlers;
@@ -546,6 +547,10 @@ void CleanupScrollAnimations() {
 	for (auto i = handlers.rbegin();
 		i != handlers.rend();
 		++i) {
+		if (e->type() == QEvent::ShortcutOverride
+			&& !i->acceptShortcutOverride) {
+			continue;
+		}
 		if (scope && !guardedScope) {
 			return true;
 		} else if (i->owner
@@ -1028,6 +1033,8 @@ void ShowHelpBox() {
 			result += copy + u" - подсказки для копирования сообщений\n"_q;
 			result += selectMessageText
 				+ u" - подсказки для visual-выделения текста сообщения\n"_q;
+			result += u"В тексте сообщения: gg/G - начало/конец, {/} - абзацы\n"_q;
+			result += u"Лишние клавиши сохраняют курсор и выделение; Esc - выход\n"_q;
 			result += reply + u" - подсказки для ответа на сообщение\n"_q;
 			result += edit
 				+ u" - подсказки для редактирования своих сообщений\n"_q;
@@ -1044,6 +1051,7 @@ void ShowHelpBox() {
 			result += redo + u" - вернуть откатанное изменение текста\n"_q;
 			result += u"h/j/k/l, w/b/e, 0/^/$/|, gg/G, {/} - движение в composer\n"_q;
 			result += u"x/X, dd/D, diw, yy/Y, yiw, p/P, u/Ctrl+R - правка текста\n"_q;
+			result += u"Ctrl+E - исправления слова под курсором\n"_q;
 			result += u"c/cw/cc/C/ciw, s/S, r<char>, J, ~ - Vim-команды composer\n"_q;
 			result += u"v/V - visual/visual line заготовка: y копирует, d/x удаляет\n"_q;
 			result += u"i/a/I/A/o/O - вернуться к вводу текста\n"_q;
@@ -1091,6 +1099,8 @@ void ShowHelpBox() {
 			result += copy + u" - show copy message hints\n"_q;
 			result += selectMessageText
 				+ u" - show message text visual selection hints\n"_q;
+			result += u"Message text: gg/G - start/end, {/} - paragraphs\n"_q;
+			result += u"Other keys keep the cursor and selection; Esc exits\n"_q;
 			result += reply + u" - show reply message hints\n"_q;
 			result += edit + u" - show edit message hints\n"_q;
 			result += deleteMessage + u" - show delete message hints\n"_q;
@@ -1105,6 +1115,7 @@ void ShowHelpBox() {
 			result += redo + u" - redo the last compose text change\n"_q;
 			result += u"h/j/k/l, w/b/e, 0/^/$/|, gg/G, {/} - compose motions\n"_q;
 			result += u"x/X, dd/D, diw, yy/Y, yiw, p/P, u/Ctrl+R - edit text\n"_q;
+			result += u"Ctrl+E - spelling suggestions at the cursor\n"_q;
 			result += u"c/cw/cc/C/ciw, s/S, r<char>, J, ~ - compose Vim commands\n"_q;
 			result += u"v/V - visual/visual line groundwork: y copies, d/x deletes\n"_q;
 			result += u"i/a/I/A/o/O - return to text input\n"_q;
@@ -1333,6 +1344,15 @@ int SingleScrollDurationMs() {
 	return kSingleScrollDurationMs;
 }
 
+bool HandleApplicationShortcutOverride(not_null<QKeyEvent*> e) {
+	const auto active = App().activeWindow();
+	return Enabled()
+		&& !App().passcodeLocked()
+		&& (!active || !active->locked())
+		&& !ActiveKeyboardScope()
+		&& HandlePreLayerKey(e);
+}
+
 bool HandleApplicationKeyPress(
 		not_null<QObject*> object,
 		not_null<QKeyEvent*> e) {
@@ -1354,6 +1374,12 @@ bool HandleApplicationKeyPress(
 	}
 	const auto scope = QPointer<QWidget>(ActiveKeyboardScope());
 	UpdateKeyboardScope(scope);
+	if (!scope && HandlePreLayerKey(e)) {
+		RecordKeyEvent(e, u"pre-layer handler"_q, true);
+		e->accept();
+		return true;
+	}
+
 	const auto focus = QApplication::focusWidget();
 	const auto globalRoot = scope ? nullptr : GlobalFocusRoot(focus);
 	if (globalRoot) {
@@ -1459,11 +1485,6 @@ bool HandleApplicationKeyPress(
 			}
 		}
 		return false;
-	}
-	if (HandlePreLayerKey(e)) {
-		RecordKeyEvent(e, u"pre-layer handler"_q, true);
-		e->accept();
-		return true;
 	}
 	if (Bindings::IsPlainEscape(e)
 		&& TelegramLayerOrPopupShown()) {
@@ -1586,11 +1607,13 @@ void UnregisterKeyHandler(not_null<QObject*> owner) {
 
 void RegisterPreLayerKeyHandler(
 		not_null<QObject*> owner,
-		Fn<bool(not_null<QKeyEvent*>)> handler) {
+		Fn<bool(not_null<QKeyEvent*>)> handler,
+		bool acceptShortcutOverride) {
 	UnregisterPreLayerKeyHandler(owner);
 	PreLayerKeyHandlers.push_back({
 		.owner = owner.get(),
 		.handler = std::move(handler),
+		.acceptShortcutOverride = acceptShortcutOverride,
 	});
 }
 
@@ -1800,36 +1823,12 @@ std::optional<Action> ActionKey(not_null<QKeyEvent*> e) {
 	return std::nullopt;
 }
 
-std::optional<TextMotion> TextMotionKey(not_null<QKeyEvent*> e) {
-	if (!NormalMode() || e->isAutoRepeat()) {
-		return std::nullopt;
-	}
-	const auto modifiers = CleanModifiers(e);
-	if (modifiers != Qt::NoModifier && modifiers != Qt::ShiftModifier) {
-		return std::nullopt;
-	} else if (modifiers == Qt::ShiftModifier
-		&& Bindings::KeyIs(e, Qt::Key_J, u"j"_q, u"\u043E"_q)) {
-		return TextMotion::LineDown;
-	} else if (modifiers == Qt::ShiftModifier
-		&& (Bindings::KeyIs(e, Qt::Key_H, u"h"_q, u"\u0440"_q)
-			|| Bindings::KeyIs(e, Qt::Key_K, u"k"_q, u"\u043B"_q))) {
-		return TextMotion::LineUp;
-	} else if (Bindings::KeyIs(e, Qt::Key_H, u"h"_q, u"\u0440"_q)) {
-		return TextMotion::CharacterLeft;
-	} else if (Bindings::KeyIs(e, Qt::Key_L, u"l"_q, u"\u0434"_q)) {
-		return TextMotion::CharacterRight;
-	} else if (Bindings::KeyIs(e, Qt::Key_B, u"b"_q, u"\u0438"_q)) {
-		return TextMotion::WordLeft;
-	} else if (Bindings::KeyIs(e, Qt::Key_W, u"w"_q, u"\u0446"_q)
-		|| Bindings::KeyIs(e, Qt::Key_E, u"e"_q, u"\u0443"_q)) {
-		return TextMotion::WordRight;
-	}
-	if (Bindings::IsLineStart(e)) {
-		return TextMotion::LineStart;
-	} else if (Bindings::IsLineEnd(e)) {
-		return TextMotion::LineEnd;
-	}
-	return std::nullopt;
+std::optional<TextMotion> TextMotionKey(
+		not_null<QKeyEvent*> e,
+		bool &pendingStart) {
+	return NormalMode()
+		? Bindings::TextMotionKey(e, pendingStart)
+		: std::nullopt;
 }
 
 bool TextVisualKey(not_null<QKeyEvent*> e) {

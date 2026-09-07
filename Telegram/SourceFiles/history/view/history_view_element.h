@@ -558,6 +558,7 @@ public:
 		QPoint point,
 		StateRequest request) const = 0;
 	virtual void updatePressed(QPoint point) = 0;
+	[[nodiscard]] virtual QRect textCursorRect(int symbol) const;
 	virtual void drawInfo(
 		Painter &p,
 		const PaintContext &context,
@@ -846,8 +847,8 @@ private:
 
 	HistoryItem *_textItem = nullptr;
 	mutable Ui::Text::String _text;
-	mutable uint32 _textWidth : 16 = 0;
-	mutable uint32 _textRealWidth : 16 = 0;
+	mutable unsigned int _textWidth : 16 = 0;
+	mutable unsigned int _textRealWidth : 16 = 0;
 	mutable int _textHeight = 0;
 
 	int _y = 0;

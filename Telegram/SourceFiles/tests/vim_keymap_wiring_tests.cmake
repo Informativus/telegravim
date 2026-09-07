@@ -55,7 +55,7 @@ expect(history/history_inner_widget.cpp
     "mouseActionStart\\(globalPoint, Qt::LeftButton\\);[\n\t ]*mouseActionFinish\\(globalPoint, Qt::LeftButton\\)"
     "Round-video playback must retain native press/release and spoiler handling")
 expect(history/history_inner_widget.cpp
-    "bool HistoryInner::vimKeymapTriggerHint\\(VimKeymapHint hint\\)"
+    "void HistoryInner::vimKeymapTriggerHint\\(VimKeymapHint hint\\)"
     "The selected hint must survive clearing the hint vector")
 expect(history/history_inner_widget.cpp
     "link->property\\(kFastShareProperty\\).value<bool>\\(\\)"
@@ -195,5 +195,41 @@ expect(core/sandbox.cpp
 expect(storage/file_download.cpp
     "_data.left[(]_loadSize[)]"
     "Image reads must be bounded by the available byte array")
+expect(core/vim_keymap.cpp
+    "UpdateKeyboardScope[(]scope[)];[\n\t ]*if [(]!scope && HandlePreLayerKey[(]e[)][)] [^{]*[{][^}]*}[\n\t ]*const auto focus"
+    "Active message text must receive keys before global focus and chat commands")
+expect(history/history_inner_widget.cpp
+    "RegisterPreLayerKeyHandler[(]this,[^{]*[{][^}]*_vimKeymapTextCursorItem[^}]*_vimKeymapTextVisualMode[^}]*_vimKeymapHintMode == VimKeymapHintMode::None[^}]*}[\n\t ]*return [(]e->type[(][)] == QEvent::ShortcutOverride[)][\n\t ]*\\|\\| vimKeymapHandleHintKey[(]e[)][\n\t ]*\\|\\| vimKeymapHandleTextSelectionKey"
+    "Active message hints and text must own keys before Qt and chat commands")
+expect(history/history_inner_widget.cpp
+    "if [(]!motion && !followLink[)] [^{]*[{][\n\t ]*return textModeActive;"
+    "Unsupported keys must be consumed while Vim text mode is active")
+expect(history/history_inner_widget.cpp
+    "if [(]copied[)] [^{]*[{][\n\t ]*if [(]!textModeActive[)] [^{]*[{][\n\t ]*clearTextSelection"
+    "Copying must preserve the Vim cursor and selection")
+expect(history/history_inner_widget.cpp
+    "TextMotion::TextStart:[\n\t ]*case Core::VimKeymap::TextMotion::LineStart:[\n\t ]*key = Qt::Key_Home"
+    "gg must use selected-message text coordinates")
+expect(history/history_inner_widget.cpp
+    "TextMotion::TextEnd:[\n\t ]*case Core::VimKeymap::TextMotion::LineEnd:[\n\t ]*key = Qt::Key_End"
+    "Shift G must use selected-message text coordinates")
+expect(history/view/history_view_keyboard_text_selection.cpp
+    "const auto focus = moveCursor[(]view, _focus, key, modifiers[)]"
+    "Visual selections must use the same bounded motions as the text cursor")
+expect(core/application.cpp
+    "case QEvent::ShortcutOverride: [^{]*[{][\n\t ]*if [(]Core::VimKeymap::HandleApplicationShortcutOverride[^}]*e->accept[(][)];[^}]*return true;"
+    "Message text must veto Qt shortcuts before Ctrl Tab starts switching chats")
+expect(core/vim_keymap.cpp
+    "e->type[(][)] == QEvent::ShortcutOverride[\n\t ]*&& !i->acceptShortcutOverride"
+    "Legacy handlers must never execute actions during a shortcut override probe")
+expect(history/history_inner_widget.cpp
+    "if [(]exact[)] [^{]*[{][\n\t ]*vimKeymapTriggerHint[(][*]exact[)];[\n\t ]*return true;"
+    "A selected hint letter must never fall through to delete or another action")
+expect(history/history_inner_widget.cpp
+    "mode == VimKeymapHintMode::SelectMessageText[\n\t ]*&& view->selectedText[(]AllTextSelection[)].empty[(][)]"
+    "Text-selection hints must omit messages that have no selectable text")
+expect(history/view/history_view_keyboard_text_selection.cpp
+    "maxOffset >= kInvalidTextOffset[^}]*FindTextSelectionLength[^}]*view->selectedText"
+    "Photo captions must recover actual text bounds when media retains the sentinel")
 get_property(count GLOBAL PROPERTY vim_wiring_count)
 message(STATUS "${count} Vim application wiring checks passed (source-level).")

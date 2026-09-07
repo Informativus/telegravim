@@ -3110,6 +3110,10 @@ void Element::drawInfo(
 	InfoDisplayType type) const {
 }
 
+QRect Element::textCursorRect(int symbol) const {
+	return {};
+}
+
 TextState Element::bottomInfoTextState(
 		int right,
 		int bottom,
