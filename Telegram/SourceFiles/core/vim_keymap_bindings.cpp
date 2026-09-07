@@ -73,12 +73,11 @@ std::optional<TextMotion> TextMotionKey(
 		|| (modifiers == Qt::ShiftModifier
 			&& KeyIs(e, Qt::Key_BracketRight, u"]"_q, u"ъ"_q))) {
 		return TextMotion::ParagraphNext;
-	} else if (modifiers == Qt::ShiftModifier
-		&& KeyIs(e, Qt::Key_J, u"j"_q, u"\u043E"_q)) {
+	} else if (KeyIs(e, Qt::Key_J, u"j"_q, u"\u043E"_q)) {
 		return TextMotion::LineDown;
-	} else if (modifiers == Qt::ShiftModifier
-		&& (KeyIs(e, Qt::Key_H, u"h"_q, u"\u0440"_q)
-			|| KeyIs(e, Qt::Key_K, u"k"_q, u"\u043B"_q))) {
+	} else if (KeyIs(e, Qt::Key_K, u"k"_q, u"\u043B"_q)
+		|| (modifiers == Qt::ShiftModifier
+			&& KeyIs(e, Qt::Key_H, u"h"_q, u"\u0440"_q))) {
 		return TextMotion::LineUp;
 	} else if (KeyIs(e, Qt::Key_H, u"h"_q, u"\u0440"_q)) {
 		return TextMotion::CharacterLeft;

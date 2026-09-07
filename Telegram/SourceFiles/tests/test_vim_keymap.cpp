@@ -730,6 +730,37 @@ void TestMessageTextNavigation() {
 	Check(
 		TextMotionKey(&russianEnd, pending) == TextMotion::TextEnd,
 		"Russian Shift G moves to the end of message text");
+	const auto lineKeys = std::vector<std::pair<int, QString>>{
+		{ Qt::Key_J, u"j"_q },
+		{ Qt::Key_K, u"k"_q },
+		{ 0x041E, u"о"_q },
+		{ 0x041B, u"л"_q },
+	};
+	for (const auto modifiers : { Qt::NoModifier, Qt::ShiftModifier }) {
+		for (auto i = 0; i != int(lineKeys.size()); ++i) {
+			const auto &[key, text] = lineKeys[i];
+			auto event = QKeyEvent(
+				QEvent::KeyPress,
+				key,
+				modifiers,
+				text);
+			Check(
+				TextMotionKey(&event, pending) == ((i % 2)
+					? TextMotion::LineUp : TextMotion::LineDown),
+				"j/k move by line in both layouts, with or without Shift");
+		}
+	}
+	for (const auto modifiers : { Qt::NoModifier, Qt::ShiftModifier }) {
+		auto event = QKeyEvent(
+			QEvent::KeyPress,
+			Qt::Key_H,
+			modifiers,
+			u"h"_q);
+		Check(
+			TextMotionKey(&event, pending) == ((modifiers == Qt::ShiftModifier)
+				? TextMotion::LineUp : TextMotion::CharacterLeft),
+			"h stays horizontal and Shift H retains its line-up alias");
+	}
 	const auto paragraphKeys = std::vector<std::pair<int, QString>>{
 		{ Qt::Key_BraceLeft, u"{"_q },
 		{ Qt::Key_BraceRight, u"}"_q },
