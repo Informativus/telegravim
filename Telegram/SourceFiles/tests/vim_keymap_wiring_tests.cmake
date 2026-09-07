@@ -199,7 +199,7 @@ expect(core/vim_keymap.cpp
     "UpdateKeyboardScope[(]scope[)];[\n\t ]*if [(]!scope && HandlePreLayerKey[(]e[)][)] [^{]*[{][^}]*}[\n\t ]*const auto focus"
     "Active message text must receive keys before global focus and chat commands")
 expect(history/history_inner_widget.cpp
-    "RegisterPreLayerKeyHandler[(]this,[^{]*[{][^}]*_vimKeymapTextCursorItem && !_vimKeymapTextVisualMode[^}]*}[\n\t ]*return vimKeymapHandleTextSelectionKey"
+    "RegisterPreLayerKeyHandler[(]this,[^{]*[{][^}]*_vimKeymapTextCursorItem && !_vimKeymapTextVisualMode[^}]*}[\n\t ]*return [(]e->type[(][)] == QEvent::ShortcutOverride[)][\n\t ]*\\|\\| vimKeymapHandleTextSelectionKey"
     "Only the active Vim text mode owns the early keyboard handler")
 expect(history/history_inner_widget.cpp
     "if [(]!motion[)] [^{]*[{][\n\t ]*return textModeActive;"
@@ -216,5 +216,11 @@ expect(history/history_inner_widget.cpp
 expect(history/view/history_view_keyboard_text_selection.cpp
     "const auto focus = moveCursor[(]view, _focus, key, modifiers[)]"
     "Visual selections must use the same bounded motions as the text cursor")
+expect(core/application.cpp
+    "case QEvent::ShortcutOverride: [^{]*[{][\n\t ]*if [(]Core::VimKeymap::HandleApplicationShortcutOverride[^}]*e->accept[(][)];[^}]*return true;"
+    "Message text must veto Qt shortcuts before Ctrl Tab starts switching chats")
+expect(core/vim_keymap.cpp
+    "e->type[(][)] == QEvent::ShortcutOverride[\n\t ]*&& !i->acceptShortcutOverride"
+    "Legacy handlers must never execute actions during a shortcut override probe")
 get_property(count GLOBAL PROPERTY vim_wiring_count)
 message(STATUS "${count} Vim application wiring checks passed (source-level).")

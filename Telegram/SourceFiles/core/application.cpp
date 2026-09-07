@@ -779,6 +779,12 @@ bool Application::eventFilter(QObject *object, QEvent *e) {
 	} break;
 
 	case QEvent::ShortcutOverride: {
+		if (Core::VimKeymap::HandleApplicationShortcutOverride(
+				static_cast<QKeyEvent*>(e))) {
+			e->accept();
+			return true;
+		}
+
 		// Ctrl+Tab/Ctrl+Shift+Tab chat switch is a special shortcut case,
 		// because it not only does an action on the shortcut activation,
 		// but also keeps the UI visible until you release the Ctrl key.

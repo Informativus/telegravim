@@ -483,8 +483,9 @@ HistoryInner::HistoryInner(
 			|| (!_vimKeymapTextCursorItem && !_vimKeymapTextVisualMode)) {
 			return false;
 		}
-		return vimKeymapHandleTextSelectionKey(e);
-	});
+		return (e->type() == QEvent::ShortcutOverride)
+			|| vimKeymapHandleTextSelectionKey(e);
+	}, true);
 	Core::App().inAppKeyPressed(
 	) | rpl::on_next([=] {
 		registerReadMetricsActivity();

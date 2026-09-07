@@ -72,6 +72,7 @@ std::vector<ActionHandler> ActionHandlers;
 struct KeyHandler {
 	QPointer<QObject> owner;
 	Fn<bool(not_null<QKeyEvent*>)> handler;
+	bool acceptShortcutOverride = false;
 };
 
 std::vector<KeyHandler> KeyHandlers;
@@ -546,6 +547,10 @@ void CleanupScrollAnimations() {
 	for (auto i = handlers.rbegin();
 		i != handlers.rend();
 		++i) {
+		if (e->type() == QEvent::ShortcutOverride
+			&& !i->acceptShortcutOverride) {
+			continue;
+		}
 		if (scope && !guardedScope) {
 			return true;
 		} else if (i->owner
@@ -1028,6 +1033,8 @@ void ShowHelpBox() {
 			result += copy + u" - подсказки для копирования сообщений\n"_q;
 			result += selectMessageText
 				+ u" - подсказки для visual-выделения текста сообщения\n"_q;
+			result += u"В тексте сообщения: gg/G - начало/конец, {/} - абзацы\n"_q;
+			result += u"Лишние клавиши сохраняют курсор и выделение; Esc - выход\n"_q;
 			result += reply + u" - подсказки для ответа на сообщение\n"_q;
 			result += edit
 				+ u" - подсказки для редактирования своих сообщений\n"_q;
@@ -1091,6 +1098,8 @@ void ShowHelpBox() {
 			result += copy + u" - show copy message hints\n"_q;
 			result += selectMessageText
 				+ u" - show message text visual selection hints\n"_q;
+			result += u"Message text: gg/G - start/end, {/} - paragraphs\n"_q;
+			result += u"Other keys keep the cursor and selection; Esc exits\n"_q;
 			result += reply + u" - show reply message hints\n"_q;
 			result += edit + u" - show edit message hints\n"_q;
 			result += deleteMessage + u" - show delete message hints\n"_q;
@@ -1331,6 +1340,15 @@ int HoldScrollDelta() {
 
 int SingleScrollDurationMs() {
 	return kSingleScrollDurationMs;
+}
+
+bool HandleApplicationShortcutOverride(not_null<QKeyEvent*> e) {
+	const auto active = App().activeWindow();
+	return Enabled()
+		&& !App().passcodeLocked()
+		&& (!active || !active->locked())
+		&& !ActiveKeyboardScope()
+		&& HandlePreLayerKey(e);
 }
 
 bool HandleApplicationKeyPress(
@@ -1587,11 +1605,13 @@ void UnregisterKeyHandler(not_null<QObject*> owner) {
 
 void RegisterPreLayerKeyHandler(
 		not_null<QObject*> owner,
-		Fn<bool(not_null<QKeyEvent*>)> handler) {
+		Fn<bool(not_null<QKeyEvent*>)> handler,
+		bool acceptShortcutOverride) {
 	UnregisterPreLayerKeyHandler(owner);
 	PreLayerKeyHandlers.push_back({
 		.owner = owner.get(),
 		.handler = std::move(handler),
+		.acceptShortcutOverride = acceptShortcutOverride,
 	});
 }
 
