@@ -491,7 +491,7 @@ def inspect(repo: Path, root: Path, head: str, merge_base: str, upstream: str) -
         "--diff-merges=first-parent",
         f"{merge_base}..{head}",
         "--",
-        limit=POLICY["max_diff_bytes"],
+        limit=POLICY["max_history_bytes"],
     )
     scan_ok, checks = True, []
     try:

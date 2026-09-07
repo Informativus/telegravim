@@ -102,7 +102,9 @@ this provenance policy itself requires owner review.
 
 Inspection limits are recorded in `.github/security/policy.json`. At most 1,200
 changed files, 250 introduced commits, 2 MB per changed blob and 8 MB per diff or
-history patch set are accepted. Source export is limited to 20,000 files/150 MB.
+diff are accepted. Introduced commit history has a separate 32 MB budget,
+including merge patches; it can repeat the same source data more than once.
+The complete history remains secret-scanned without truncation or exclusions. Source export is limited to 20,000 files/150 MB.
 Exceeding a bound fails inspection; it does not silently approve a partial scan.
 Split oversized PRs or deliberately revise the trusted policy through review.
 
