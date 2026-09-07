@@ -27,8 +27,25 @@ policy commit. Only GitHub-hosted runners are used.
   repository includes; interprocedural behavior in other translation units is not
   covered by that run. Header/build/dependency changes retain full-tree analysis.
   Macro-generated or missing external includes still limit no-build extraction.
-  Warnings and errors in changed
+  SARIF severity comes from the result or its referenced rule's default,
+  including rules provided by CodeQL query-pack extensions. Missing or
+  inconsistent metadata remains a warning; informational notes are retained
+  in the report without blocking. Warnings and errors in changed
   files fail the gate; findings in untouched files remain in the SARIF artifact.
+  Reviewed no-build diagnostics are recorded in the trusted default branch's
+  `.github/security/codeql-reviewed-findings.json`. Each exception requires the
+  exact source-file SHA-256, rule, severity, location fingerprint and diagnostic
+  message hash. Only explicitly listed path/rule pairs
+  can match; other paths, new findings, changed files, missing source
+  and failed analysis still block. The report counts accepted diagnostics and
+  retains them in SARIF. Contributor copies of the registry are never read.
+  Updating an exception is a separate policy change requiring owner review.
+  The initial records cover Qt callback/image/optional extraction errors, a
+  default-initializer parse error and comment-percentage metrics in assertion
+  suites, plus existing unsigned Qt type aliases and generated icon styles
+  absent from no-build extraction. Two plain-int bitfields are made explicitly
+  signed instead of being exempted. The combined macOS arm64
+  native suite passed 2361 checks; this is not cross-platform or live-chat proof.
   This is source analysis, not a build or runtime test. Generated sources,
   submodule contents, bundled third-party code, Objective-C-specific behavior,
   and dependency CVEs are not comprehensively covered. Submodule and dependency

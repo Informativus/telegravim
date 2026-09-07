@@ -1,3 +1,5 @@
+import copy
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -243,6 +245,139 @@ class BoundaryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SarifLevelTests(unittest.TestCase):
+    def test_driver_and_extension_rule_defaults(self):
+        rule = {"id": "cpp/recommendation", "defaultConfiguration": {"level": "note"}}
+        for extension in [False, True]:
+            run = {"tool": {"driver": {"rules": [rule]}}}
+            result = {"ruleId": rule["id"], "rule": {"index": 0}}
+            if extension:
+                run["tool"] = {"driver": {}, "extensions": [{"rules": [rule]}]}
+                result["rule"]["toolComponent"] = {"index": 0}
+            with self.subTest(extension=extension):
+                self.assertEqual(guard.sarif_level(run, result), "note")
+                with tempfile.TemporaryDirectory() as directory:
+                    run["results"] = [result]
+                    Path(directory, "result.sarif").write_text(json.dumps({"runs": [run]}))
+                    guard.check_sarif(Path(directory))
+                result["level"] = "error"
+                self.assertEqual(guard.sarif_level(run, result), "error")
+
+    def test_missing_or_inconsistent_rule_metadata_fails_closed(self):
+        run = {"tool": {"driver": {"rules": [
+            {"id": "known", "defaultConfiguration": {"level": "note"}},
+        ]}}}
+        for result in [
+            {}, {"level": "unknown"}, {"ruleId": "unknown", "ruleIndex": 0},
+            {"rule": {"toolComponent": {"index": -1}}},
+            {"rule": {"toolComponent": {"index": 0}}},
+        ]:
+            with self.subTest(result=result):
+                self.assertEqual(guard.sarif_level(run, result), "warning")
+
+    def test_warnings_and_errors_in_rules_still_block(self):
+        for level in ["warning", "error"]:
+            run = {"tool": {"driver": {"rules": [
+                {"id": "finding", "defaultConfiguration": {"level": level}},
+            ]}}, "results": [{"ruleId": "finding"}]}
+            with self.subTest(level=level), tempfile.TemporaryDirectory() as directory:
+                Path(directory, "result.sarif").write_text(json.dumps({"runs": [run]}))
+                with self.assertRaises(guard.GuardError):
+                    guard.check_sarif(Path(directory))
+
+
+class ReviewedTestFindingTests(unittest.TestCase):
+    def fixture(self, root):
+        path = "Telegram/SourceFiles/tests/test_vim_keymap.cpp"
+        source = root / path
+        source.parent.mkdir(parents=True)
+        source.write_text("int example() { return 1; }\n")
+        result = {
+            "ruleId": "cpp/missing-return", "level": "error",
+            "message": {"text": "Reviewed extractor diagnostic"},
+            "partialFingerprints": {"primaryLocationLineHash": "abc:1"},
+            "locations": [{"physicalLocation": {"artifactLocation": {"uri": path}}}],
+        }
+        reviews = [{
+            "path": path, "source_sha256": [hashlib.sha256(source.read_bytes()).hexdigest()],
+            "findings": [{
+                "rule": result["ruleId"], "level": "error", "line_hash": "abc:1",
+                "message_sha256": hashlib.sha256(result["message"]["text"].encode()).hexdigest(),
+                "reason": "The explicit return exists in the reviewed source.",
+            }],
+        }]
+        return source, result, reviews
+
+    def test_only_the_reviewed_finding_and_source_match(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, result, reviews = self.fixture(root)
+            self.assertTrue(guard.reviewed_finding({}, result, root, reviews))
+            changes = [
+                {"ruleId": "cpp/overflow-buffer"}, {"level": "warning"},
+                {"message": {"text": "A new diagnostic"}},
+                {"partialFingerprints": {}},
+                {"partialFingerprints": {"primaryLocationLineHash": "abc:2"}},
+                {"locations": []}, {"locations": result["locations"] * 2},
+            ]
+            for change in changes:
+                with self.subTest(change=change):
+                    self.assertFalse(guard.reviewed_finding({}, result | change, root, reviews))
+            source.write_text("int example() {}\n")
+            self.assertFalse(guard.reviewed_finding({}, result, root, reviews))
+            source.unlink()
+            self.assertFalse(guard.reviewed_finding({}, result, root, reviews))
+
+    def test_production_paths_traversal_and_symlinks_cannot_be_reviewed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, result, reviews = self.fixture(root)
+            for path in [
+                "Telegram/SourceFiles/core/example.cpp",
+                "Telegram/SourceFiles/tests/../core/example.cpp",
+                "/Telegram/SourceFiles/tests/test_vim_keymap.cpp",
+                "Telegram/SourceFiles/tests//example.cpp",
+            ]:
+                changed = copy.deepcopy(result)
+                changed["locations"][0]["physicalLocation"]["artifactLocation"]["uri"] = path
+                changed_reviews = copy.deepcopy(reviews)
+                changed_reviews[0]["path"] = path
+                with self.subTest(path=path):
+                    self.assertFalse(guard.reviewed_finding({}, changed, root, changed_reviews))
+            contents = source.read_bytes()
+            source.unlink()
+            target = root / "outside.cpp"
+            target.write_bytes(contents)
+            source.symlink_to(target)
+            self.assertFalse(guard.reviewed_finding({}, result, root, reviews))
+
+    def test_gate_preserves_new_findings_failures_and_requires_trusted_reviews(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, result, reviews = self.fixture(root)
+            policy = root / "policy"
+            policy.mkdir()
+            (policy / "codeql-reviewed-findings.json").write_text(json.dumps(reviews))
+            sarif = root / "report.sarif"
+            run = {"results": [result]}
+            sarif.write_text(json.dumps({"runs": [run]}))
+            with patch.object(guard, "HERE", policy):
+                guard.check_sarif(root, source=root)
+                with self.assertRaises(guard.GuardError):
+                    guard.check_sarif(root)
+                for addition in [
+                    {"results": [result, result | {"ruleId": "cpp/new-finding"}]},
+                    {"invocations": [{"executionSuccessful": False}]},
+                ]:
+                    sarif.write_text(json.dumps({"runs": [run | addition]}))
+                    with self.subTest(addition=addition), self.assertRaises(guard.GuardError):
+                        guard.check_sarif(root, source=root)
+                sarif.write_text(json.dumps({"runs": [run]}))
+                (policy / "codeql-reviewed-findings.json").write_text("[]")
+                with self.assertRaises(guard.GuardError):
+                    guard.check_sarif(root, source=root)
 
 
 class EnvironmentTests(unittest.TestCase):
