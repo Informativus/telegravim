@@ -719,11 +719,13 @@ void TestMessageTextFollowLink() {
 		kMarkupTextOptions,
 		1);
 	auto activated = 0;
+	auto activationLoop = QEventLoop();
 	auto handler = std::make_shared<LambdaClickHandler>([&](ClickContext context) {
 		Check(context.button == Qt::LeftButton
 			&& context.other.toInt() == 42,
 			"keyboard link activation preserves the click context");
 		++activated;
+		activationLoop.quit();
 	});
 	linked.setLink(1, handler);
 	linked.setLink(2, handler);
@@ -746,7 +748,8 @@ void TestMessageTextFollowLink() {
 	Check(link == handler, "the cursor on the mention resolves its native handler");
 	if (link) {
 		ActivateClickHandler(&guard, link, ClickContext{ Qt::LeftButton, 42 });
-		QApplication::processEvents();
+		QTimer::singleShot(1000, &activationLoop, &QEventLoop::quit);
+		activationLoop.exec();
 	}
 	Check(activated == 1, "a text link invokes the native click handler exactly once");
 }
@@ -2896,6 +2899,11 @@ int main(int argc, char *argv[]) {
 	qputenv("QT_QPA_PLATFORM", "offscreen");
 #endif // !Q_OS_MAC
 	auto application = QApplication(argc, argv);
+	crl::init_main_queue([](void (*callable)(void*), void *argument) {
+		QMetaObject::invokeMethod(qApp, [=] {
+			callable(argument);
+		}, Qt::QueuedConnection);
+	});
 	auto baseIntegration = TestBaseIntegration(argc, argv);
 	base::Integration::Set(&baseIntegration);
 	auto integration = TestIntegration();
