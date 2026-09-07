@@ -107,6 +107,9 @@ SelectableCursorAtOffset(
 		return std::nullopt;
 	}
 	const auto target = int(normalized->symbol);
+	if (const auto rect = view->textCursorRect(target); !rect.isEmpty()) {
+		return rect.center();
+	}
 	const auto inner = view->innerGeometry();
 	if (inner.width() <= 0 || inner.height() <= 0) {
 		return std::nullopt;
@@ -177,6 +180,10 @@ SelectableCursorAtOffset(
 [[nodiscard]] std::optional<QRect> FindCursorRect(
 		not_null<Element*> view,
 		MessageSelectionFlatEndpoint current) {
+	if (const auto rect = view->textCursorRect(current.offset())
+		; !rect.isEmpty()) {
+		return rect;
+	}
 	const auto point = FindCursorPoint(view, current);
 	const auto maxOffset = MaxTextOffset(view);
 	if (!point || !maxOffset) {

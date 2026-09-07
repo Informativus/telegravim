@@ -199,6 +199,7 @@ public:
 		QPoint point,
 		StateRequest request) const override;
 	void updatePressed(QPoint point) override;
+	[[nodiscard]] QRect textCursorRect(int symbol) const override;
 	bool consumeHorizontalScroll(
 		QPoint position,
 		int delta,
@@ -491,7 +492,7 @@ private:
 
 	void updateViewButtonExistence();
 	[[nodiscard]] int viewButtonHeight() const;
-	[[nodiscard]] bool prepareRichPageTextRect(QRect &trect) const;
+	[[nodiscard]] bool prepareTextRect(QRect &trect) const;
 	[[nodiscard]] QRect richPageRect(QRect trect) const;
 	[[nodiscard]] QPoint prepareRichPageStateRect(
 		QPoint point,

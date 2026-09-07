@@ -15,6 +15,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 class QFont;
 class QPainter;
 
+namespace Ui::Text {
+class String;
+} // namespace Ui::Text
+
 namespace Core::VimKeymap {
 
 struct HintBadge {
@@ -56,6 +60,10 @@ struct VisualSelectionRange {
 	int requestedWidth,
 	int requestedHeight);
 void PaintMessageCursor(QPainter &p, QRect characterRect);
+[[nodiscard]] QRect TextCursorRect(
+	const Ui::Text::String &text,
+	int width,
+	int symbol);
 [[nodiscard]] VisualSelectionRange MakeVisualSelectionRange(
 	int anchor,
 	int focus,

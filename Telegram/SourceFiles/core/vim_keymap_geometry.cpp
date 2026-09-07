@@ -7,6 +7,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "core/vim_keymap_geometry.h"
 
+#include "ui/text/text.h"
+
+#include <QtCore/QTextBoundaryFinder>
 #include <QtGui/QFontMetrics>
 #include <QtGui/QPainter>
 
@@ -198,6 +201,68 @@ void PaintMessageCursor(QPainter &p, QRect characterRect) {
 	p.setCompositionMode(QPainter::CompositionMode_Difference);
 	p.fillRect(characterRect, Qt::white);
 	p.restore();
+}
+
+QRect TextCursorRect(const Ui::Text::String &text, int width, int symbol) {
+	if (width <= 0 || symbol < 0 || symbol >= text.length()) {
+		return {};
+	}
+	auto from = symbol;
+	auto till = symbol + 1;
+	const auto plain = text.toString();
+	if (plain.size() == text.length()) {
+		auto boundary = QTextBoundaryFinder(QTextBoundaryFinder::Grapheme, plain);
+		boundary.setPosition(symbol);
+		if (!boundary.isAtBoundary()) {
+			from = boundary.toPreviousBoundary();
+		}
+		till = boundary.toNextBoundary();
+	}
+	auto request = Ui::Text::StateRequest();
+	request.flags = Ui::Text::StateRequest::Flag::LookupSymbol;
+	const auto lines = text.countLinesGeometry(width);
+	const auto lineStart = [&](int y) {
+		const auto left = text.getState(QPoint(-1, y), width, request);
+		const auto right = text.getState(QPoint(width, y), width, request);
+		return std::min(
+			int(left.symbol) + int(left.afterSymbol),
+			int(right.symbol) + int(right.afterSymbol));
+	};
+	auto top = 0;
+	for (auto i = 0; i != lines.size(); ++i) {
+		const auto &line = lines[i];
+		const auto y = (top + line.bottom - 1) / 2;
+		const auto next = (i + 1 < lines.size())
+			? lineStart((line.bottom + lines[i + 1].bottom - 1) / 2)
+			: text.length();
+		const auto bounds = QRect(0, top, width, line.bottom - top);
+		top = line.bottom;
+		if (symbol < lineStart(y) || symbol >= next) {
+			continue;
+		}
+		const auto matches = [&](QPoint point) {
+			const auto state = text.getState(point, width, request);
+			return state.uponSymbol
+				&& state.symbol >= from
+				&& state.symbol < till;
+		};
+		for (auto x = 0; x < width; ++x) {
+			if (matches(QPoint(x, y))) {
+				return LinkHintTargetRect(QPoint(x, y), bounds, matches);
+			}
+		}
+		const auto space = std::max(1, text.style()->font->spacew);
+		const auto height = std::min(bounds.height(), text.style()->font->height);
+		const auto left = line.rtl
+			? (width - line.width - space)
+			: (line.left + line.width);
+		return QRect(
+			std::clamp(left, 0, std::max(0, width - space)),
+			y - height / 2,
+			std::min(space, width),
+			height);
+	}
+	return {};
 }
 
 QRect CursorPaintRect(

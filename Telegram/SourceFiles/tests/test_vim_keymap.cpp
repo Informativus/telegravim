@@ -54,6 +54,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QSaveFile>
 #include <QtCore/QDir>
 #include <QtCore/QTemporaryDir>
+#include <QtCore/QTextBoundaryFinder>
 #include <QtNetwork/QLocalServer>
 #include <QtNetwork/QLocalSocket>
 #include <QtWidgets/QApplication>
@@ -2170,6 +2171,60 @@ void TestKeyboardStickerFramePainting() {
 	Check(style::main_palette::load(palette), "sticker test restores the UI palette");
 }
 
+void TestMessageCaptionCursorGeometry() {
+	using namespace Core::VimKeymap;
+	const auto caption = u"Первый абзац: Wi  m и русский текст.\n\n"
+		u"Вторая строка с emoji 🔥 и 👨‍👩‍👧‍👦.\n"
+		u"Ссылка example.org и ещё один длинный абзац.\n"
+		u"Последняя строка"_q;
+	const auto text = Ui::Text::String(st::defaultTextStyle, caption);
+	auto request = Ui::Text::StateRequest();
+	request.flags = Ui::Text::StateRequest::Flag::LookupSymbol;
+	for (const auto width : { 140, 360 }) {
+		const auto height = text.countHeight(width);
+		for (const auto origin : { QPoint(18, 22), QPoint(37, 480) }) {
+			const auto bounds = QRect(origin, QSize(width, height));
+			for (auto symbol = 0; symbol < text.length(); ++symbol) {
+				const auto cell = TextCursorRect(text, width, symbol);
+				Check(!cell.isEmpty() && bounds.contains(cell.translated(origin)),
+					"every caption position has a cursor inside the laid-out text");
+				if (cell.isEmpty()) {
+					continue;
+				}
+				const auto state = text.getState(cell.center(), width, request);
+				if (caption[symbol] != QChar::LineFeed) {
+					auto boundary = QTextBoundaryFinder(
+						QTextBoundaryFinder::Grapheme,
+						caption);
+					boundary.setPosition(symbol);
+					const auto from = boundary.isAtBoundary()
+						? symbol
+						: boundary.toPreviousBoundary();
+					const auto till = boundary.toNextBoundary();
+					Check(state.uponSymbol && state.symbol >= from && state.symbol < till,
+						"cursor stays on the requested letter, space or complete emoji");
+				}
+			}
+			const auto first = TextCursorRect(text, width, 0).translated(origin);
+			Check(first.top() == origin.y(),
+				"caption cursor starts on the first row below photo and forwarded header");
+			const auto emptyLine = caption.indexOf(u"\n\n"_q) + 1;
+			const auto before = TextCursorRect(text, width, emptyLine - 1);
+			const auto blank = TextCursorRect(text, width, emptyLine);
+			const auto after = TextCursorRect(text, width, emptyLine + 1);
+			Check(before.bottom() < blank.top() && blank.bottom() < after.top(),
+				"cursor retains a separate cell on an empty paragraph");
+		}
+	}
+	const auto emoji = Ui::Text::String(st::defaultTextStyle, u"🔥x"_q);
+	Check(TextCursorRect(emoji, 200, 0) == TextCursorRect(emoji, 200, 1),
+		"both UTF-16 halves of an emoji use the same full cursor cell");
+	Check(TextCursorRect(text, 0, 0).isEmpty()
+		&& TextCursorRect(text, 200, -1).isEmpty()
+		&& TextCursorRect(text, 200, text.length()).isEmpty(),
+		"cursor geometry rejects invalid widths and text offsets");
+}
+
 void TestMessageCursorPainting() {
 	using namespace Core::VimKeymap;
 	const auto text = Ui::Text::String(st::defaultTextStyle, u"Wi  m"_q);
@@ -2780,6 +2835,7 @@ int main(int argc, char *argv[]) {
 	TestShareKeyboardFocusCycle();
 	TestKeyboardStickerFramePainting();
 	TestMessageCursorPainting();
+	TestMessageCaptionCursorGeometry();
 	TestKeyboardFocusScrollingAndPainting();
 	TestCustomKeyboardFocusFrame();
 	TestInterfaceHistory();

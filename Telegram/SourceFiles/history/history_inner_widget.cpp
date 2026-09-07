@@ -1463,6 +1463,10 @@ bool HistoryInner::vimKeymapBeginTextSelection(not_null<Element*> view) {
 		return false;
 	}
 	vimKeymapSetTextCursor(view, *cursor);
+	if (_vimKeymapTextCursorRect) {
+		const auto rect = _vimKeymapTextCursorRect->translated(0, itemTop(view));
+		_scroll->scrollToY(rect.top(), rect.bottom() + 1);
+	}
 	Core::VimKeymap::SetNormalMode(true);
 	setFocus(Qt::ShortcutFocusReason);
 	return true;
@@ -1506,10 +1510,10 @@ void HistoryInner::vimKeymapPaintTextCursor(Painter &p) {
 	if (!_vimKeymapTextCursorRect) {
 		return;
 	}
-	const auto inner = view->innerGeometry().translated(0, top);
+	const auto bounds = QRect(0, top, view->width(), view->height());
 	Core::VimKeymap::PaintMessageCursor(
 		p,
-		_vimKeymapTextCursorRect->translated(0, top).intersected(inner));
+		_vimKeymapTextCursorRect->translated(0, top).intersected(bounds));
 }
 
 TextSelection HistoryInner::getSelectedTextRange(

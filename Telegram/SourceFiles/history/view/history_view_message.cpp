@@ -16,6 +16,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/click_handler_types.h" // ClickHandlerContext
 #include "core/ui_integration.h"
 #include "core/update_checker.h"
+#include "core/vim_keymap_geometry.h"
 #include "history/view/history_view_cursor_state.h"
 #include "history/history_item_components.h"
 #include "history/history_item_helpers.h"
@@ -670,7 +671,7 @@ void Message::activateRichPagePreparedLink(
 		if (top < 0) {
 			const auto expansion = rich->article.expandDetailsToAnchor(anchorId);
 			if (expansion.changed) {
-				haveTrect = owner->prepareRichPageTextRect(trect);
+				haveTrect = owner->prepareTextRect(trect);
 				if (!haveTrect) {
 					return false;
 				}
@@ -685,7 +686,7 @@ void Message::activateRichPagePreparedLink(
 				return false;
 			}
 		}
-		if (!haveTrect && !owner->prepareRichPageTextRect(trect)) {
+		if (!haveTrect && !owner->prepareTextRect(trect)) {
 			return false;
 		}
 		return owner->delegate()->elementScrollToLocalY(
@@ -764,7 +765,7 @@ QRect Message::richPageRect(QRect trect) const {
 		{ st::msgPadding.left(), 0, st::msgPadding.right(), 0 });
 }
 
-bool Message::prepareRichPageTextRect(QRect &trect) const {
+bool Message::prepareTextRect(QRect &trect) const {
 	if (!hasVisibleText()) {
 		return false;
 	}
@@ -880,6 +881,22 @@ bool Message::prepareRichPageTextRect(QRect &trect) const {
 			+ (mediaOnBottom ? 0 : st::mediaInBubbleSkip));
 	}
 	return true;
+}
+
+QRect Message::textCursorRect(int symbol) const {
+	auto trect = QRect();
+	if (richpage() || !prepareTextRect(trect)) {
+		return {};
+	}
+	if (const auto botTop = Get<FakeBotAboutTop>()) {
+		trect.setY(trect.y() + botTop->height);
+	}
+	const auto offset = _invertMedia ? visibleMediaTextLength() : 0;
+	const auto rect = Core::VimKeymap::TextCursorRect(
+		text(),
+		std::max(textRealWidth(), trect.width()),
+		symbol - offset);
+	return rect.isEmpty() ? QRect() : rect.translated(trect.topLeft());
 }
 
 QPoint Message::prepareRichPageStateRect(QPoint point, QRect &trect) const {
@@ -1905,7 +1922,7 @@ void Message::draw(Painter &p, const PaintContext &context) const {
 		auto richPageGaps = std::vector<Ui::BubbleSelectionInterval>();
 		if (rich && rich->hasUnsupportedBlocks) {
 			auto richTrect = QRect();
-			if (prepareRichPageTextRect(richTrect)) {
+			if (prepareTextRect(richTrect)) {
 				const auto origin = richPageRect(richTrect).topLeft();
 				const auto rects = rich->article.unsupportedNoticeRects();
 				richPageGaps.reserve(rects.size());
@@ -4803,7 +4820,7 @@ bool Message::getStateText(
 void Message::updatePressed(QPoint point) {
 	if (const auto rich = richpage()) {
 		auto trect = QRect();
-		if (prepareRichPageTextRect(trect)) {
+		if (prepareTextRect(trect)) {
 			const auto local = prepareRichPageStateRect(point, trect);
 			rich->article.updatePressed(local);
 			if (rich->handlerHorizontalScrollActive
@@ -4888,7 +4905,7 @@ bool Message::consumeHorizontalScroll(
 		Qt::ScrollPhase phase) {
 	const auto rich = richpage();
 	auto trect = QRect();
-	if (!rich || !prepareRichPageTextRect(trect)) {
+	if (!rich || !prepareTextRect(trect)) {
 		return false;
 	}
 	return rich->article.consumeHorizontalScroll(
@@ -4900,7 +4917,7 @@ bool Message::consumeHorizontalScroll(
 bool Message::canConsumeHorizontalScroll(QPoint position, int delta) const {
 	const auto rich = richpage();
 	auto trect = QRect();
-	if (!rich || !prepareRichPageTextRect(trect)) {
+	if (!rich || !prepareTextRect(trect)) {
 		return false;
 	}
 	return rich->article.canConsumeHorizontalScroll(
