@@ -245,6 +245,47 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class SarifLevelTests(unittest.TestCase):
+    def test_driver_and_extension_rule_defaults(self):
+        rule = {"id": "cpp/recommendation", "defaultConfiguration": {"level": "note"}}
+        for extension in [False, True]:
+            run = {"tool": {"driver": {"rules": [rule]}}}
+            result = {"ruleId": rule["id"], "rule": {"index": 0}}
+            if extension:
+                run["tool"] = {"driver": {}, "extensions": [{"rules": [rule]}]}
+                result["rule"]["toolComponent"] = {"index": 0}
+            with self.subTest(extension=extension):
+                self.assertEqual(guard.sarif_level(run, result), "note")
+                with tempfile.TemporaryDirectory() as directory:
+                    run["results"] = [result]
+                    Path(directory, "result.sarif").write_text(json.dumps({"runs": [run]}))
+                    guard.check_sarif(Path(directory))
+                result["level"] = "error"
+                self.assertEqual(guard.sarif_level(run, result), "error")
+
+    def test_missing_or_inconsistent_rule_metadata_fails_closed(self):
+        run = {"tool": {"driver": {"rules": [
+            {"id": "known", "defaultConfiguration": {"level": "note"}},
+        ]}}}
+        for result in [
+            {}, {"level": "unknown"}, {"ruleId": "unknown", "ruleIndex": 0},
+            {"rule": {"toolComponent": {"index": -1}}},
+            {"rule": {"toolComponent": {"index": 0}}},
+        ]:
+            with self.subTest(result=result):
+                self.assertEqual(guard.sarif_level(run, result), "warning")
+
+    def test_warnings_and_errors_in_rules_still_block(self):
+        for level in ["warning", "error"]:
+            run = {"tool": {"driver": {"rules": [
+                {"id": "finding", "defaultConfiguration": {"level": level}},
+            ]}}, "results": [{"ruleId": "finding"}]}
+            with self.subTest(level=level), tempfile.TemporaryDirectory() as directory:
+                Path(directory, "result.sarif").write_text(json.dumps({"runs": [run]}))
+                with self.assertRaises(guard.GuardError):
+                    guard.check_sarif(Path(directory))
+
+
 class EnvironmentTests(unittest.TestCase):
     def environment(self):
         return {

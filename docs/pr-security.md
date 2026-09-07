@@ -27,7 +27,10 @@ policy commit. Only GitHub-hosted runners are used.
   repository includes; interprocedural behavior in other translation units is not
   covered by that run. Header/build/dependency changes retain full-tree analysis.
   Macro-generated or missing external includes still limit no-build extraction.
-  Warnings and errors in changed
+  SARIF severity comes from the result or its referenced rule's default,
+  including rules provided by CodeQL query-pack extensions. Missing or
+  inconsistent metadata remains a warning; informational notes are retained
+  in the report without blocking. Warnings and errors in changed
   files fail the gate; findings in untouched files remain in the SARIF artifact.
   This is source analysis, not a build or runtime test. Generated sources,
   submodule contents, bundled third-party code, Objective-C-specific behavior,
