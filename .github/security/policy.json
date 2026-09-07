@@ -7,5 +7,6 @@
   "max_files": 1200,
   "max_blob_bytes": 2000000,
   "max_diff_bytes": 8000000,
-  "max_commits": 250
+  "max_commits": 250,
+  "max_history_bytes": 32000000
 }
