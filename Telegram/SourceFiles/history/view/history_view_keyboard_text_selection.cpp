@@ -28,10 +28,17 @@ constexpr auto kInvalidTextOffset = 0xFFFF;
 	const auto whole = view->adjustSelection(
 		TextSelection(0, kInvalidTextOffset),
 		TextSelectType::Letters);
-	const auto maxOffset = int(whole.to);
-	return (maxOffset <= 0 || maxOffset >= kInvalidTextOffset)
-		? std::nullopt
-		: std::optional<int>(maxOffset);
+	auto maxOffset = int(whole.to);
+	if (maxOffset >= kInvalidTextOffset) {
+		maxOffset = Core::VimKeymap::FindTextSelectionLength(
+			kInvalidTextOffset,
+			[=](int from) {
+				return !view->selectedText(TextSelection(
+					uint16(from),
+					kInvalidTextOffset)).empty();
+			});
+	}
+	return (maxOffset > 0) ? std::optional<int>(maxOffset) : std::nullopt;
 }
 
 [[nodiscard]] MessageSelectionFlatEndpoint CursorAtOffset(

@@ -864,6 +864,73 @@ void TestMessageTextNavigation() {
 		"trailing blank paragraphs stay bounded");
 }
 
+void TestMessageTextBounds() {
+	using Core::VimKeymap::FindTextSelectionLength;
+	const auto content = u"Подпись к фото: первая строка.\nВторая строка 🙂"_q;
+	const auto caption = Ui::Text::String(st::defaultTextStyle, content);
+	const auto textRange = caption.adjustSelection(
+		AllTextSelection,
+		TextSelectType::Letters);
+	const auto mediaRange = shiftSelection(
+		unshiftSelection(AllTextSelection, caption),
+		caption);
+	const auto adjustedEnd = std::max(textRange.to, mediaRange.to);
+	Check(
+		adjustedEnd == AllTextSelection.to,
+		"photo media leaves the all-text sentinel in adjusted caption ranges");
+	auto queries = 0;
+	const auto length = FindTextSelectionLength(adjustedEnd, [&](int from) {
+		++queries;
+		return !caption.toTextForMimeData(
+			TextSelection(uint16(from), adjustedEnd)).empty();
+	});
+	Check(
+		length == caption.length(),
+		"photo caption bounds come from actual selectable text");
+	Check(
+		queries <= 16,
+		"caption bounds need logarithmic selection queries");
+	const auto first = Core::VimKeymap::ResolveTextCursorOffset(
+		0,
+		1,
+		length,
+		[&](int offset) {
+			return !caption.toTextForMimeData(TextSelection(
+				uint16(offset),
+				uint16(offset + 1))).empty();
+		});
+	Check(first == 0, "photo captions allow the text cursor to enter");
+	const auto selected = caption.toTextForMimeData(TextSelection(
+		uint16(first),
+		uint16(length))).rich.text;
+	Check(selected == content, "selecting a photo caption keeps its complete text");
+
+	const auto tail = Ui::Text::String(st::defaultTextStyle, u"Другой блок"_q);
+	const auto tailStart = caption.length() + 7;
+	const auto sparseLength = FindTextSelectionLength(
+		AllTextSelection.to,
+		[&](int from) {
+			const auto range = TextSelection(uint16(from), AllTextSelection.to);
+			return !caption.toTextForMimeData(range).empty()
+				|| !tail.toTextForMimeData(unshiftSelection(range, tailStart)).empty();
+		});
+	Check(
+		sparseLength == tailStart + tail.length(),
+		"media text bounds preserve flat offsets across gaps between text blocks");
+	Check(
+		FindTextSelectionLength(AllTextSelection.to, [](int) { return false; }) == 0,
+		"photos without captions have no text cursor target");
+	Check(
+		FindTextSelectionLength(
+			AllTextSelection.to,
+			[](int from) { return from < 1; }) == 1,
+		"single-character captions remain selectable");
+	Check(
+		FindTextSelectionLength(AllTextSelection.to, [](int) { return true; })
+			== AllTextSelection.to,
+		"selection lookup does not probe beyond the flat coordinate limit");
+}
+
 void TestVimKeymapCursorGeometry() {
 	const auto character = QRect(20, 30, 14, 24);
 	Check(
@@ -2692,6 +2759,7 @@ int main(int argc, char *argv[]) {
 	TestVimKeymapCommandBindings();
 	TestVimKeymapTransientUiKeys();
 	TestMessageTextNavigation();
+	TestMessageTextBounds();
 	TestVimKeymapCursorGeometry();
 	TestVimKeymapPickerNavigation();
 	TestVimKeymapStickerSetNavigation();

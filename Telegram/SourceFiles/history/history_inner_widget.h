@@ -622,7 +622,7 @@ private:
 	void vimKeymapAddWidgetHints();
 	void vimKeymapAssignHintLabels();
 	void vimKeymapUpdateWidgetHintPrefix();
-	[[nodiscard]] bool vimKeymapTriggerHint(VimKeymapHint hint);
+	void vimKeymapTriggerHint(VimKeymapHint hint);
 	void vimKeymapPaintHints(Painter &p) const;
 	[[nodiscard]] bool vimKeymapCopyItem(not_null<HistoryItem*> item);
 	[[nodiscard]] bool vimKeymapReplyToItem(not_null<HistoryItem*> item);

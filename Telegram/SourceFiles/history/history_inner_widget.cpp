@@ -480,10 +480,13 @@ HistoryInner::HistoryInner(
 			not_null<QKeyEvent*> e) {
 		if (!isVisible()
 			|| !window()->isActiveWindow()
-			|| (!_vimKeymapTextCursorItem && !_vimKeymapTextVisualMode)) {
+			|| (!_vimKeymapTextCursorItem
+				&& !_vimKeymapTextVisualMode
+				&& _vimKeymapHintMode == VimKeymapHintMode::None)) {
 			return false;
 		}
 		return (e->type() == QEvent::ShortcutOverride)
+			|| vimKeymapHandleHintKey(e)
 			|| vimKeymapHandleTextSelectionKey(e);
 	}, true);
 	Core::App().inAppKeyPressed(
@@ -4523,6 +4526,10 @@ void HistoryInner::vimKeymapBuildMessageHints(VimKeymapHintMode mode) {
 	const auto now = base::unixtime::now();
 	for (const auto view : accessibleElements()) {
 		const auto item = view->data();
+		if (mode == VimKeymapHintMode::SelectMessageText
+			&& view->selectedText(AllTextSelection).empty()) {
+			continue;
+		}
 		if (mode == VimKeymapHintMode::ShareMessage && !item->allowsForward()) {
 			continue;
 		}
@@ -5002,12 +5009,12 @@ bool HistoryInner::vimKeymapBeginHints(Core::VimKeymap::Action action) {
 	return _vimKeymapHintMode != VimKeymapHintMode::None;
 }
 
-bool HistoryInner::vimKeymapTriggerHint(VimKeymapHint hint) {
+void HistoryInner::vimKeymapTriggerHint(VimKeymapHint hint) {
 	const auto item = hint.itemId ? session().data().message(hint.itemId) : nullptr;
 	if (Core::App().passcodeLocked()
 		|| (hint.itemId && (!item || !viewByItem(item)))) {
 		vimKeymapClearHints();
-		return false;
+		return;
 	}
 	const auto mode = _vimKeymapHintMode;
 	if (mode == VimKeymapHintMode::ActivateLink) {
@@ -5018,17 +5025,17 @@ bool HistoryInner::vimKeymapTriggerHint(VimKeymapHint hint) {
 			if (root && target) {
 				Core::VimKeymap::KeyboardNavigation::Get(root)->focusTarget(target);
 			}
-			return true;
+			return;
 		} else if (hint.photo) {
 			const auto photo = hint.photo;
 			vimKeymapClearHints();
 			elementOpenPhoto(not_null{ photo }, hint.itemId);
-			return true;
+			return;
 		} else if (hint.document) {
 			const auto document = hint.document;
 			vimKeymapClearHints();
 			elementOpenDocument(not_null{ document }, hint.itemId, true);
-			return true;
+			return;
 		} else if (hint.link) {
 			const auto link = hint.link;
 			vimKeymapClearHints();
@@ -5036,39 +5043,43 @@ bool HistoryInner::vimKeymapTriggerHint(VimKeymapHint hint) {
 				window(),
 				link,
 				prepareClickContext(Qt::LeftButton, hint.itemId));
-			return true;
+			return;
 		} else if (hint.useClickPoint) {
 			const auto globalPoint = mapToGlobal(hint.clickPoint);
 			vimKeymapClearHints();
 			mouseActionStart(globalPoint, Qt::LeftButton);
 			mouseActionFinish(globalPoint, Qt::LeftButton);
-			return true;
+			return;
 		}
 		vimKeymapClearHints();
-		return false;
+		return;
 	}
 	if (!item) {
 		vimKeymapClearHints();
-		return false;
+		return;
 	}
 	const auto view = viewByItem(item);
 	if (!view) {
 		vimKeymapClearHints();
-		return false;
+		return;
 	}
 	if (mode == VimKeymapHintMode::PickMessageLinks) {
 		vimKeymapBuildLinkHints(view);
-		return true;
+		return;
 	} else if (mode == VimKeymapHintMode::SelectMessageText) {
-		vimKeymapClearHints();
-		return vimKeymapBeginTextSelection(view);
+		if (vimKeymapBeginTextSelection(view)) {
+			vimKeymapClearHints();
+		} else {
+			_vimKeymapHintPrefix.clear();
+			update();
+		}
+		return;
 	} else if (mode == VimKeymapHintMode::ShareMessage) {
 		vimKeymapClearHints();
 		if (item->allowsForward()) {
 			FastShareMessage(_controller, item);
-			return true;
 		}
-		return false;
+		return;
 	}
 	const auto result = (mode == VimKeymapHintMode::CopyMessage)
 		? vimKeymapCopyItem(item)
@@ -5085,12 +5096,13 @@ bool HistoryInner::vimKeymapTriggerHint(VimKeymapHint hint) {
 		_vimKeymapHintPrefix.clear();
 		update();
 	}
-	return result;
 }
 
 bool HistoryInner::vimKeymapHandleHintKey(not_null<QKeyEvent*> e) {
 	if (_vimKeymapHintMode == VimKeymapHintMode::None) {
 		return false;
+	} else if (e->isAutoRepeat()) {
+		return true;
 	} else if (e->key() == Qt::Key_Escape) {
 		vimKeymapClearHints();
 		return true;
@@ -5123,7 +5135,8 @@ bool HistoryInner::vimKeymapHandleHintKey(not_null<QKeyEvent*> e) {
 		}
 	}
 	if (exact) {
-		return vimKeymapTriggerHint(*exact);
+		vimKeymapTriggerHint(*exact);
+		return true;
 	} else if (!hasPrefix) {
 		_vimKeymapHintPrefix.clear();
 	}

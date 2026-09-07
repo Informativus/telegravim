@@ -293,6 +293,22 @@ QRect GroupedMediaHintRect(
 		itemInnerTopLeft + QPoint(0, itemTop));
 }
 
+int FindTextSelectionLength(
+		int upperBound,
+		Fn<bool(int)> hasTextFrom) {
+	auto from = 0;
+	auto till = std::max(upperBound, 0);
+	while (from < till) {
+		const auto middle = from + (till - from) / 2;
+		if (hasTextFrom(middle)) {
+			from = middle + 1;
+		} else {
+			till = middle;
+		}
+	}
+	return from;
+}
+
 int TextParagraphOffset(
 		int position,
 		int direction,

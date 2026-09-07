@@ -88,6 +88,9 @@ void PaintMessageCursor(QPainter &p, QRect characterRect);
 	QRect groupItemRect,
 	QPoint itemInnerTopLeft,
 	int itemTop);
+[[nodiscard]] int FindTextSelectionLength(
+	int upperBound,
+	Fn<bool(int)> hasTextFrom);
 [[nodiscard]] int TextParagraphOffset(
 	int position,
 	int direction,
