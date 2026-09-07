@@ -14,6 +14,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 class QKeyEvent;
 
+namespace Core::VimKeymap {
+enum class TextMotion;
+} // namespace Core::VimKeymap
+
 namespace Core::VimKeymap::Bindings {
 
 struct MatchOptions {
@@ -49,6 +53,10 @@ enum class StickerGridAction {
 [[nodiscard]] bool IsLineStart(not_null<QKeyEvent*> e);
 [[nodiscard]] bool IsLineEnd(not_null<QKeyEvent*> e);
 [[nodiscard]] bool IsTextYank(not_null<QKeyEvent*> e);
+[[nodiscard]] bool IsTextFollowLink(not_null<QKeyEvent*> e, bool pendingStart);
+[[nodiscard]] std::optional<TextMotion> TextMotionKey(
+	not_null<QKeyEvent*> e,
+	bool &pendingStart);
 [[nodiscard]] bool IsMessageShare(not_null<QKeyEvent*> e);
 [[nodiscard]] std::optional<float64> MediaPlaybackSpeed(
 	not_null<QKeyEvent*> e,
@@ -67,6 +75,7 @@ enum class StickerGridAction {
 [[nodiscard]] int PickerNavigationDelta(not_null<QKeyEvent*> e);
 [[nodiscard]] int MediaNavigationDelta(not_null<QKeyEvent*> e);
 [[nodiscard]] int InterfaceHistoryDelta(not_null<QKeyEvent*> e);
+[[nodiscard]] bool SpellcheckKey(not_null<QKeyEvent*> e);
 [[nodiscard]] StickerGridAction StickerGridActionKey(
 	not_null<QKeyEvent*> e);
 

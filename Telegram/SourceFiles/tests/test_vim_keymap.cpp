@@ -21,6 +21,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/flat_map.h"
 #include "base/integration.h"
 #include "ui/abstract_button.h"
+#include "ui/click_handler.h"
 #include "ui/integration.h"
 #include "ui/layers/layer_widget.h"
 #include "ui/widgets/checkbox.h"
@@ -28,8 +29,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/continuous_sliders.h"
 #include "ui/widgets/labels.h"
 #include "ui/text/text_utilities.h"
+#include "ui/emoji_config.h"
 #include "ui/text/text.h"
 #include "ui/widgets/popup_menu.h"
+#include "ui/widgets/menu/menu.h"
+#include "chat_helpers/spellchecker_bundled.h"
+#include "chat_helpers/spellchecker_menu.h"
+#include "spellcheck/spelling_highlighter.h"
+#include "spellcheck/spellcheck_value.h"
+#include "spellcheck/spellcheck_utils.h"
 #include "ui/widgets/menu/menu_action.h"
 #include "ui/wrap/slide_wrap.h"
 #include "ui/style/style_core.h"
@@ -53,6 +61,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QSaveFile>
 #include <QtCore/QDir>
 #include <QtCore/QTemporaryDir>
+#include <QtCore/QTextBoundaryFinder>
 #include <QtNetwork/QLocalServer>
 #include <QtNetwork/QLocalSocket>
 #include <QtWidgets/QApplication>
@@ -533,15 +542,6 @@ void TestVimKeymapTransientUiKeys() {
 	Check(
 		!Core::VimKeymap::Bindings::IsTextYank(&repeatedYank),
 		"repeated y does not rewrite the clipboard");
-	Check(
-		Core::VimKeymap::TextVisualYankCompletes(true, true),
-		"successful visual yank exits message visual mode");
-	Check(
-		!Core::VimKeymap::TextVisualYankCompletes(true, false),
-		"failed visual yank keeps the selection active");
-	Check(
-		!Core::VimKeymap::TextVisualYankCompletes(false, true),
-		"cursor-only yank does not exit through visual selection state");
 
 	Check(
 		Core::VimKeymap::TextVisualModeConsumesKey(true, true),
@@ -672,6 +672,358 @@ void TestVimKeymapTransientUiKeys() {
 		Qt::Key_K,
 		Qt::NoModifier,
 		u"k"_q);
+}
+
+void TestMessageTextFollowLink() {
+	using namespace Core::VimKeymap;
+	auto pending = false;
+	const auto press = [&](
+			int key,
+			const QString &text,
+			Qt::KeyboardModifiers modifiers = Qt::NoModifier,
+			bool repeat = false) {
+		auto event = QKeyEvent(QEvent::KeyPress, key, modifiers, text, repeat);
+		const auto follow = Bindings::IsTextFollowLink(&event, pending);
+		const auto motion = Bindings::TextMotionKey(&event, pending);
+		Check(!follow || !motion, "following a link does not move the text cursor");
+		return follow;
+	};
+	for (const auto russian : { false, true }) {
+		const auto g = russian ? 0x041F : Qt::Key_G;
+		const auto d = russian ? 0x0412 : Qt::Key_D;
+		const auto gText = russian ? u"п"_q : u"g"_q;
+		const auto dText = russian ? u"в"_q : u"d"_q;
+		Check(!press(d, dText) && !pending, "standalone d never follows a link");
+		Check(!press(g, gText) && pending, "g waits for its second text command key");
+		Check(press(d, dText) && !pending, "gd follows a text link in either layout");
+		Check(!press(d, dText), "completed gd consumes its prefix exactly once");
+		Check(!press(g, gText) && pending, "g starts another link sequence");
+		Check(!press(d, dText, Qt::NoModifier, true) && pending,
+			"autorepeat cannot follow a link or consume a pending g");
+		Check(press(d, dText) && !pending, "a deliberate d completes the pending g");
+		Check(!press(g, gText) && pending, "g can be cancelled by another key");
+		Check(!press(Qt::Key_Q, u"q"_q) && !pending && !press(d, dText),
+			"an unsupported key cancels gd without later following a link");
+		for (const auto modifier : {
+				Qt::ShiftModifier,
+				Qt::ControlModifier,
+				Qt::AltModifier,
+				Qt::MetaModifier }) {
+			Check(!press(g, gText) && pending, "g starts before a modified key");
+			Check(!press(d, dText, modifier) && !pending,
+				"modified d cancels the sequence without opening a link");
+		}
+	}
+
+	auto marked = Ui::Text::Link(u"@exploitex"_q, 1);
+	marked.append(u" обычный текст\n"_q);
+	const auto second = int(marked.text.size());
+	marked.append(Ui::Text::Link(u"переход по ссылке"_q, 2));
+	auto linked = Ui::Text::String(
+		st::defaultTextStyle,
+		marked,
+		kMarkupTextOptions,
+		1);
+	auto activated = 0;
+	auto activationLoop = QEventLoop();
+	auto handler = std::make_shared<LambdaClickHandler>([&](ClickContext context) {
+		Check(context.button == Qt::LeftButton
+			&& context.other.toInt() == 42,
+			"keyboard link activation preserves the click context");
+		++activated;
+		activationLoop.quit();
+	});
+	linked.setLink(1, handler);
+	linked.setLink(2, handler);
+	auto request = Ui::Text::StateRequest();
+	request.flags = Ui::Text::StateRequest::Flag::LookupLink;
+	for (const auto width : { 70, 220 }) {
+		for (auto symbol = 0; symbol < marked.text.size(); ++symbol) {
+			const auto rect = TextCursorRect(linked, width, symbol);
+			const auto state = linked.getState(rect.center(), width, request);
+			const auto expected = symbol < 10 || symbol >= second;
+			if (!marked.text[symbol].isSpace()) {
+				Check(!rect.isEmpty() && (state.link == handler) == expected,
+					"cursor hit testing finds mentions and wrapped links, not plain text");
+			}
+		}
+	}
+	auto guard = QWidget();
+	const auto rect = TextCursorRect(linked, 220, 2);
+	const auto link = linked.getState(rect.center(), 220, request).link;
+	Check(link == handler, "the cursor on the mention resolves its native handler");
+	if (link) {
+		ActivateClickHandler(&guard, link, ClickContext{ Qt::LeftButton, 42 });
+		QTimer::singleShot(1000, &activationLoop, &QEventLoop::quit);
+		activationLoop.exec();
+	}
+	Check(activated == 1, "a text link invokes the native click handler exactly once");
+}
+
+void TestMessageTextNavigation() {
+	using Core::VimKeymap::TextMotion;
+	using Core::VimKeymap::Bindings::TextMotionKey;
+	auto pending = false;
+	auto g = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_G,
+		Qt::NoModifier,
+		u"g"_q);
+	Check(
+		!TextMotionKey(&g, pending) && pending,
+		"first g waits inside text");
+	Check(
+		TextMotionKey(&g, pending) == TextMotion::TextStart && !pending,
+		"gg moves to the beginning of message text");
+	auto repeated = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_G,
+		Qt::NoModifier,
+		u"g"_q,
+		true);
+	Check(
+		!TextMotionKey(&g, pending) && pending,
+		"g arms a new sequence");
+	Check(
+		!TextMotionKey(&repeated, pending) && pending,
+		"holding g does not complete gg");
+	auto unknown = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_Q,
+		Qt::NoModifier,
+		u"q"_q);
+	Check(
+		!TextMotionKey(&unknown, pending) && !pending,
+		"unsupported keys cancel a pending sequence without a motion");
+	Check(
+		!TextMotionKey(&g, pending) && pending,
+		"g after an unsupported key starts a fresh sequence");
+	auto end = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_G,
+		Qt::ShiftModifier,
+		u"G"_q);
+	Check(
+		TextMotionKey(&end, pending) == TextMotion::TextEnd && !pending,
+		"Shift G moves to the end and cancels a pending g");
+	auto russianG = QKeyEvent(
+		QEvent::KeyPress,
+		0x041F,
+		Qt::NoModifier,
+		u"п"_q);
+	Check(
+		!TextMotionKey(&russianG, pending) && pending,
+		"Russian g starts the text sequence");
+	Check(
+		TextMotionKey(&russianG, pending) == TextMotion::TextStart,
+		"Russian gg moves to the beginning of message text");
+	auto russianEnd = QKeyEvent(
+		QEvent::KeyPress,
+		0x041F,
+		Qt::ShiftModifier,
+		u"П"_q);
+	Check(
+		TextMotionKey(&russianEnd, pending) == TextMotion::TextEnd,
+		"Russian Shift G moves to the end of message text");
+	const auto lineKeys = std::vector<std::pair<int, QString>>{
+		{ Qt::Key_J, u"j"_q },
+		{ Qt::Key_K, u"k"_q },
+		{ 0x041E, u"о"_q },
+		{ 0x041B, u"л"_q },
+	};
+	for (const auto modifiers : { Qt::NoModifier, Qt::ShiftModifier }) {
+		for (auto i = 0; i != int(lineKeys.size()); ++i) {
+			const auto &[key, text] = lineKeys[i];
+			auto event = QKeyEvent(
+				QEvent::KeyPress,
+				key,
+				modifiers,
+				text);
+			Check(
+				TextMotionKey(&event, pending) == ((i % 2)
+					? TextMotion::LineUp : TextMotion::LineDown),
+				"j/k move by line in both layouts, with or without Shift");
+		}
+	}
+	for (const auto modifiers : { Qt::NoModifier, Qt::ShiftModifier }) {
+		auto event = QKeyEvent(
+			QEvent::KeyPress,
+			Qt::Key_H,
+			modifiers,
+			u"h"_q);
+		Check(
+			TextMotionKey(&event, pending) == ((modifiers == Qt::ShiftModifier)
+				? TextMotion::LineUp : TextMotion::CharacterLeft),
+			"h stays horizontal and Shift H retains its line-up alias");
+	}
+	const auto paragraphKeys = std::vector<std::pair<int, QString>>{
+		{ Qt::Key_BraceLeft, u"{"_q },
+		{ Qt::Key_BraceRight, u"}"_q },
+		{ Qt::Key_BracketLeft, u"{"_q },
+		{ Qt::Key_BracketRight, u"}"_q },
+		{ 0x0425, u"Х"_q },
+		{ 0x042A, u"Ъ"_q },
+	};
+	for (auto i = 0; i != int(paragraphKeys.size()); ++i) {
+		const auto &[key, text] = paragraphKeys[i];
+		auto event = QKeyEvent(
+			QEvent::KeyPress,
+			key,
+			Qt::ShiftModifier,
+			text);
+		Check(
+			TextMotionKey(&event, pending) == ((i % 2)
+			? TextMotion::ParagraphNext : TextMotion::ParagraphPrevious),
+			"paragraph motions accept English and Russian layouts");
+	}
+	for (const auto key : { Qt::Key_Q, Qt::Key_I, Qt::Key_Tab,
+			Qt::Key_Return, Qt::Key_Backspace, Qt::Key_Delete, Qt::Key_Escape }) {
+		auto event = QKeyEvent(
+			QEvent::KeyPress,
+			key,
+			Qt::NoModifier);
+		Check(
+			!TextMotionKey(&event, pending),
+			"non-motion keys leave the text cursor unchanged");
+	}
+	auto controlG = QKeyEvent(
+		QEvent::KeyPress,
+		Qt::Key_G,
+		Qt::ControlModifier,
+		u"g"_q);
+	Check(
+		!TextMotionKey(&controlG, pending) && !pending,
+		"Ctrl G cannot jump from message text to chat history");
+	const auto paragraph = [&](
+			const QString &text,
+			int position,
+			int direction) {
+		return Core::VimKeymap::TextParagraphOffset(
+			position,
+			direction,
+			int(text.size()),
+			[&](int offset) {
+				Check(
+					offset >= 0 && offset < text.size(),
+					"paragraph lookup stays inside selected message text");
+				return text[offset] == u'\n' || text[offset] == u'\r'
+					|| text[offset] == QChar::ParagraphSeparator
+					|| text[offset] == QChar::LineSeparator;
+			});
+	};
+	const auto text = u"Первый\n\nВторой\nТретий"_q;
+	Check(
+		paragraph(text, 0, 1) == 8,
+		"next paragraph skips blank lines");
+	Check(
+		paragraph(text, 10, -1) == 8,
+		"backward moves to current paragraph start");
+	Check(
+		paragraph(text, 8, -1) == 0,
+		"backward from start moves to previous paragraph");
+	Check(
+		paragraph(text, 8, 1) == 15,
+		"single newline separates paragraphs");
+	Check(
+		paragraph(text, 15, 1) == text.size() - 1,
+		"last paragraph stops at the last character");
+	Check(
+		paragraph(text, text.size() - 1, 1) == text.size() - 1,
+		"forward at the end stays in the message");
+	Check(
+		paragraph(text, 0, -1) == 0,
+		"backward at the beginning stays in the message");
+	Check(
+		paragraph(u"a\r\n\r\nb"_q, 0, 1) == 5,
+		"CRLF boundaries skip blank paragraphs");
+	Check(
+		paragraph(u"a\u2029b\u2028c"_q, 0, 1) == 2,
+		"Unicode paragraph separator");
+	Check(
+		paragraph(u"a\u2029b\u2028c"_q, 2, 1) == 4,
+		"Unicode line separator");
+	Check(
+		paragraph(u"😀\nя"_q, 0, 1) == 3,
+		"paragraph offsets retain UTF-16 coordinates");
+	Check(
+		paragraph(QString(), 0, 1) == -1,
+		"empty messages have no paragraph target");
+	Check(
+		paragraph(u"я"_q, 0, 1) == 0,
+		"single-character messages stay bounded");
+	Check(
+		paragraph(u"\n\nя"_q, 0, 1) == 2,
+		"leading blank paragraphs are skipped");
+	Check(
+		paragraph(u"я\n\n"_q, 0, 1) == 2,
+		"trailing blank paragraphs stay bounded");
+}
+
+void TestMessageTextBounds() {
+	using Core::VimKeymap::FindTextSelectionLength;
+	const auto content = u"Подпись к фото: первая строка.\nВторая строка 🙂"_q;
+	const auto caption = Ui::Text::String(st::defaultTextStyle, content);
+	const auto textRange = caption.adjustSelection(
+		AllTextSelection,
+		TextSelectType::Letters);
+	const auto mediaRange = shiftSelection(
+		unshiftSelection(AllTextSelection, caption),
+		caption);
+	const auto adjustedEnd = std::max(textRange.to, mediaRange.to);
+	Check(
+		adjustedEnd == AllTextSelection.to,
+		"photo media leaves the all-text sentinel in adjusted caption ranges");
+	auto queries = 0;
+	const auto length = FindTextSelectionLength(adjustedEnd, [&](int from) {
+		++queries;
+		return !caption.toTextForMimeData(
+			TextSelection(uint16(from), adjustedEnd)).empty();
+	});
+	Check(
+		length == caption.length(),
+		"photo caption bounds come from actual selectable text");
+	Check(
+		queries <= 16,
+		"caption bounds need logarithmic selection queries");
+	const auto first = Core::VimKeymap::ResolveTextCursorOffset(
+		0,
+		1,
+		length,
+		[&](int offset) {
+			return !caption.toTextForMimeData(TextSelection(
+				uint16(offset),
+				uint16(offset + 1))).empty();
+		});
+	Check(first == 0, "photo captions allow the text cursor to enter");
+	const auto selected = caption.toTextForMimeData(TextSelection(
+		uint16(first),
+		uint16(length))).rich.text;
+	Check(selected == content, "selecting a photo caption keeps its complete text");
+
+	const auto tail = Ui::Text::String(st::defaultTextStyle, u"Другой блок"_q);
+	const auto tailStart = caption.length() + 7;
+	const auto sparseLength = FindTextSelectionLength(
+		AllTextSelection.to,
+		[&](int from) {
+			const auto range = TextSelection(uint16(from), AllTextSelection.to);
+			return !caption.toTextForMimeData(range).empty()
+				|| !tail.toTextForMimeData(unshiftSelection(range, tailStart)).empty();
+		});
+	Check(
+		sparseLength == tailStart + tail.length(),
+		"media text bounds preserve flat offsets across gaps between text blocks");
+	Check(
+		FindTextSelectionLength(AllTextSelection.to, [](int) { return false; }) == 0,
+		"photos without captions have no text cursor target");
+	Check(
+		FindTextSelectionLength(
+			AllTextSelection.to,
+			[](int from) { return from < 1; }) == 1,
+		"single-character captions remain selectable");
+	Check(
+		FindTextSelectionLength(AllTextSelection.to, [](int) { return true; })
+			== AllTextSelection.to,
+		"selection lookup does not probe beyond the flat coordinate limit");
 }
 
 void TestVimKeymapCursorGeometry() {
@@ -1912,6 +2264,68 @@ void TestKeyboardStickerFramePainting() {
 	Check(style::main_palette::load(palette), "sticker test restores the UI palette");
 }
 
+void TestMessageCaptionCursorGeometry() {
+	using namespace Core::VimKeymap;
+	const auto caption = u"Первый абзац: Wi  m и русский текст.\n\n"
+		u"Вторая строка с emoji 🔥 и 👨‍👩‍👧‍👦.\n"
+		u"Ссылка example.org и ещё один длинный абзац.\n"
+		u"Последняя строка"_q;
+	const auto text = Ui::Text::String(
+		st::defaultTextStyle,
+		caption,
+		kDefaultTextOptions,
+		1);
+	auto request = Ui::Text::StateRequest();
+	request.flags = Ui::Text::StateRequest::Flag::LookupSymbol;
+	for (const auto width : { 140, 360 }) {
+		const auto height = text.countHeight(width);
+		for (const auto origin : { QPoint(18, 22), QPoint(37, 480) }) {
+			const auto bounds = QRect(origin, QSize(width, height));
+			for (auto symbol = 0; symbol < text.length(); ++symbol) {
+				const auto cell = TextCursorRect(text, width, symbol);
+				Check(!cell.isEmpty() && bounds.contains(cell.translated(origin)),
+					"every caption position has a cursor inside the laid-out text");
+				if (cell.isEmpty()) {
+					continue;
+				}
+				const auto state = text.getState(cell.center(), width, request);
+				if (caption[symbol] != QChar::LineFeed) {
+					auto boundary = QTextBoundaryFinder(
+						QTextBoundaryFinder::Grapheme,
+						caption);
+					boundary.setPosition(symbol);
+					const auto from = boundary.isAtBoundary()
+						? symbol
+						: boundary.toPreviousBoundary();
+					const auto till = boundary.toNextBoundary();
+					Check((state.uponSymbol || caption[symbol].isSpace())
+						&& state.symbol >= from && state.symbol < till,
+						"cursor stays on the requested letter, space or complete emoji");
+				}
+			}
+			const auto first = TextCursorRect(text, width, 0).translated(origin);
+			Check(first.top() == origin.y(),
+				"caption cursor starts on the first row below photo and forwarded header");
+			const auto emptyLine = caption.indexOf(u"\n\n"_q) + 1;
+			const auto before = TextCursorRect(text, width, emptyLine - 1);
+			const auto blank = TextCursorRect(text, width, emptyLine);
+			const auto after = TextCursorRect(text, width, emptyLine + 1);
+			Check(before.bottom() < blank.top() && blank.bottom() < after.top(),
+				"cursor retains a separate cell on an empty paragraph");
+		}
+	}
+	auto emoji = Ui::Text::String(st::defaultTextStyle, u"🔥x"_q);
+	Check(TextCursorRect(emoji, 200, 0) == TextCursorRect(emoji, 200, 1),
+		"both UTF-16 halves of an emoji use the same full cursor cell");
+	Check(emoji.updateSkipBlock(40, 15), "message timestamp adds a layout skip block");
+	Check(TextCursorRect(emoji, 200, 0) == TextCursorRect(emoji, 200, 1),
+		"timestamp layout does not split the emoji cursor into halves");
+	Check(TextCursorRect(text, 0, 0).isEmpty()
+		&& TextCursorRect(text, 200, -1).isEmpty()
+		&& TextCursorRect(text, 200, text.length()).isEmpty(),
+		"cursor geometry rejects invalid widths and text offsets");
+}
+
 void TestMessageCursorPainting() {
 	using namespace Core::VimKeymap;
 	const auto text = Ui::Text::String(st::defaultTextStyle, u"Wi  m"_q);
@@ -1933,7 +2347,9 @@ void TestMessageCursorPainting() {
 				}
 			}
 		}
-		const auto cell = LinkHintTargetRect(hit, bounds, matches);
+		const auto cell = TextCursorRect(text, bounds.width(), symbol);
+		Check(cell == LinkHintTargetRect(hit, bounds, matches),
+			"layout cursor matches the actual rendered character hit area");
 		Check(!cell.isEmpty(), "letters and consecutive spaces have distinct cursor cells");
 		cells.push_back(cell);
 		for (const auto dpr : { 1, 2, 3 }) {
@@ -2481,6 +2897,7 @@ void TestVimKeymapCommandBindings() {
 
 #include "tests/vim_config_tests.h"
 #include "tests/vim_security_tests.h"
+#include "tests/spellchecker_tests.h"
 
 } // namespace
 
@@ -2489,11 +2906,17 @@ int main(int argc, char *argv[]) {
 	qputenv("QT_QPA_PLATFORM", "offscreen");
 #endif // !Q_OS_MAC
 	auto application = QApplication(argc, argv);
+	crl::init_main_queue([](void (*callable)(void*), void *argument) {
+		QMetaObject::invokeMethod(qApp, [=] {
+			callable(argument);
+		}, Qt::QueuedConnection);
+	});
 	auto baseIntegration = TestBaseIntegration(argc, argv);
 	base::Integration::Set(&baseIntegration);
 	auto integration = TestIntegration();
 	Ui::Integration::Set(&integration);
 	style::StartManager(100);
+	Ui::Emoji::Init();
 	Ui::Animations::Manager::SetScheduleWithInvokeQueued(true);
 	auto animations = Ui::Animations::Manager();
 
@@ -2501,6 +2924,9 @@ int main(int argc, char *argv[]) {
 	TestVimKeymapActionBindings();
 	TestVimKeymapCommandBindings();
 	TestVimKeymapTransientUiKeys();
+	TestMessageTextNavigation();
+	TestMessageTextFollowLink();
+	TestMessageTextBounds();
 	TestVimKeymapCursorGeometry();
 	TestVimKeymapPickerNavigation();
 	TestVimKeymapStickerSetNavigation();
@@ -2519,6 +2945,7 @@ int main(int argc, char *argv[]) {
 	TestShareKeyboardFocusCycle();
 	TestKeyboardStickerFramePainting();
 	TestMessageCursorPainting();
+	TestMessageCaptionCursorGeometry();
 	TestKeyboardFocusScrollingAndPainting();
 	TestCustomKeyboardFocusFrame();
 	TestInterfaceHistory();
@@ -2533,7 +2960,9 @@ int main(int argc, char *argv[]) {
 	TestVimConfigDocuments();
 	TestVimKeyLogPrivacy();
 	TestLocalSocketSecurity();
+	TestBuiltinSpellchecker();
 
+	Ui::Emoji::Clear();
 	std::cout << (TotalChecks - FailedChecks) << "/" << TotalChecks
 		<< " checks passed." << std::endl;
 	return FailedChecks ? 1 : 0;

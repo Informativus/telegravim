@@ -42,9 +42,9 @@ policy commit. Only GitHub-hosted runners are used.
   Updating an exception is a separate policy change requiring owner review.
   The initial records cover Qt callback/image/optional extraction errors, a
   default-initializer parse error and comment-percentage metrics in assertion
-  suites, plus existing unsigned Qt type aliases and generated icon styles
-  absent from no-build extraction. Two plain-int bitfields are made explicitly
-  signed instead of being exempted. The combined macOS arm64
+  suites, plus generated icon styles absent from no-build extraction. Message
+  view bitfields explicitly spell out signed or unsigned integral types,
+  avoiding aliases unavailable to the extractor without requiring exceptions. The combined macOS arm64
   native suite passed 2361 checks; this is not cross-platform or live-chat proof.
   This is source analysis, not a build or runtime test. Generated sources,
   submodule contents, bundled third-party code, Objective-C-specific behavior,
