@@ -55,6 +55,7 @@ def main():
     if hashlib.sha256(notice_bytes).hexdigest() != NOTICE_SHA256:
         raise ValueError("Unexpected wordfreq attribution notice")
     notice = notice_bytes.decode()
+    plain_notice = "\n".join(line.rstrip() for line in notice.splitlines()).rstrip() + "\n"
     metadata = {
         "schema": 1,
         "attribution": "wordfreq, Copyright 2022 Robyn Speer",
@@ -77,7 +78,7 @@ def main():
         "Telegravim Russian suggestion frequency data\n"
         f"Adapted from wordfreq at {REVISION}.\n"
         "This adapted data is distributed under CC BY-SA 4.0:\n"
-        f"{LICENSE}\n\n{metadata['changes']}\n\n{notice}"
+        f"{LICENSE}\n\n{metadata['changes']}\n\n{plain_notice}"
     ).encode("utf-8"))
     print(json.dumps({"words": len(words), "bytes": len(output.encode()),
                       "sha256": hashlib.sha256(output.encode()).hexdigest()}))

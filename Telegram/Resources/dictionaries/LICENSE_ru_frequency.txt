@@ -5,7 +5,7 @@ https://creativecommons.org/licenses/by-sa/4.0/
 
 Russian lowercase words, 1-24 letters, Zipf >= 3.00, validated by the bundled Hunspell ru_RU dictionary. Frequencies are Zipf * 100.
 
-wordfreq  
+wordfreq
 Copyright 2022 Robyn Speer
 
 # Attribution notes
@@ -69,4 +69,3 @@ streaming Twitter API, in accordance with Twitter's Developer Agreement &
 Policy. This software gives statistics about words that were commonly used on
 Twitter; it does not display or republish any Twitter content, and does not
 contain any content from after Twitter's sale.
-
