@@ -229,7 +229,10 @@ SelectableCursorAtOffset(
 	auto bestScore = std::numeric_limits<int>::max();
 	for (auto scanX = inner.left(); scanX <= inner.right(); ++scanX) {
 		const auto state = view->textState(QPoint(scanX, y), request);
-		const auto endpoint = FlatEndpoint(state);
+		const auto endpoint = state.overMessageText
+			&& state.selectionCursor.isFlat()
+			? std::optional<MessageSelectionFlatEndpoint>(state.selectionCursor.flat)
+			: FlatEndpoint(state);
 		if (!endpoint) {
 			continue;
 		}

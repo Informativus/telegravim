@@ -2177,7 +2177,11 @@ void TestMessageCaptionCursorGeometry() {
 		u"Вторая строка с emoji 🔥 и 👨‍👩‍👧‍👦.\n"
 		u"Ссылка example.org и ещё один длинный абзац.\n"
 		u"Последняя строка"_q;
-	const auto text = Ui::Text::String(st::defaultTextStyle, caption);
+	const auto text = Ui::Text::String(
+		st::defaultTextStyle,
+		caption,
+		kDefaultTextOptions,
+		1);
 	auto request = Ui::Text::StateRequest();
 	request.flags = Ui::Text::StateRequest::Flag::LookupSymbol;
 	for (const auto width : { 140, 360 }) {
@@ -2201,7 +2205,8 @@ void TestMessageCaptionCursorGeometry() {
 						? symbol
 						: boundary.toPreviousBoundary();
 					const auto till = boundary.toNextBoundary();
-					Check(state.uponSymbol && state.symbol >= from && state.symbol < till,
+					Check((state.uponSymbol || caption[symbol].isSpace())
+						&& state.symbol >= from && state.symbol < till,
 						"cursor stays on the requested letter, space or complete emoji");
 				}
 			}
@@ -2216,9 +2221,12 @@ void TestMessageCaptionCursorGeometry() {
 				"cursor retains a separate cell on an empty paragraph");
 		}
 	}
-	const auto emoji = Ui::Text::String(st::defaultTextStyle, u"🔥x"_q);
+	auto emoji = Ui::Text::String(st::defaultTextStyle, u"🔥x"_q);
 	Check(TextCursorRect(emoji, 200, 0) == TextCursorRect(emoji, 200, 1),
 		"both UTF-16 halves of an emoji use the same full cursor cell");
+	Check(emoji.updateSkipBlock(40, 15), "message timestamp adds a layout skip block");
+	Check(TextCursorRect(emoji, 200, 0) == TextCursorRect(emoji, 200, 1),
+		"timestamp layout does not split the emoji cursor into halves");
 	Check(TextCursorRect(text, 0, 0).isEmpty()
 		&& TextCursorRect(text, 200, -1).isEmpty()
 		&& TextCursorRect(text, 200, text.length()).isEmpty(),
@@ -2246,7 +2254,9 @@ void TestMessageCursorPainting() {
 				}
 			}
 		}
-		const auto cell = LinkHintTargetRect(hit, bounds, matches);
+		const auto cell = TextCursorRect(text, bounds.width(), symbol);
+		Check(cell == LinkHintTargetRect(hit, bounds, matches),
+			"layout cursor matches the actual rendered character hit area");
 		Check(!cell.isEmpty(), "letters and consecutive spaces have distinct cursor cells");
 		cells.push_back(cell);
 		for (const auto dpr : { 1, 2, 3 }) {

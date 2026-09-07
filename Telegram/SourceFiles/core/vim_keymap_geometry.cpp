@@ -16,6 +16,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <algorithm>
 #include <limits>
 
+#include "styles/style_basic.h"
+
 namespace Core::VimKeymap {
 
 QRect LinkHintTargetRect(
@@ -210,7 +212,8 @@ QRect TextCursorRect(const Ui::Text::String &text, int width, int symbol) {
 	auto from = symbol;
 	auto till = symbol + 1;
 	const auto plain = text.toString();
-	if (plain.size() == text.length()) {
+	if (plain.size() == text.length() - int(text.hasSkipBlock())
+		&& symbol < plain.size()) {
 		auto boundary = QTextBoundaryFinder(QTextBoundaryFinder::Grapheme, plain);
 		boundary.setPosition(symbol);
 		if (!boundary.isAtBoundary()) {
