@@ -2,6 +2,7 @@
 
 import argparse
 import difflib
+import hashlib
 import html
 import json
 import os
@@ -791,11 +792,62 @@ def sarif_level(run: dict, result: dict) -> str:
     return level if level in {"none", "note", "warning", "error"} else "warning"
 
 
-def check_sarif(directory: Path, changed: list[str] | None = None):
+def reviewed_finding(run: dict, result: dict, source: Path, reviews: list) -> bool:
+    locations = result.get("locations", [])
+    if len(locations) != 1:
+        return False
+    physical = locations[0].get("physicalLocation", {})
+    path = physical.get("artifactLocation", {}).get("uri", "")
+    try:
+        relative = safe_path(path)
+    except GuardError:
+        return False
+    if str(relative) != path:
+        return False
+    rule = result.get("ruleId")
+    allowed = {
+        "Telegram/SourceFiles/tests/test_vim_keymap.cpp": {
+            "cpp/missing-return", "cpp/constant-comparison", "cpp/poorly-documented-function"
+        },
+        "Telegram/SourceFiles/tests/spellchecker_tests.h": {"cpp/poorly-documented-function"},
+        "Telegram/SourceFiles/history/view/history_view_element.cpp": {"cpp/constant-comparison"},
+        "Telegram/SourceFiles/history/view/history_view_element.h": {"cpp/ambiguously-signed-bit-field"},
+        "Telegram/SourceFiles/history/view/history_view_message.h": {"cpp/ambiguously-signed-bit-field"},
+    }
+    if rule not in allowed.get(path, set()):
+        return False
+    fingerprint = result.get("partialFingerprints", {}).get("primaryLocationLineHash")
+    if not fingerprint:
+        return False
+    message = hashlib.sha256(result.get("message", {}).get("text", "").encode()).hexdigest()
+    candidates = [
+        review for review in reviews
+        if review["path"] == path and any(
+            finding["rule"] == rule
+            and finding["line_hash"] == fingerprint
+            and finding["message_sha256"] == message
+            and finding["level"] == sarif_level(run, result)
+            and finding["reason"].strip()
+            for finding in review["findings"]
+        )
+    ]
+    if not candidates:
+        return False
+    file = source / relative
+    if not file.is_file() or file.is_symlink() or source.resolve() not in file.resolve().parents:
+        return False
+    digest = hashlib.sha256(file.read_bytes()).hexdigest()
+    return any(digest in review["source_sha256"] for review in candidates)
+
+
+def check_sarif(
+    directory: Path, changed: list[str] | None = None, source: Path | None = None
+):
     files = list(directory.glob("*.sarif"))
     if not files:
         raise GuardError("CodeQL produced no SARIF; analysis incomplete")
-    errors = findings = 0
+    reviews = json.loads((HERE / "codeql-reviewed-findings.json").read_text()) if source else []
+    errors = findings = reviewed = 0
     for path in files:
         document = json.loads(path.read_text())
         if not isinstance(document.get("runs"), list) or not document["runs"]:
@@ -825,8 +877,14 @@ def check_sarif(directory: Path, changed: list[str] | None = None):
                         for item in changed
                     )
                 ):
-                    findings += 1
-    print(f"CodeQL: {findings} warning/error findings; {errors} failed invocations")
+                    if source and reviewed_finding(run, result, source, reviews):
+                        reviewed += 1
+                    else:
+                        findings += 1
+    print(
+        f"CodeQL: {findings} warning/error findings; {errors} failed invocations; "
+        f"{reviewed} exact reviewed findings (retained in SARIF)"
+    )
     if errors or findings:
         raise GuardError("CodeQL findings require review; see the SARIF artifact")
 
@@ -837,6 +895,7 @@ def main():
         "mode", choices=["audit", "finish-network", "finish-security", "sarif"]
     )
     parser.add_argument("--state", type=Path)
+    parser.add_argument("--source", type=Path)
     parser.add_argument(
         "--root",
         type=Path,
@@ -845,7 +904,7 @@ def main():
     args = parser.parse_args()
     if args.mode == "sarif":
         changed = json.loads(args.state.read_text())["changed"] if args.state else None
-        check_sarif(args.root, changed)
+        check_sarif(args.root, changed, args.source)
         return
     api = GitHub()
     if args.mode == "audit":

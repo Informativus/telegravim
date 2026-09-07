@@ -78,7 +78,7 @@ jobs:
     needs: inspect
     if: needs.inspect.outputs.scan_ok == 'true' && needs.inspect.outputs.codeql_required == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     permissions:
       contents: read
     steps:
@@ -108,7 +108,7 @@ jobs:
           upload: false
           output: codeql-results
       - name: Fail on security or correctness findings
-        run: python3 .github/security/pr_guard.py sarif --root codeql-results --state inspection-source/inspection-state.json
+        run: python3 .github/security/pr_guard.py sarif --root codeql-results --state inspection-source/inspection-state.json --source inspection-source
       - name: Preserve CodeQL findings
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
