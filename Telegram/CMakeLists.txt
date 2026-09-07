@@ -522,6 +522,10 @@ PRIVATE
     chat_helpers/share_message_phrase_factory.h
     chat_helpers/spellchecker_common.cpp
     chat_helpers/spellchecker_common.h
+    chat_helpers/spellchecker_bundled.cpp
+    chat_helpers/spellchecker_bundled.h
+    chat_helpers/spellchecker_menu.cpp
+    chat_helpers/spellchecker_menu.h
     chat_helpers/stickers_dice_pack.cpp
     chat_helpers/stickers_dice_pack.h
     chat_helpers/stickers_emoji_pack.cpp
@@ -2240,6 +2244,7 @@ PRIVATE
     qrc/telegram/export_rich.qrc
     qrc/telegram/picker.qrc
     qrc/telegram/telegram.qrc
+    qrc/telegram/dictionaries.qrc
     qrc/telegram/sounds.qrc
     winrc/Telegram.rc
     winrc/Telegram.manifest

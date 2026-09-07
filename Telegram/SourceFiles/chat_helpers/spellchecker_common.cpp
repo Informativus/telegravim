@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "chat_helpers/spellchecker_common.h"
+#include "chat_helpers/spellchecker_bundled.h"
 
 #ifndef TDESKTOP_DISABLE_SPELLCHECK
 
@@ -373,7 +374,16 @@ void DictLoader::fail() {
 }
 
 std::vector<Dict> Dictionaries() {
-	return DictionariesList;
+	auto result = DictionariesList;
+	for (const auto language : { QLocale::Russian, QLocale::English }) {
+		if (!ranges::contains(result, int(language), &Dict::id)) {
+			auto dict = Dict();
+			dict.id = int(language);
+			dict.name = QLocale(language).nativeLanguageName();
+			result.push_back(std::move(dict));
+		}
+	}
+	return result;
 }
 
 rpl::producer<> DictionariesChanged() {
@@ -445,6 +455,9 @@ bool DictionaryExists(int langId) {
 }
 
 bool RemoveDictionary(int langId) {
+	if (langId == int(QLocale::Russian) || langId == int(QLocale::English)) {
+		return false;
+	}
 	if (!langId) {
 		return true;
 	}
@@ -453,32 +466,6 @@ bool RemoveDictionary(int langId) {
 		DictionariesPath(),
 		fileName);
 	return QDir(folder).removeRecursively();
-}
-
-bool WriteDefaultDictionary() {
-	// This is an unused function.
-	const auto en = QLocale::English;
-	if (DictionaryExists(en)) {
-		return false;
-	}
-	const auto fileName = QLocale(en).name();
-	const auto folder = u"%1/%2/"_q.arg(
-		DictionariesPath(),
-		fileName);
-	QDir(folder).removeRecursively();
-
-	const auto path = folder + fileName;
-	QDir().mkpath(folder);
-	auto input = QFile(u":/misc/en_US_dictionary"_q);
-	auto output = QFile(path);
-	if (input.open(QIODevice::ReadOnly)
-		&& output.open(QIODevice::WriteOnly)) {
-		output.write(input.readAll());
-		const auto result = Spellchecker::UnpackDictionary(path, en);
-		output.remove();
-		return result;
-	}
-	return false;
 }
 
 rpl::producer<QString> ButtonManageDictsState(
@@ -564,6 +551,20 @@ void Start(not_null<Main::Session*> session) {
 	// platform, including those using the system spellchecker, so the
 	// working dir must be set before the early return below.
 	Spellchecker::SetWorkingDirPath(DictionariesPath());
+	const auto bundled = InstallBundledDictionaries(DictionariesPath());
+	if (!settings->readPref<bool>("spellcheck-bundled-defaults-v1")) {
+		auto enabled = settings->dictionariesEnabled();
+		for (const auto language : bundled) {
+			if (!ranges::contains(enabled, language)) {
+				enabled.push_back(language);
+			}
+		}
+		settings->setDictionariesEnabled(std::move(enabled));
+		if (bundled.size() == 2) {
+			settings->writePref<bool>("spellcheck-bundled-defaults-v1", true);
+		}
+		Core::App().saveSettingsDelayed();
+	}
 
 	if (Platform::Spellchecker::IsSystemSpellchecker()) {
 		Spellchecker::SupportedScriptsChanged()

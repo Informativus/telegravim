@@ -1,0 +1,12 @@
+<RCC>
+  <qresource prefix="/dictionaries">
+    <file alias="ru_RU.aff">../../dictionaries/ru_RU.aff</file>
+    <file alias="ru_RU.dic.1">../../dictionaries/ru_RU.dic.1</file>
+    <file alias="ru_RU.dic.2">../../dictionaries/ru_RU.dic.2</file>
+    <file alias="en_US.aff">../../dictionaries/en_US.aff</file>
+    <file alias="en_US.dic">../../dictionaries/en_US.dic</file>
+    <file alias="LICENSE_ru_RU.txt">../../dictionaries/LICENSE_ru_RU.txt</file>
+    <file alias="LICENSE_en_US.txt">../../dictionaries/LICENSE_en_US.txt</file>
+    <file alias="SOURCE.json">../../dictionaries/SOURCE.json</file>
+  </qresource>
+</RCC>

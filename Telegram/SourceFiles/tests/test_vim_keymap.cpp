@@ -32,6 +32,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/emoji_config.h"
 #include "ui/text/text.h"
 #include "ui/widgets/popup_menu.h"
+#include "ui/widgets/menu/menu.h"
+#include "chat_helpers/spellchecker_bundled.h"
+#include "chat_helpers/spellchecker_menu.h"
+#include "spellcheck/spelling_highlighter.h"
+#include "spellcheck/spellcheck_value.h"
+#include "spellcheck/spellcheck_utils.h"
 #include "ui/widgets/menu/menu_action.h"
 #include "ui/wrap/slide_wrap.h"
 #include "ui/style/style_core.h"
@@ -2891,6 +2897,7 @@ void TestVimKeymapCommandBindings() {
 
 #include "tests/vim_config_tests.h"
 #include "tests/vim_security_tests.h"
+#include "tests/spellchecker_tests.h"
 
 } // namespace
 
@@ -2953,6 +2960,7 @@ int main(int argc, char *argv[]) {
 	TestVimConfigDocuments();
 	TestVimKeyLogPrivacy();
 	TestLocalSocketSecurity();
+	TestBuiltinSpellchecker();
 
 	Ui::Emoji::Clear();
 	std::cout << (TotalChecks - FailedChecks) << "/" << TotalChecks
