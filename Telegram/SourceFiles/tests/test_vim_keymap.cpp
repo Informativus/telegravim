@@ -21,6 +21,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/flat_map.h"
 #include "base/integration.h"
 #include "ui/abstract_button.h"
+#include "ui/click_handler.h"
 #include "ui/integration.h"
 #include "ui/layers/layer_widget.h"
 #include "ui/widgets/checkbox.h"
@@ -665,6 +666,89 @@ void TestVimKeymapTransientUiKeys() {
 		Qt::Key_K,
 		Qt::NoModifier,
 		u"k"_q);
+}
+
+void TestMessageTextFollowLink() {
+	using namespace Core::VimKeymap;
+	auto pending = false;
+	const auto press = [&](
+			int key,
+			const QString &text,
+			Qt::KeyboardModifiers modifiers = Qt::NoModifier,
+			bool repeat = false) {
+		auto event = QKeyEvent(QEvent::KeyPress, key, modifiers, text, repeat);
+		const auto follow = Bindings::IsTextFollowLink(&event, pending);
+		const auto motion = Bindings::TextMotionKey(&event, pending);
+		Check(!follow || !motion, "following a link does not move the text cursor");
+		return follow;
+	};
+	for (const auto russian : { false, true }) {
+		const auto g = russian ? 0x041F : Qt::Key_G;
+		const auto d = russian ? 0x0412 : Qt::Key_D;
+		const auto gText = russian ? u"п"_q : u"g"_q;
+		const auto dText = russian ? u"в"_q : u"d"_q;
+		Check(!press(d, dText) && !pending, "standalone d never follows a link");
+		Check(!press(g, gText) && pending, "g waits for its second text command key");
+		Check(press(d, dText) && !pending, "gd follows a text link in either layout");
+		Check(!press(d, dText), "completed gd consumes its prefix exactly once");
+		Check(!press(g, gText) && pending, "g starts another link sequence");
+		Check(!press(d, dText, Qt::NoModifier, true) && pending,
+			"autorepeat cannot follow a link or consume a pending g");
+		Check(press(d, dText) && !pending, "a deliberate d completes the pending g");
+		Check(!press(g, gText) && pending, "g can be cancelled by another key");
+		Check(!press(Qt::Key_Q, u"q"_q) && !pending && !press(d, dText),
+			"an unsupported key cancels gd without later following a link");
+		for (const auto modifier : {
+				Qt::ShiftModifier,
+				Qt::ControlModifier,
+				Qt::AltModifier,
+				Qt::MetaModifier }) {
+			Check(!press(g, gText) && pending, "g starts before a modified key");
+			Check(!press(d, dText, modifier) && !pending,
+				"modified d cancels the sequence without opening a link");
+		}
+	}
+
+	auto marked = Ui::Text::Link(u"@exploitex"_q, 1);
+	marked.append(u" обычный текст\n"_q);
+	const auto second = int(marked.text.size());
+	marked.append(Ui::Text::Link(u"переход по ссылке"_q, 2));
+	auto linked = Ui::Text::String(
+		st::defaultTextStyle,
+		marked,
+		kMarkupTextOptions,
+		1);
+	auto activated = 0;
+	auto handler = std::make_shared<LambdaClickHandler>([&](ClickContext context) {
+		Check(context.button == Qt::LeftButton
+			&& context.other.toInt() == 42,
+			"keyboard link activation preserves the click context");
+		++activated;
+	});
+	linked.setLink(1, handler);
+	linked.setLink(2, handler);
+	auto request = Ui::Text::StateRequest();
+	request.flags = Ui::Text::StateRequest::Flag::LookupLink;
+	for (const auto width : { 70, 220 }) {
+		for (auto symbol = 0; symbol < marked.text.size(); ++symbol) {
+			const auto rect = TextCursorRect(linked, width, symbol);
+			const auto state = linked.getState(rect.center(), width, request);
+			const auto expected = symbol < 10 || symbol >= second;
+			if (!marked.text[symbol].isSpace()) {
+				Check(!rect.isEmpty() && (state.link == handler) == expected,
+					"cursor hit testing finds mentions and wrapped links, not plain text");
+			}
+		}
+	}
+	auto guard = QWidget();
+	const auto rect = TextCursorRect(linked, 220, 2);
+	const auto link = linked.getState(rect.center(), 220, request).link;
+	Check(link == handler, "the cursor on the mention resolves its native handler");
+	if (link) {
+		ActivateClickHandler(&guard, link, ClickContext{ Qt::LeftButton, 42 });
+		QApplication::processEvents();
+	}
+	Check(activated == 1, "a text link invokes the native click handler exactly once");
 }
 
 void TestMessageTextNavigation() {
@@ -2826,6 +2910,7 @@ int main(int argc, char *argv[]) {
 	TestVimKeymapCommandBindings();
 	TestVimKeymapTransientUiKeys();
 	TestMessageTextNavigation();
+	TestMessageTextFollowLink();
 	TestMessageTextBounds();
 	TestVimKeymapCursorGeometry();
 	TestVimKeymapPickerNavigation();

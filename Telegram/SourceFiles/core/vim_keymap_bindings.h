@@ -53,6 +53,7 @@ enum class StickerGridAction {
 [[nodiscard]] bool IsLineStart(not_null<QKeyEvent*> e);
 [[nodiscard]] bool IsLineEnd(not_null<QKeyEvent*> e);
 [[nodiscard]] bool IsTextYank(not_null<QKeyEvent*> e);
+[[nodiscard]] bool IsTextFollowLink(not_null<QKeyEvent*> e, bool pendingStart);
 [[nodiscard]] std::optional<TextMotion> TextMotionKey(
 	not_null<QKeyEvent*> e,
 	bool &pendingStart);

@@ -4331,16 +4331,21 @@ bool HistoryInner::vimKeymapHandleTextSelectionKey(
 		return false;
 	}
 	const auto textModeActive = cursorActive || _vimKeymapTextVisualMode;
+	const auto followLink = textModeActive
+		&& Core::VimKeymap::NormalMode()
+		&& Core::VimKeymap::Bindings::IsTextFollowLink(
+			e,
+			_vimKeymapTextPendingStart);
 	const auto motion = Core::VimKeymap::TextMotionKey(
 		e,
 		_vimKeymapTextPendingStart);
 	if (e->isAutoRepeat()) {
 		return textModeActive;
 	}
-	if (Core::VimKeymap::Bindings::IsTextYank(e)
+	if (!followLink && (Core::VimKeymap::Bindings::IsTextYank(e)
 		|| e->matches(QKeySequence::Copy)
 		|| Core::VimKeymap::ActionKey(e)
-			== Core::VimKeymap::Action::CopyMessage) {
+			== Core::VimKeymap::Action::CopyMessage)) {
 		if (selectionActive) {
 			const auto copied = copySelectedText();
 			if (copied) {
@@ -4404,7 +4409,7 @@ bool HistoryInner::vimKeymapHandleTextSelectionKey(
 		Core::VimKeymap::TraceKey(e, u"message text visual"_q);
 		return true;
 	}
-	if (!motion) {
+	if (!motion && !followLink) {
 		return textModeActive;
 	}
 	const auto item = selectionActive
@@ -4414,6 +4419,32 @@ bool HistoryInner::vimKeymapHandleTextSelectionKey(
 	if (!view) {
 		if (cursorActive) {
 			vimKeymapClearTextCursor();
+		}
+		return true;
+	}
+	if (followLink) {
+		if (selectionActive && !_selectedTextSelection.focus.isFlat()) {
+			return true;
+		}
+		const auto cursor = selectionActive
+			? HistoryView::MessageSelectionFlatEndpoint{
+				.symbol = _selectedTextSelection.focus.flat.symbol,
+				.afterSymbol = false,
+			}
+			: _vimKeymapTextCursor;
+		const auto point = _keyboardTextSelection.cursorPoint(view, cursor);
+		if (point) {
+			auto request = HistoryView::StateRequest();
+			request.flags = Ui::Text::StateRequest::Flag::LookupLink;
+			request.onlyMessageText = true;
+			const auto state = view->textState(*point, request);
+			if (state.link) {
+				Core::VimKeymap::TraceKey(e, u"follow message text link"_q);
+				ActivateClickHandler(
+					window(),
+					state.link,
+					prepareClickContext(Qt::LeftButton, state.itemId));
+			}
 		}
 		return true;
 	}

@@ -45,6 +45,13 @@ QString ShortestHintLabel(int index, int total, const QString &alphabet) {
 	return result;
 }
 
+bool IsTextFollowLink(not_null<QKeyEvent*> e, bool pendingStart) {
+	return pendingStart
+		&& !e->isAutoRepeat()
+		&& CleanModifiers(e) == Qt::NoModifier
+		&& KeyIs(e, Qt::Key_D, u"d"_q, u"в"_q);
+}
+
 std::optional<TextMotion> TextMotionKey(
 		not_null<QKeyEvent*> e,
 		bool &pendingStart) {

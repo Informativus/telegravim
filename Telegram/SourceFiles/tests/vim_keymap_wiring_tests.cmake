@@ -202,7 +202,7 @@ expect(history/history_inner_widget.cpp
     "RegisterPreLayerKeyHandler[(]this,[^{]*[{][^}]*_vimKeymapTextCursorItem[^}]*_vimKeymapTextVisualMode[^}]*_vimKeymapHintMode == VimKeymapHintMode::None[^}]*}[\n\t ]*return [(]e->type[(][)] == QEvent::ShortcutOverride[)][\n\t ]*\\|\\| vimKeymapHandleHintKey[(]e[)][\n\t ]*\\|\\| vimKeymapHandleTextSelectionKey"
     "Active message hints and text must own keys before Qt and chat commands")
 expect(history/history_inner_widget.cpp
-    "if [(]!motion[)] [^{]*[{][\n\t ]*return textModeActive;"
+    "if [(]!motion && !followLink[)] [^{]*[{][\n\t ]*return textModeActive;"
     "Unsupported keys must be consumed while Vim text mode is active")
 expect(history/history_inner_widget.cpp
     "if [(]copied[)] [^{]*[{][\n\t ]*if [(]!textModeActive[)] [^{]*[{][\n\t ]*clearTextSelection"
