@@ -4342,15 +4342,16 @@ bool HistoryInner::vimKeymapHandleTextSelectionKey(
 	if (e->isAutoRepeat()) {
 		return textModeActive;
 	}
-	if (!followLink && (Core::VimKeymap::Bindings::IsTextYank(e)
+	const auto yank = Core::VimKeymap::Bindings::IsTextYank(e);
+	if (!followLink && (yank
 		|| e->matches(QKeySequence::Copy)
 		|| Core::VimKeymap::ActionKey(e)
 			== Core::VimKeymap::Action::CopyMessage)) {
 		if (selectionActive) {
 			const auto copied = copySelectedText();
 			if (copied) {
-				if (!textModeActive) {
-					clearTextSelection();
+				if (yank || !textModeActive) {
+					clearSelected(true);
 				}
 				Core::VimKeymap::SetNormalMode(true);
 				_controller->showToast(tr::lng_text_copied(tr::now));
