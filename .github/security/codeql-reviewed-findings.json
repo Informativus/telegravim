@@ -1,0 +1,278 @@
+[
+  {
+    "path": "Telegram/SourceFiles/tests/test_vim_keymap.cpp",
+    "source_sha256": [
+      "3842ee79121cef60556d1432f09c16a5f5472a8dcc109c96577ba27e5f4251c3",
+      "8a7b78813c93fb6a47b909e9d849dd195b7c01d959909d53d721a5d1fe05cd50",
+      "e6c147cdeb92c314e0b04bcd8b1c922e6f02e8078e9e9e2bf162e1a920bb6007"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/missing-return",
+        "level": "error",
+        "line_hash": "9756903eea18be60:1",
+        "message_sha256": "d43e6b61ded2aa725c14ba1bccaf36d8514fd8bdef9e5c3f54568c86720e7815",
+        "reason": "No-build extraction treats the MatchOptions default initializer as the function body; MatchesKey explicitly returns Bindings::Matches. The native compiler and binding assertions verify the real body."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "c099bb51cb9cedb:1",
+        "message_sha256": "4c1b8c69ba38125c2fe035a0b1cbb6b1a31c23adc38d9a8491eb9a2c8fe9112c",
+        "reason": "The observed counter is updated by registered Qt callbacks during event dispatch or deferred activation. No-build extraction does not model these callbacks; native keyboard and callback regression assertions pass."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "82fafdc3241236a7:1",
+        "message_sha256": "7c79a0421a9113f2f8c3ad4b8abee7b3f09e54ed768ad629cf5b54579c514b40",
+        "reason": "The observed counter is updated by registered Qt callbacks during event dispatch or deferred activation. No-build extraction does not model these callbacks; native keyboard and callback regression assertions pass."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "de970ea76c22df89:1",
+        "message_sha256": "40a8f47669e67a67792831fc14acecd130c0d1d52c5455cbbbf5c1bc2ebde1d2",
+        "reason": "The observed counter is updated by registered Qt callbacks during event dispatch or deferred activation. No-build extraction does not model these callbacks; native keyboard and callback regression assertions pass."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "11449c715f610109:1",
+        "message_sha256": "07f8e2a589a58a7bc83e9936632ad4ae184e84003743a73c949ca0a9a2d354dc",
+        "reason": "The loop dereferences the optional result of MediaPlaybackSpeed and reaches 2.0 after ten increments. No-build extraction loses the optional call result; the native speed regression passes."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "d2e338c0e4f5c70c:1",
+        "message_sha256": "bfe50b052b3e3545ee8b507b5470a3170e6ba2b074e194ca7e76cf30163214f7",
+        "reason": "The accumulator is updated from Qt image pixels inside coordinate loops. No-build extraction lacks the Qt image and geometry definitions; native rendering assertions verify nonempty pixels."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "8ea0deef084730e:1",
+        "message_sha256": "8fe2170992d3db7198ecb360429add534781dc550b27a4d59850f1b904f4f611",
+        "reason": "The observed counter is updated by registered Qt callbacks during event dispatch or deferred activation. No-build extraction does not model these callbacks; native keyboard and callback regression assertions pass."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "ec34fe611159fd64:1",
+        "message_sha256": "4c1b8c69ba38125c2fe035a0b1cbb6b1a31c23adc38d9a8491eb9a2c8fe9112c",
+        "reason": "The observed counter is updated by registered Qt callbacks during event dispatch or deferred activation. No-build extraction does not model these callbacks; native keyboard and callback regression assertions pass."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "878840dc0c8afbc7:1",
+        "message_sha256": "6e1f6ec43e375d24ab0e67098195623b3825674901f98416a9c3419cab8049c2",
+        "reason": "The accumulator is updated from Qt image pixels inside coordinate loops. No-build extraction lacks the Qt image and geometry definitions; native rendering assertions verify nonempty pixels."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "d4fbd26b6e598164:1",
+        "message_sha256": "8fe2170992d3db7198ecb360429add534781dc550b27a4d59850f1b904f4f611",
+        "reason": "The observed counter is updated by registered Qt callbacks during event dispatch or deferred activation. No-build extraction does not model these callbacks; native keyboard and callback regression assertions pass."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "c28a15a0e9a8597d:1",
+        "message_sha256": "8fe2170992d3db7198ecb360429add534781dc550b27a4d59850f1b904f4f611",
+        "reason": "The observed counter is updated by registered Qt callbacks during event dispatch or deferred activation. No-build extraction does not model these callbacks; native keyboard and callback regression assertions pass."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "5b0209730834eb1a:1",
+        "message_sha256": "0dccd51d5202474650694b991916792208692e0f653ab342bd570c2e2668aa67",
+        "reason": "This test function expresses its behavior through named Check assertions. The comment-percentage metric does not account for assertion descriptions; the repository forbids filler comments. No execution or security defect is reported."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "b162878d14d77b88:1",
+        "message_sha256": "c8e861783e201ba690749292f72a6976901793c23f65065a60ee48cfdb104051",
+        "reason": "This test function expresses its behavior through named Check assertions. The comment-percentage metric does not account for assertion descriptions; the repository forbids filler comments. No execution or security defect is reported."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "261ee86eec90be67:1",
+        "message_sha256": "0f830a83278b2b8e8b551de4c8aa9bc26cada9239b2dd420cd69699dd7110901",
+        "reason": "This test function expresses its behavior through named Check assertions. The comment-percentage metric does not account for assertion descriptions; the repository forbids filler comments. No execution or security defect is reported."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "8b75c5a246c1107a:1",
+        "message_sha256": "690390a7a169988778235691cdab695973fefe18ce91f03518f26f0aa7ed7802",
+        "reason": "This test function expresses its behavior through named Check assertions. The comment-percentage metric does not account for assertion descriptions; the repository forbids filler comments. No execution or security defect is reported."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "abde5830390a68f4:1",
+        "message_sha256": "9de258bd1c8d6b67063bf28c3ab5831383b1ee8c54ee6328a7ae1e9af93feb30",
+        "reason": "This test function expresses its behavior through named Check assertions. The comment-percentage metric does not account for assertion descriptions; the repository forbids filler comments. No execution or security defect is reported."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "5f4d668af127cd1c:1",
+        "message_sha256": "b8af793fa8acb2019d13f678af2cc96d719ae686eb94ffe1c69677b89f23ba86",
+        "reason": "This test function expresses its behavior through named Check assertions. The comment-percentage metric does not account for assertion descriptions; the repository forbids filler comments. No execution or security defect is reported."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "3d7e16367ab345da:1",
+        "message_sha256": "3348f83ab392eea8864961c84117feb6c7468dd24823ee49eee9fd780a8643fb",
+        "reason": "This test function expresses its behavior through named Check assertions. The comment-percentage metric does not account for assertion descriptions; the repository forbids filler comments. No execution or security defect is reported."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "7ca04c91c448924a:1",
+        "message_sha256": "fa2152fc16acd2f151215a83a08d833727fef8a39e3645d2b9d51e16d31817a5",
+        "reason": "The variable is updated inside callbacks invoked by Qt event dispatch or the selection-search callback. No-build extraction loses the invocation; the native link activation and bounded selection regression assertions pass."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "141cb7adf6d34fa9:1",
+        "message_sha256": "4c1b8c69ba38125c2fe035a0b1cbb6b1a31c23adc38d9a8491eb9a2c8fe9112c",
+        "reason": "The variable is updated inside callbacks invoked by Qt event dispatch or the selection-search callback. No-build extraction loses the invocation; the native link activation and bounded selection regression assertions pass."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "e7b926364a4c8b80:1",
+        "message_sha256": "282c4be4cae7f41ad73cb774a99ac32ce712bc491b1f638150dc6b5ab63cfa30",
+        "reason": "Named Check assertions document each behavior and boundary in this test suite. The percentage-of-comments metric ignores assertion descriptions and conflicts with the repository rule against filler comments."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "5f4d668af127cd1c:1",
+        "message_sha256": "bb2c5c85f0a97ef674497e4623e50c59b19e87a447b65160ac3a48351f93ebf4",
+        "reason": "Named Check assertions document each behavior and boundary in this test suite. The percentage-of-comments metric ignores assertion descriptions and conflicts with the repository rule against filler comments."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/tests/spellchecker_tests.h",
+    "source_sha256": [
+      "03ab99b98abb27f9164eafb196f3f57c63156e2853795b177e890a21da06f41e"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "ad5246576a75a3b:1",
+        "message_sha256": "54386e3b4f981ebd5dc816ed3eb225be06edc879814f73b8f920f5c457115f23",
+        "reason": "This test function expresses its behavior through named Check assertions. The comment-percentage metric does not account for assertion descriptions; the repository forbids filler comments. No execution or security defect is reported."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/history/view/history_view_element.cpp",
+    "source_sha256": [
+      "28b67516af9ea1f8b09e8428c81b826ee8f3102ad98c1bc264fdbd328c80ba65",
+      "a4584e52476d32efc13614ea304290e5e26405c5086d6d8b500add58148a4c37"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "21e77fd901c348e6:1",
+        "message_sha256": "16553ee0cc00d87e99ec11a3ca5072f6940e6f377bb5735da1e1768c52e20a82",
+        "reason": "KeyboardStyle::minButtonWidth assigns iconWidth from generated st::msgBotKb*Icon widths and the sending icon. chat.style defines these nonempty icons. No-build analysis lacks generated style definitions and incorrectly treats all branches as zero; the existing condition is necessary for icon-free buttons."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/history/view/history_view_message.h",
+    "source_sha256": [
+      "94b6a7e0acb772bd7d3c3e2b992f2ca2cec50d48865520dbae5522697367b3c7",
+      "bee6c1cc5466d730973b95c7d6c9160340e9c136e26195492f5c81e82cc19c4e"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/ambiguously-signed-bit-field",
+        "level": "warning",
+        "line_hash": "9d3b2f55ba1d1267:1",
+        "message_sha256": "ec94d2ec48e8e63fa87fcc852928aa3094b10e23e177f9356eaf1ff3856f190a",
+        "reason": "The field uses uint32, which base/basic_types.h defines as quint32 (Qt unsigned 32-bit integer). No-build extraction lacks the submodule/Qt aliases and substitutes int. The reviewed native declaration is unsigned; plain signed-int fields are fixed separately."
+      },
+      {
+        "rule": "cpp/ambiguously-signed-bit-field",
+        "level": "warning",
+        "line_hash": "2a4d27e4bc255efc:1",
+        "message_sha256": "0e11fb87f0fef88f6f71122e10a0970395636f96343170d1566bdee35425bf63",
+        "reason": "The field uses uint32, which base/basic_types.h defines as quint32 (Qt unsigned 32-bit integer). No-build extraction lacks the submodule/Qt aliases and substitutes int. The reviewed native declaration is unsigned; plain signed-int fields are fixed separately."
+      },
+      {
+        "rule": "cpp/ambiguously-signed-bit-field",
+        "level": "warning",
+        "line_hash": "57118be03f3de50f:1",
+        "message_sha256": "a4644031a7f225cc41129f9d9c7b4045c92be7849e3f6d713f8c2fc1754696d7",
+        "reason": "The field uses uint32, which base/basic_types.h defines as quint32 (Qt unsigned 32-bit integer). No-build extraction lacks the submodule/Qt aliases and substitutes int. The reviewed native declaration is unsigned; plain signed-int fields are fixed separately."
+      },
+      {
+        "rule": "cpp/ambiguously-signed-bit-field",
+        "level": "warning",
+        "line_hash": "202d816d3970f130:1",
+        "message_sha256": "1ab925175c9ee4dc3d9a73ba953287315afd99ab8e504ef351ca8759c4452ba1",
+        "reason": "The field uses uint32, which base/basic_types.h defines as quint32 (Qt unsigned 32-bit integer). No-build extraction lacks the submodule/Qt aliases and substitutes int. The reviewed native declaration is unsigned; plain signed-int fields are fixed separately."
+      },
+      {
+        "rule": "cpp/ambiguously-signed-bit-field",
+        "level": "warning",
+        "line_hash": "6d59cfc484d175d1:1",
+        "message_sha256": "5b7d82c709a6867974bffaa1dcade664478215dc9ff0d14ff59fda3321a46c12",
+        "reason": "The field uses uint32, which base/basic_types.h defines as quint32 (Qt unsigned 32-bit integer). No-build extraction lacks the submodule/Qt aliases and substitutes int. The reviewed native declaration is unsigned; plain signed-int fields are fixed separately."
+      },
+      {
+        "rule": "cpp/ambiguously-signed-bit-field",
+        "level": "warning",
+        "line_hash": "640272bc5f618e07:1",
+        "message_sha256": "12f402388f23a814a310c276dc6d05e93a79c2ca853ad37c4505dca074f258eb",
+        "reason": "The field uses uint32, which base/basic_types.h defines as quint32 (Qt unsigned 32-bit integer). No-build extraction lacks the submodule/Qt aliases and substitutes int. The reviewed native declaration is unsigned; plain signed-int fields are fixed separately."
+      },
+      {
+        "rule": "cpp/ambiguously-signed-bit-field",
+        "level": "warning",
+        "line_hash": "94c8ed334c2db0cf:1",
+        "message_sha256": "221340275eeab7bff713e8abf704914185d25d2af21313a14a799af66e871f03",
+        "reason": "The field uses uint32, which base/basic_types.h defines as quint32 (Qt unsigned 32-bit integer). No-build extraction lacks the submodule/Qt aliases and substitutes int. The reviewed native declaration is unsigned; plain signed-int fields are fixed separately."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/history/view/history_view_element.h",
+    "source_sha256": [
+      "425d2408cda20ec928d7c0e4bfe262b1153c4361b62725fdc7a457cc39147aad",
+      "e82a2ae16840893a98cc85147c5f5da1f4de04ff41c0fb787eca106e3662ec20"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/ambiguously-signed-bit-field",
+        "level": "warning",
+        "line_hash": "4479138a8a82773:1",
+        "message_sha256": "ebf876490de90ad11bc4274ef95d3f22cf3ac93db0d6ef38edda44a141f02b9c",
+        "reason": "The field uses uint32, which base/basic_types.h defines as quint32 (Qt unsigned 32-bit integer). No-build extraction lacks the submodule/Qt aliases and substitutes int. The reviewed native declaration is unsigned; plain signed-int fields are fixed separately."
+      },
+      {
+        "rule": "cpp/ambiguously-signed-bit-field",
+        "level": "warning",
+        "line_hash": "18c2da310fc7b9a8:1",
+        "message_sha256": "757a34233fdca5b8afab182f0a74575304a114998e761a739373fad8870f4f16",
+        "reason": "The field uses uint32, which base/basic_types.h defines as quint32 (Qt unsigned 32-bit integer). No-build extraction lacks the submodule/Qt aliases and substitutes int. The reviewed native declaration is unsigned; plain signed-int fields are fixed separately."
+      }
+    ]
+  }
+]
