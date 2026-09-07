@@ -809,7 +809,6 @@ def reviewed_finding(run: dict, result: dict, source: Path, reviews: list) -> bo
         "Telegram/SourceFiles/tests/test_vim_keymap.cpp": {
             "cpp/missing-return", "cpp/constant-comparison", "cpp/poorly-documented-function"
         },
-        "Telegram/SourceFiles/tests/spellchecker_tests.h": {"cpp/poorly-documented-function"},
         "Telegram/SourceFiles/history/view/history_view_element.cpp": {"cpp/constant-comparison"},
     }
     if rule not in allowed.get(path, set()):

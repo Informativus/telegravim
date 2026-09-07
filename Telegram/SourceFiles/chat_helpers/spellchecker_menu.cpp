@@ -17,6 +17,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <QtCore/QPointer>
 #include <QtGui/QKeyEvent>
+#include <QtGui/QWindow>
 #include <QtWidgets/QApplication>
 
 namespace Spellchecker {
@@ -37,6 +38,7 @@ private:
 	const not_null<Ui::InputField*> _field;
 	const not_null<SpellingHighlighter*> _highlighter;
 	base::unique_qptr<Ui::PopupMenu> _menu;
+	QPointer<QWidget> _pendingFocus;
 	int _generation = 0;
 	bool _pending = false;
 	rpl::lifetime _lifetime;
@@ -69,8 +71,11 @@ bool SuggestionsMenu::eventFilter(QObject *object, QEvent *event) {
 	if (_pending) {
 		if (event->type() == QEvent::KeyPress
 			|| event->type() == QEvent::MouseButtonPress
-			|| event->type() == QEvent::FocusIn
-			|| event->type() == QEvent::WindowDeactivate) {
+			|| (event->type() == QEvent::FocusIn
+				&& QApplication::focusWidget() != _pendingFocus)
+			|| (event->type() == QEvent::WindowDeactivate
+				&& (object == _field->window()
+					|| object == _field->window()->windowHandle()))) {
 			cancel();
 		}
 		return false;
@@ -104,6 +109,7 @@ bool SuggestionsMenu::show() {
 		rect.bottomLeft());
 	auto menu = std::make_unique<QMenu>();
 	const auto raw = menu.get();
+	_pendingFocus = focus;
 	_pending = true;
 	qApp->installEventFilter(this);
 	_highlighter->fillSpellcheckerMenu(raw, cursor, [=,

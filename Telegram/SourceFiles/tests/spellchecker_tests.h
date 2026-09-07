@@ -74,21 +74,28 @@ void TestBuiltinSpellchecker() {
 			loop.quit();
 		});
 		QTimer::singleShot(5000, &loop, &QEventLoop::quit);
-		loop.exec();
+		loop.exec(QEventLoop::ExcludeUserInputEvents);
 		Check(completed, "background spelling request completes");
 		return std::pair(correct, suggestions);
 	};
+	// The macOS test executable uses Cocoa and can receive physical input
+	// from the desktop while an asynchronous lookup is pending. Exclude
+	// that input while waiting, but keep the synthetic events sent below.
+	// Hunspell's single FIFO queue posts this fence after the menu result,
+	// so its completion also proves that the preceding lookup was handled.
 	const auto flush = [&] {
 		auto loop = QEventLoop();
+		auto completed = false;
 		const auto weak = QPointer<QEventLoop>(&loop);
-		Platform::Spellchecker::CheckSpelling(u"привет"_q, [weak](bool correct) {
+		Platform::Spellchecker::CheckSpelling(u"привет"_q, [&, weak](bool correct) {
 			if (weak) {
+				completed = true;
 				weak->quit();
 			}
 		});
 		QTimer::singleShot(5000, &loop, &QEventLoop::quit);
-		loop.exec();
-		DrainMainQueue();
+		loop.exec(QEventLoop::ExcludeUserInputEvents);
+		Check(completed, "queued spelling requests finish before assertions");
 	};
 	const auto cases = std::vector<std::pair<QString, QString>>{
 		{ u"превет"_q, u"привет"_q },
@@ -125,7 +132,7 @@ void TestBuiltinSpellchecker() {
 			loop.quit();
 		});
 		QTimer::singleShot(5000, &loop, &QEventLoop::quit);
-		loop.exec();
+		loop.exec(QEventLoop::ExcludeUserInputEvents);
 		Check(found, "mixed Russian and English text marks only the misspelled words");
 	}
 	Platform::Spellchecker::AddWord(u"телегравимслово"_q);
@@ -145,7 +152,7 @@ void TestBuiltinSpellchecker() {
 	root.activateWindow();
 	QApplication::setActiveWindow(&root);
 	root.setFocus();
-	QApplication::processEvents();
+	QGuiApplication::sync();
 	const auto setText = [&](const QString &text) {
 		field.setTextWithTags({ text, {} });
 		auto cursor = field.textCursor();
@@ -165,6 +172,18 @@ void TestBuiltinSpellchecker() {
 	};
 	setText(u"ошыбка"_q);
 	Check(Spellchecker::ShowSuggestionsMenu(&field), "view-mode field opens spelling suggestions");
+	// Qt may report window-level changes after this request has started,
+	// while the focused view and its active window stay the same. Such a
+	// notification must not cancel the pending spelling lookup. Send it
+	// before pumping the main queue, so asynchronous completion cannot
+	// win the race and conceal cancellation. The later field-focus case
+	// separately verifies that a real widget focus change still cancels.
+	auto focusReceiver = QObject();
+	auto focusNotice = QFocusEvent(QEvent::FocusIn);
+	QApplication::sendEvent(&focusReceiver, &focusNotice);
+	auto otherWindowDeactivated = QEvent(QEvent::WindowDeactivate);
+	QApplication::sendEvent(&focusReceiver, &otherWindowDeactivated);
+	Check(root.hasFocus(), "unrelated window notifications preserve the focused view widget");
 	flush();
 	const auto popup = visibleMenu();
 	Check(popup && popup->isVisible(), "suggestions appear with focus outside the composer");
@@ -181,7 +200,7 @@ void TestBuiltinSpellchecker() {
 		root.activateWindow();
 		QApplication::setActiveWindow(&root);
 		root.setFocus();
-		QApplication::processEvents();
+		QGuiApplication::sync();
 		Check(Spellchecker::ShowSuggestionsMenu(&field), "multi-suggestion menu starts");
 		flush();
 		const auto menu = visibleMenu();
@@ -204,7 +223,7 @@ void TestBuiltinSpellchecker() {
 	root.activateWindow();
 	QApplication::setActiveWindow(&root);
 	root.setFocus();
-	QApplication::processEvents();
+	QGuiApplication::sync();
 	Check(Spellchecker::ShowSuggestionsMenu(&field), "cancellable menu starts");
 	flush();
 	if (const auto menu = visibleMenu()) {
@@ -212,7 +231,7 @@ void TestBuiltinSpellchecker() {
 		QApplication::sendEvent(menu, &escape);
 		auto loop = QEventLoop();
 		QTimer::singleShot(field.st().menu.showDuration + 50, &loop, &QEventLoop::quit);
-		loop.exec();
+		loop.exec(QEventLoop::ExcludeUserInputEvents);
 		DrainMainQueue();
 	}
 	Check(!visibleMenu() && field.getTextWithTags().text == u"ошыбка"_q,
@@ -232,11 +251,30 @@ void TestBuiltinSpellchecker() {
 	root.activateWindow();
 	QApplication::setActiveWindow(&root);
 	root.setFocus();
-	QApplication::processEvents();
+	QGuiApplication::sync();
 	Check(Spellchecker::ShowSuggestionsMenu(&field), "lookup before focus change starts");
 	field.setFocus();
 	flush();
 	Check(!visibleMenu(), "focus changes cancel delayed suggestions");
+	root.activateWindow();
+	QApplication::setActiveWindow(&root);
+	root.setFocus();
+	QGuiApplication::sync();
+	Check(Spellchecker::ShowSuggestionsMenu(&field), "lookup before Escape starts");
+	auto cancelLookup = QKeyEvent(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+	QApplication::sendEvent(&root, &cancelLookup);
+	flush();
+	Check(!visibleMenu(), "Escape cancels pending suggestions");
+	root.activateWindow();
+	QApplication::setActiveWindow(&root);
+	root.setFocus();
+	QGuiApplication::sync();
+	Check(Spellchecker::ShowSuggestionsMenu(&field), "lookup before window deactivation starts");
+	auto windowDeactivated = QEvent(QEvent::WindowDeactivate);
+	QApplication::sendEvent(&root, &windowDeactivated);
+	flush();
+	Check(!visibleMenu(), "the owning window deactivation cancels delayed suggestions");
+
 	enabled = false;
 	Check(!Spellchecker::ShowSuggestionsMenu(&field), "disabled spellchecking stays disabled");
 	Platform::Spellchecker::UpdateLanguages({});

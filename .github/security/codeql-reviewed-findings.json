@@ -164,21 +164,6 @@
     ]
   },
   {
-    "path": "Telegram/SourceFiles/tests/spellchecker_tests.h",
-    "source_sha256": [
-      "03ab99b98abb27f9164eafb196f3f57c63156e2853795b177e890a21da06f41e"
-    ],
-    "findings": [
-      {
-        "rule": "cpp/poorly-documented-function",
-        "level": "warning",
-        "line_hash": "ad5246576a75a3b:1",
-        "message_sha256": "54386e3b4f981ebd5dc816ed3eb225be06edc879814f73b8f920f5c457115f23",
-        "reason": "This test function expresses its behavior through named Check assertions. The comment-percentage metric does not account for assertion descriptions; the repository forbids filler comments. No execution or security defect is reported."
-      }
-    ]
-  },
-  {
     "path": "Telegram/SourceFiles/history/view/history_view_element.cpp",
     "source_sha256": [
       "28b67516af9ea1f8b09e8428c81b826ee8f3102ad98c1bc264fdbd328c80ba65",
