@@ -763,6 +763,34 @@ def finish(api: GitHub, kind: str):
         raise GuardError("Required check did not pass")
 
 
+def sarif_level(run: dict, result: dict) -> str:
+    if "level" in result:
+        level = result["level"]
+    else:
+        reference = result.get("rule", {})
+        component = run.get("tool", {}).get("driver", {})
+        if "toolComponent" in reference:
+            index = reference["toolComponent"].get("index")
+            extensions = run.get("tool", {}).get("extensions", [])
+            if type(index) is not int or not 0 <= index < len(extensions):
+                return "warning"
+            component = extensions[index]
+        rules = component.get("rules", [])
+        rule_id = result.get("ruleId", reference.get("id"))
+        index = reference.get("index", result.get("ruleIndex"))
+        if type(index) is int and 0 <= index < len(rules):
+            rule = rules[index]
+            if rule_id and rule.get("id") != rule_id:
+                return "warning"
+        else:
+            matches = [rule for rule in rules if rule_id and rule.get("id") == rule_id]
+            if len(matches) != 1:
+                return "warning"
+            rule = matches[0]
+        level = rule.get("defaultConfiguration", {}).get("level", "warning")
+    return level if level in {"none", "note", "warning", "error"} else "warning"
+
+
 def check_sarif(directory: Path, changed: list[str] | None = None):
     files = list(directory.glob("*.sarif"))
     if not files:
@@ -779,7 +807,7 @@ def check_sarif(directory: Path, changed: list[str] | None = None):
             ):
                 errors += 1
             for result in run.get("results", []):
-                if result.get("level", "warning") not in {"warning", "error"}:
+                if sarif_level(run, result) not in {"warning", "error"}:
                     continue
                 locations = result.get("locations", [])
                 paths = [
