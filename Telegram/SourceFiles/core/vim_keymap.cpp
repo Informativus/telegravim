@@ -1354,6 +1354,12 @@ bool HandleApplicationKeyPress(
 	}
 	const auto scope = QPointer<QWidget>(ActiveKeyboardScope());
 	UpdateKeyboardScope(scope);
+	if (!scope && HandlePreLayerKey(e)) {
+		RecordKeyEvent(e, u"pre-layer handler"_q, true);
+		e->accept();
+		return true;
+	}
+
 	const auto focus = QApplication::focusWidget();
 	const auto globalRoot = scope ? nullptr : GlobalFocusRoot(focus);
 	if (globalRoot) {
@@ -1459,11 +1465,6 @@ bool HandleApplicationKeyPress(
 			}
 		}
 		return false;
-	}
-	if (HandlePreLayerKey(e)) {
-		RecordKeyEvent(e, u"pre-layer handler"_q, true);
-		e->accept();
-		return true;
 	}
 	if (Bindings::IsPlainEscape(e)
 		&& TelegramLayerOrPopupShown()) {
@@ -1800,36 +1801,12 @@ std::optional<Action> ActionKey(not_null<QKeyEvent*> e) {
 	return std::nullopt;
 }
 
-std::optional<TextMotion> TextMotionKey(not_null<QKeyEvent*> e) {
-	if (!NormalMode() || e->isAutoRepeat()) {
-		return std::nullopt;
-	}
-	const auto modifiers = CleanModifiers(e);
-	if (modifiers != Qt::NoModifier && modifiers != Qt::ShiftModifier) {
-		return std::nullopt;
-	} else if (modifiers == Qt::ShiftModifier
-		&& Bindings::KeyIs(e, Qt::Key_J, u"j"_q, u"\u043E"_q)) {
-		return TextMotion::LineDown;
-	} else if (modifiers == Qt::ShiftModifier
-		&& (Bindings::KeyIs(e, Qt::Key_H, u"h"_q, u"\u0440"_q)
-			|| Bindings::KeyIs(e, Qt::Key_K, u"k"_q, u"\u043B"_q))) {
-		return TextMotion::LineUp;
-	} else if (Bindings::KeyIs(e, Qt::Key_H, u"h"_q, u"\u0440"_q)) {
-		return TextMotion::CharacterLeft;
-	} else if (Bindings::KeyIs(e, Qt::Key_L, u"l"_q, u"\u0434"_q)) {
-		return TextMotion::CharacterRight;
-	} else if (Bindings::KeyIs(e, Qt::Key_B, u"b"_q, u"\u0438"_q)) {
-		return TextMotion::WordLeft;
-	} else if (Bindings::KeyIs(e, Qt::Key_W, u"w"_q, u"\u0446"_q)
-		|| Bindings::KeyIs(e, Qt::Key_E, u"e"_q, u"\u0443"_q)) {
-		return TextMotion::WordRight;
-	}
-	if (Bindings::IsLineStart(e)) {
-		return TextMotion::LineStart;
-	} else if (Bindings::IsLineEnd(e)) {
-		return TextMotion::LineEnd;
-	}
-	return std::nullopt;
+std::optional<TextMotion> TextMotionKey(
+		not_null<QKeyEvent*> e,
+		bool &pendingStart) {
+	return NormalMode()
+		? Bindings::TextMotionKey(e, pendingStart)
+		: std::nullopt;
 }
 
 bool TextVisualKey(not_null<QKeyEvent*> e) {

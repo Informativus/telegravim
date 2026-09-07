@@ -244,10 +244,6 @@ bool TextVisualModeConsumesKey(bool visualMode, bool visualKey) {
 	return visualMode && visualKey;
 }
 
-bool TextVisualYankCompletes(bool selectionActive, bool copied) {
-	return selectionActive && copied;
-}
-
 bool EmptyComposeDefersToMessageAction(
 		bool composeStateActive,
 		bool fieldEmpty,
@@ -295,6 +291,26 @@ QRect GroupedMediaHintRect(
 		int itemTop) {
 	return groupItemRect.translated(
 		itemInnerTopLeft + QPoint(0, itemTop));
+}
+
+int TextParagraphOffset(
+		int position,
+		int direction,
+		int textLength,
+		Fn<bool(int)> isBreak) {
+	if (textLength <= 0) {
+		return -1;
+	}
+	position = std::clamp(position, 0, textLength - 1);
+	direction = (direction < 0) ? -1 : 1;
+	for (auto offset = position + direction;
+			offset > 0 && offset < textLength;
+			offset += direction) {
+		if (isBreak(offset - 1) && !isBreak(offset)) {
+			return offset;
+		}
+	}
+	return (direction > 0) ? textLength - 1 : 0;
 }
 
 int ResolveTextCursorOffset(

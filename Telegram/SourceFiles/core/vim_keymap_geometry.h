@@ -63,9 +63,6 @@ void PaintMessageCursor(QPainter &p, QRect characterRect);
 [[nodiscard]] bool TextVisualModeConsumesKey(
 	bool visualMode,
 	bool visualKey);
-[[nodiscard]] bool TextVisualYankCompletes(
-	bool selectionActive,
-	bool copied);
 [[nodiscard]] bool EmptyComposeDefersToMessageAction(
 	bool composeStateActive,
 	bool fieldEmpty,
@@ -91,6 +88,11 @@ void PaintMessageCursor(QPainter &p, QRect characterRect);
 	QRect groupItemRect,
 	QPoint itemInnerTopLeft,
 	int itemTop);
+[[nodiscard]] int TextParagraphOffset(
+	int position,
+	int direction,
+	int textLength,
+	Fn<bool(int)> isBreak);
 [[nodiscard]] int ResolveTextCursorOffset(
 	int wanted,
 	int direction,

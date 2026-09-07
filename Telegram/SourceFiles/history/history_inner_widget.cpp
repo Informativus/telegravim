@@ -470,8 +470,20 @@ HistoryInner::HistoryInner(
 	});
 	Core::VimKeymap::RegisterKeyHandler(this, [=](
 			not_null<QKeyEvent*> e) {
+		if (!isVisible() || !window()->isActiveWindow()) {
+			return false;
+		}
 		return vimKeymapHandleHintKey(e)
 			|| vimKeymapHandleTextSelectionKey(e);
+	});
+	Core::VimKeymap::RegisterPreLayerKeyHandler(this, [=](
+			not_null<QKeyEvent*> e) {
+		if (!isVisible()
+			|| !window()->isActiveWindow()
+			|| (!_vimKeymapTextCursorItem && !_vimKeymapTextVisualMode)) {
+			return false;
+		}
+		return vimKeymapHandleTextSelectionKey(e);
 	});
 	Core::App().inAppKeyPressed(
 	) | rpl::on_next([=] {
@@ -1338,6 +1350,7 @@ bool HistoryInner::vimKeymapTextSelectionActive() const {
 }
 
 void HistoryInner::vimKeymapClearTextCursor() {
+	_vimKeymapTextPendingStart = false;
 	if (!_vimKeymapTextCursorItem) {
 		return;
 	}
@@ -1353,6 +1366,7 @@ void HistoryInner::vimKeymapClearTextCursor() {
 }
 
 void HistoryInner::clearTextSelection() {
+	_vimKeymapTextPendingStart = false;
 	if (_selectedTextItem) {
 		if (const auto view = viewByItem(_selectedTextItem)) {
 			repaintItem(view);
@@ -4308,20 +4322,28 @@ bool HistoryInner::vimKeymapHandleTextSelectionKey(
 	if (!selectionActive && !cursorActive) {
 		return false;
 	}
+	const auto textModeActive = cursorActive || _vimKeymapTextVisualMode;
+	const auto motion = Core::VimKeymap::TextMotionKey(
+		e,
+		_vimKeymapTextPendingStart);
+	if (e->isAutoRepeat()) {
+		return textModeActive;
+	}
 	if (Core::VimKeymap::Bindings::IsTextYank(e)
+		|| e->matches(QKeySequence::Copy)
 		|| Core::VimKeymap::ActionKey(e)
 			== Core::VimKeymap::Action::CopyMessage) {
 		if (selectionActive) {
 			const auto copied = copySelectedText();
-			if (Core::VimKeymap::TextVisualYankCompletes(
-					selectionActive,
-					copied)) {
-				clearTextSelection();
+			if (copied) {
+				if (!textModeActive) {
+					clearTextSelection();
+				}
 				Core::VimKeymap::SetNormalMode(true);
 				_controller->showToast(tr::lng_text_copied(tr::now));
 				Core::VimKeymap::TraceKey(
 					e,
-					u"copy selected message text and exit visual"_q);
+					u"copy selected message text"_q);
 			} else {
 				Core::VimKeymap::TraceKey(
 					e,
@@ -4331,7 +4353,7 @@ bool HistoryInner::vimKeymapHandleTextSelectionKey(
 			Core::VimKeymap::TraceKey(e, u"message text cursor copy ignored"_q);
 		}
 		return true;
-	} else if (e->key() == Qt::Key_Escape) {
+	} else if (Core::VimKeymap::Bindings::IsPlainEscape(e)) {
 		if (selectionActive) {
 			const auto view = viewByItem(_selectedTextItem);
 			const auto focus = _selectedTextSelection.focus;
@@ -4368,15 +4390,14 @@ bool HistoryInner::vimKeymapHandleTextSelectionKey(
 			view,
 			_vimKeymapTextCursor);
 		if (!selection) {
-			return false;
+			return true;
 		}
 		setTextSelection(view, *selection, true);
 		Core::VimKeymap::TraceKey(e, u"message text visual"_q);
 		return true;
 	}
-	const auto motion = Core::VimKeymap::TextMotionKey(e);
 	if (!motion) {
-		return false;
+		return textModeActive;
 	}
 	const auto item = selectionActive
 		? _selectedTextItem
@@ -4386,7 +4407,7 @@ bool HistoryInner::vimKeymapHandleTextSelectionKey(
 		if (cursorActive) {
 			vimKeymapClearTextCursor();
 		}
-		return false;
+		return true;
 	}
 	auto key = Qt::Key_unknown;
 	auto modifiers = selectionActive
@@ -4415,11 +4436,21 @@ bool HistoryInner::vimKeymapHandleTextSelectionKey(
 		modifiers |= Qt::ControlModifier;
 #endif // Q_OS_MAC
 		break;
+	case Core::VimKeymap::TextMotion::TextStart:
 	case Core::VimKeymap::TextMotion::LineStart:
 		key = Qt::Key_Home;
 		break;
+	case Core::VimKeymap::TextMotion::TextEnd:
 	case Core::VimKeymap::TextMotion::LineEnd:
 		key = Qt::Key_End;
+		break;
+	case Core::VimKeymap::TextMotion::ParagraphPrevious:
+		key = Qt::Key_Up;
+		modifiers |= Qt::ControlModifier;
+		break;
+	case Core::VimKeymap::TextMotion::ParagraphNext:
+		key = Qt::Key_Down;
+		modifiers |= Qt::ControlModifier;
 		break;
 	case Core::VimKeymap::TextMotion::LineUp:
 		key = Qt::Key_Up;
@@ -4435,7 +4466,7 @@ bool HistoryInner::vimKeymapHandleTextSelectionKey(
 			key,
 			modifiers);
 		if (!next) {
-			return false;
+			return true;
 		}
 		setTextSelection(view, *next, true);
 		Core::VimKeymap::TraceKey(e, u"extend message text selection"_q);
@@ -4446,10 +4477,14 @@ bool HistoryInner::vimKeymapHandleTextSelectionKey(
 			key,
 			modifiers);
 		if (!next) {
-			return false;
+			return true;
 		}
 		vimKeymapSetTextCursor(view, *next);
 		Core::VimKeymap::TraceKey(e, u"move message text cursor"_q);
+	}
+	if (_vimKeymapTextCursorRect) {
+		const auto rect = _vimKeymapTextCursorRect->translated(0, itemTop(view));
+		_scroll->scrollToY(rect.top(), rect.bottom() + 1);
 	}
 	return true;
 }
@@ -6042,6 +6077,7 @@ void HistoryInner::setupThanosEffect() {
 }
 
 HistoryInner::~HistoryInner() {
+	Core::VimKeymap::UnregisterPreLayerKeyHandler(this);
 	Core::VimKeymap::UnregisterKeyHandler(this);
 	Core::VimKeymap::UnregisterActionHandler(this);
 	if (_overlayHost) {

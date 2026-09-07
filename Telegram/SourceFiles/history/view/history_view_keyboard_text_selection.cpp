@@ -293,7 +293,10 @@ std::optional<MessageSelectionFlatEndpoint> KeyboardTextSelection::moveCursor(
 		Qt::KeyboardModifiers modifiers) {
 	if (!IsExtendKey(key)) {
 		return std::nullopt;
-	} else if (key == Qt::Key_Up || key == Qt::Key_Down) {
+	}
+	const auto vertical = (key == Qt::Key_Up || key == Qt::Key_Down);
+	const auto byParagraph = vertical && (modifiers & Qt::ControlModifier);
+	if (vertical && !byParagraph) {
 		return MoveByLine(view, current, (key == Qt::Key_Down) ? 1 : -1);
 	}
 	const auto maxOffset = MaxTextOffset(view);
@@ -301,14 +304,29 @@ std::optional<MessageSelectionFlatEndpoint> KeyboardTextSelection::moveCursor(
 		return std::nullopt;
 	}
 	const auto position = int(current.offset());
-	const auto forward = (key == Qt::Key_Right);
+	const auto forward = (key == Qt::Key_Right || key == Qt::Key_Down);
 #ifdef Q_OS_MAC
 	const auto byWord = (modifiers & Qt::AltModifier) != 0;
 #else // Q_OS_MAC
 	const auto byWord = (modifiers & Qt::ControlModifier) != 0;
 #endif // Q_OS_MAC
 	auto wanted = position;
-	if (key == Qt::Key_Home) {
+	if (byParagraph) {
+		wanted = Core::VimKeymap::TextParagraphOffset(
+			position,
+			forward ? 1 : -1,
+			*maxOffset,
+			[=](int symbol) {
+				const auto one = view->selectedText(TextSelection(
+					uint16(symbol),
+					uint16(symbol + 1))).rich.text;
+				return one.isEmpty()
+					|| one.front() == QChar::LineFeed
+					|| one.front() == QChar::CarriageReturn
+					|| one.front() == QChar::LineSeparator
+					|| one.front() == QChar::ParagraphSeparator;
+			});
+	} else if (key == Qt::Key_Home) {
 		wanted = 0;
 	} else if (key == Qt::Key_End) {
 		wanted = *maxOffset - 1;
@@ -430,7 +448,11 @@ std::optional<MessageSelection> KeyboardTextSelection::extend(
 		};
 	}
 
-	const auto position = int(_focus.symbol);
+	const auto focus = moveCursor(view, _focus, key, modifiers);
+	if (!focus) {
+		return std::nullopt;
+	}
+	_focus = *focus;
 	const auto makeResult = [&] {
 		const auto range = Core::VimKeymap::MakeVisualSelectionRange(
 			_anchor.symbol,
@@ -441,75 +463,6 @@ std::optional<MessageSelection> KeyboardTextSelection::extend(
 			_anchor,
 			_focus);
 	};
-	if (key == Qt::Key_Up || key == Qt::Key_Down) {
-		const auto next = MoveByLine(
-			view,
-			_focus,
-			(key == Qt::Key_Down) ? 1 : -1);
-		if (!next) {
-			return std::nullopt;
-		}
-		_focus = *next;
-		auto result = makeResult();
-		_has = true;
-		_item = item;
-		_produced = result.flatSelection();
-		return result;
-	}
-	const auto forward = (key == Qt::Key_Right);
-#ifdef Q_OS_MAC
-	const auto byWord = (modifiers & Qt::AltModifier) != 0;
-#else // Q_OS_MAC
-	const auto byWord = (modifiers & Qt::ControlModifier) != 0;
-#endif // Q_OS_MAC
-	auto wanted = position;
-	if (key == Qt::Key_Home) {
-		wanted = 0;
-	} else if (key == Qt::Key_End) {
-		wanted = *maxOffset - 1;
-	} else if (byWord) {
-		const auto separator = [&](int symbol) {
-			const auto one = view->selectedText(
-				TextSelection(uint16(symbol), uint16(symbol + 1))).rich.text;
-			return one.isEmpty() || Ui::Text::IsWordSeparator(one[0]);
-		};
-		auto symbol = position;
-		if (forward) {
-			while (symbol < *maxOffset && separator(symbol)) {
-				++symbol;
-			}
-			while (symbol < *maxOffset && !separator(symbol)) {
-				++symbol;
-			}
-		} else {
-			if (symbol > 0) {
-				--symbol;
-			}
-			while (symbol > 0 && separator(symbol)) {
-				--symbol;
-			}
-			while (symbol > 0 && !separator(symbol - 1)) {
-				--symbol;
-			}
-		}
-		wanted = symbol;
-	} else {
-		wanted = position + (forward ? 1 : -1);
-	}
-	const auto direction = (key == Qt::Key_Home)
-		? 1
-		: (key == Qt::Key_End)
-		? -1
-		: (forward ? 1 : -1);
-	const auto focus = SelectableCursorAtOffset(
-		view,
-		wanted,
-		direction,
-		*maxOffset);
-	if (!focus) {
-		return std::nullopt;
-	}
-	_focus = *focus;
 
 	auto result = makeResult();
 	_has = true;

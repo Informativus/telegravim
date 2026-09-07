@@ -6,12 +6,14 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "core/vim_keymap_bindings.h"
+#include "core/vim_keymap.h"
 #include "media/media_common.h"
 
 #include <QtCore/QStringList>
 #include <QtGui/QKeyEvent>
 
 #include <optional>
+#include <utility>
 #include <cmath>
 
 namespace Core::VimKeymap::Bindings {
@@ -41,6 +43,59 @@ QString ShortestHintLabel(int index, int total, const QString &alphabet) {
 		result[--i] = alphabet[value % base];
 	}
 	return result;
+}
+
+std::optional<TextMotion> TextMotionKey(
+		not_null<QKeyEvent*> e,
+		bool &pendingStart) {
+	if (e->isAutoRepeat()) {
+		return std::nullopt;
+	}
+	const auto wasPending = std::exchange(pendingStart, false);
+	const auto modifiers = CleanModifiers(e);
+	if (modifiers != Qt::NoModifier && modifiers != Qt::ShiftModifier) {
+		return std::nullopt;
+	} else if (KeyIs(e, Qt::Key_G, u"g"_q, u"п"_q)) {
+		if (modifiers == Qt::ShiftModifier) {
+			return TextMotion::TextEnd;
+		} else if (wasPending) {
+			return TextMotion::TextStart;
+		}
+		pendingStart = true;
+		return std::nullopt;
+	} else if (e->key() == Qt::Key_BraceLeft
+		|| e->text() == u"{"_q
+		|| (modifiers == Qt::ShiftModifier
+			&& KeyIs(e, Qt::Key_BracketLeft, u"["_q, u"х"_q))) {
+		return TextMotion::ParagraphPrevious;
+	} else if (e->key() == Qt::Key_BraceRight
+		|| e->text() == u"}"_q
+		|| (modifiers == Qt::ShiftModifier
+			&& KeyIs(e, Qt::Key_BracketRight, u"]"_q, u"ъ"_q))) {
+		return TextMotion::ParagraphNext;
+	} else if (modifiers == Qt::ShiftModifier
+		&& KeyIs(e, Qt::Key_J, u"j"_q, u"\u043E"_q)) {
+		return TextMotion::LineDown;
+	} else if (modifiers == Qt::ShiftModifier
+		&& (KeyIs(e, Qt::Key_H, u"h"_q, u"\u0440"_q)
+			|| KeyIs(e, Qt::Key_K, u"k"_q, u"\u043B"_q))) {
+		return TextMotion::LineUp;
+	} else if (KeyIs(e, Qt::Key_H, u"h"_q, u"\u0440"_q)) {
+		return TextMotion::CharacterLeft;
+	} else if (KeyIs(e, Qt::Key_L, u"l"_q, u"\u0434"_q)) {
+		return TextMotion::CharacterRight;
+	} else if (KeyIs(e, Qt::Key_B, u"b"_q, u"\u0438"_q)) {
+		return TextMotion::WordLeft;
+	} else if (KeyIs(e, Qt::Key_W, u"w"_q, u"\u0446"_q)
+		|| KeyIs(e, Qt::Key_E, u"e"_q, u"\u0443"_q)) {
+		return TextMotion::WordRight;
+	}
+	if (IsLineStart(e)) {
+		return TextMotion::LineStart;
+	} else if (IsLineEnd(e)) {
+		return TextMotion::LineEnd;
+	}
+	return std::nullopt;
 }
 
 bool IsMessageShare(not_null<QKeyEvent*> e) {
@@ -110,6 +165,8 @@ namespace {
 	case Qt::Key_X: return e->nativeVirtualKey() == 7;
 	case Qt::Key_Y: return e->nativeVirtualKey() == 16;
 	case Qt::Key_Z: return e->nativeVirtualKey() == 6;
+	case Qt::Key_BracketLeft: return e->nativeVirtualKey() == 33;
+	case Qt::Key_BracketRight: return e->nativeVirtualKey() == 30;
 	default: return false;
 	}
 #else // Q_OS_MAC

@@ -195,5 +195,26 @@ expect(core/sandbox.cpp
 expect(storage/file_download.cpp
     "_data.left[(]_loadSize[)]"
     "Image reads must be bounded by the available byte array")
+expect(core/vim_keymap.cpp
+    "UpdateKeyboardScope[(]scope[)];[\n\t ]*if [(]!scope && HandlePreLayerKey[(]e[)][)] [^{]*[{][^}]*}[\n\t ]*const auto focus"
+    "Active message text must receive keys before global focus and chat commands")
+expect(history/history_inner_widget.cpp
+    "RegisterPreLayerKeyHandler[(]this,[^{]*[{][^}]*_vimKeymapTextCursorItem && !_vimKeymapTextVisualMode[^}]*}[\n\t ]*return vimKeymapHandleTextSelectionKey"
+    "Only the active Vim text mode owns the early keyboard handler")
+expect(history/history_inner_widget.cpp
+    "if [(]!motion[)] [^{]*[{][\n\t ]*return textModeActive;"
+    "Unsupported keys must be consumed while Vim text mode is active")
+expect(history/history_inner_widget.cpp
+    "if [(]copied[)] [^{]*[{][\n\t ]*if [(]!textModeActive[)] [^{]*[{][\n\t ]*clearTextSelection"
+    "Copying must preserve the Vim cursor and selection")
+expect(history/history_inner_widget.cpp
+    "TextMotion::TextStart:[\n\t ]*case Core::VimKeymap::TextMotion::LineStart:[\n\t ]*key = Qt::Key_Home"
+    "gg must use selected-message text coordinates")
+expect(history/history_inner_widget.cpp
+    "TextMotion::TextEnd:[\n\t ]*case Core::VimKeymap::TextMotion::LineEnd:[\n\t ]*key = Qt::Key_End"
+    "Shift G must use selected-message text coordinates")
+expect(history/view/history_view_keyboard_text_selection.cpp
+    "const auto focus = moveCursor[(]view, _focus, key, modifiers[)]"
+    "Visual selections must use the same bounded motions as the text cursor")
 get_property(count GLOBAL PROPERTY vim_wiring_count)
 message(STATUS "${count} Vim application wiring checks passed (source-level).")

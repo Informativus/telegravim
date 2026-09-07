@@ -533,15 +533,6 @@ void TestVimKeymapTransientUiKeys() {
 	Check(
 		!Core::VimKeymap::Bindings::IsTextYank(&repeatedYank),
 		"repeated y does not rewrite the clipboard");
-	Check(
-		Core::VimKeymap::TextVisualYankCompletes(true, true),
-		"successful visual yank exits message visual mode");
-	Check(
-		!Core::VimKeymap::TextVisualYankCompletes(true, false),
-		"failed visual yank keeps the selection active");
-	Check(
-		!Core::VimKeymap::TextVisualYankCompletes(false, true),
-		"cursor-only yank does not exit through visual selection state");
 
 	Check(
 		Core::VimKeymap::TextVisualModeConsumesKey(true, true),
@@ -672,6 +663,97 @@ void TestVimKeymapTransientUiKeys() {
 		Qt::Key_K,
 		Qt::NoModifier,
 		u"k"_q);
+}
+
+void TestMessageTextNavigation() {
+	using Core::VimKeymap::TextMotion;
+	using Core::VimKeymap::Bindings::TextMotionKey;
+	auto pending = false;
+	auto g = QKeyEvent(QEvent::KeyPress, Qt::Key_G, Qt::NoModifier, u"g"_q);
+	Check(!TextMotionKey(&g, pending) && pending, "first g waits inside text");
+	Check(TextMotionKey(&g, pending) == TextMotion::TextStart && !pending,
+		"gg moves to the beginning of message text");
+	auto repeated = QKeyEvent(
+		QEvent::KeyPress, Qt::Key_G, Qt::NoModifier, u"g"_q, true);
+	Check(!TextMotionKey(&g, pending) && pending, "g arms a new sequence");
+	Check(!TextMotionKey(&repeated, pending) && pending,
+		"holding g does not complete gg");
+	auto unknown = QKeyEvent(
+		QEvent::KeyPress, Qt::Key_Q, Qt::NoModifier, u"q"_q);
+	Check(!TextMotionKey(&unknown, pending) && !pending,
+		"unsupported keys cancel a pending sequence without a motion");
+	Check(!TextMotionKey(&g, pending) && pending,
+		"g after an unsupported key starts a fresh sequence");
+	auto end = QKeyEvent(
+		QEvent::KeyPress, Qt::Key_G, Qt::ShiftModifier, u"G"_q);
+	Check(TextMotionKey(&end, pending) == TextMotion::TextEnd && !pending,
+		"Shift G moves to the end and cancels a pending g");
+	auto russianG = QKeyEvent(
+		QEvent::KeyPress, 0x041F, Qt::NoModifier, u"п"_q);
+	Check(!TextMotionKey(&russianG, pending) && pending,
+		"Russian g starts the text sequence");
+	Check(TextMotionKey(&russianG, pending) == TextMotion::TextStart,
+		"Russian gg moves to the beginning of message text");
+	auto russianEnd = QKeyEvent(
+		QEvent::KeyPress, 0x041F, Qt::ShiftModifier, u"П"_q);
+	Check(TextMotionKey(&russianEnd, pending) == TextMotion::TextEnd,
+		"Russian Shift G moves to the end of message text");
+	const auto paragraphKeys = std::vector<std::pair<int, QString>>{
+		{ Qt::Key_BraceLeft, u"{"_q },
+		{ Qt::Key_BraceRight, u"}"_q },
+		{ Qt::Key_BracketLeft, u"{"_q },
+		{ Qt::Key_BracketRight, u"}"_q },
+		{ 0x0425, u"Х"_q },
+		{ 0x042A, u"Ъ"_q },
+	};
+	for (auto i = 0; i != int(paragraphKeys.size()); ++i) {
+		const auto &[key, text] = paragraphKeys[i];
+		auto event = QKeyEvent(QEvent::KeyPress, key, Qt::ShiftModifier, text);
+		Check(TextMotionKey(&event, pending) == ((i % 2)
+			? TextMotion::ParagraphNext : TextMotion::ParagraphPrevious),
+			"paragraph motions accept English and Russian layouts");
+	}
+	for (const auto key : { Qt::Key_Q, Qt::Key_I, Qt::Key_Tab,
+			Qt::Key_Return, Qt::Key_Backspace, Qt::Key_Delete, Qt::Key_Escape }) {
+		auto event = QKeyEvent(QEvent::KeyPress, key, Qt::NoModifier);
+		Check(!TextMotionKey(&event, pending),
+			"non-motion keys leave the text cursor unchanged");
+	}
+	auto controlG = QKeyEvent(
+		QEvent::KeyPress, Qt::Key_G, Qt::ControlModifier, u"g"_q);
+	Check(!TextMotionKey(&controlG, pending) && !pending,
+		"Ctrl G cannot jump from message text to chat history");
+	const auto paragraph = [&](const QString &text, int position, int direction) {
+		return Core::VimKeymap::TextParagraphOffset(
+			position,
+			direction,
+			int(text.size()),
+			[&](int offset) {
+				Check(offset >= 0 && offset < text.size(),
+					"paragraph lookup stays inside selected message text");
+				return text[offset] == u'\n' || text[offset] == u'\r'
+					|| text[offset] == QChar::ParagraphSeparator
+					|| text[offset] == QChar::LineSeparator;
+			});
+	};
+	const auto text = u"Первый\n\nВторой\nТретий"_q;
+	Check(paragraph(text, 0, 1) == 8, "next paragraph skips blank lines");
+	Check(paragraph(text, 10, -1) == 8, "backward moves to current paragraph start");
+	Check(paragraph(text, 8, -1) == 0, "backward from start moves to previous paragraph");
+	Check(paragraph(text, 8, 1) == 15, "single newline separates paragraphs");
+	Check(paragraph(text, 15, 1) == text.size() - 1,
+		"last paragraph stops at the last character");
+	Check(paragraph(text, text.size() - 1, 1) == text.size() - 1,
+		"forward at the end stays in the message");
+	Check(paragraph(text, 0, -1) == 0, "backward at the beginning stays in the message");
+	Check(paragraph(u"a\r\n\r\nb"_q, 0, 1) == 5, "CRLF boundaries skip blank paragraphs");
+	Check(paragraph(u"a\u2029b\u2028c"_q, 0, 1) == 2, "Unicode paragraph separator");
+	Check(paragraph(u"a\u2029b\u2028c"_q, 2, 1) == 4, "Unicode line separator");
+	Check(paragraph(u"😀\nя"_q, 0, 1) == 3, "paragraph offsets retain UTF-16 coordinates");
+	Check(paragraph(QString(), 0, 1) == -1, "empty messages have no paragraph target");
+	Check(paragraph(u"я"_q, 0, 1) == 0, "single-character messages stay bounded");
+	Check(paragraph(u"\n\nя"_q, 0, 1) == 2, "leading blank paragraphs are skipped");
+	Check(paragraph(u"я\n\n"_q, 0, 1) == 2, "trailing blank paragraphs stay bounded");
 }
 
 void TestVimKeymapCursorGeometry() {
@@ -2501,6 +2583,7 @@ int main(int argc, char *argv[]) {
 	TestVimKeymapActionBindings();
 	TestVimKeymapCommandBindings();
 	TestVimKeymapTransientUiKeys();
+	TestMessageTextNavigation();
 	TestVimKeymapCursorGeometry();
 	TestVimKeymapPickerNavigation();
 	TestVimKeymapStickerSetNavigation();

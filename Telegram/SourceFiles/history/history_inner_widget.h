@@ -691,6 +691,7 @@ private:
 	std::optional<QRect> _vimKeymapTextCursorRect;
 	QSize _vimKeymapTextCursorViewSize;
 	bool _vimKeymapTextVisualMode = false;
+	bool _vimKeymapTextPendingStart = false;
 	std::optional<Data::ReportInput> _chooseForReportReason;
 
 	const std::unique_ptr<Ui::PathShiftGradient> _pathGradient;
