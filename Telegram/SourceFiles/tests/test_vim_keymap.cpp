@@ -28,6 +28,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/continuous_sliders.h"
 #include "ui/widgets/labels.h"
 #include "ui/text/text_utilities.h"
+#include "ui/emoji_config.h"
 #include "ui/text/text.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/widgets/menu/menu_action.h"
@@ -2751,6 +2752,7 @@ int main(int argc, char *argv[]) {
 	auto integration = TestIntegration();
 	Ui::Integration::Set(&integration);
 	style::StartManager(100);
+	Ui::Emoji::Init();
 	Ui::Animations::Manager::SetScheduleWithInvokeQueued(true);
 	auto animations = Ui::Animations::Manager();
 
@@ -2793,6 +2795,7 @@ int main(int argc, char *argv[]) {
 	TestVimKeyLogPrivacy();
 	TestLocalSocketSecurity();
 
+	Ui::Emoji::Clear();
 	std::cout << (TotalChecks - FailedChecks) << "/" << TotalChecks
 		<< " checks passed." << std::endl;
 	return FailedChecks ? 1 : 0;
