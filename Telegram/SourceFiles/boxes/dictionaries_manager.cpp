@@ -305,7 +305,9 @@ auto AddButtonWithLoader(
 	const auto contextMenu = button->lifetime()
 		.make_state<base::unique_qptr<Ui::PopupMenu>>();
 	const auto showMenu = [=] {
-		if (!DictExists(id)) {
+		if (!DictExists(id)
+			|| id == int(QLocale::Russian)
+			|| id == int(QLocale::English)) {
 			return false;
 		}
 		*contextMenu = base::make_unique_q<Ui::PopupMenu>(
@@ -344,22 +346,15 @@ void Inner::setupContent(
 	const auto queryStream = content->lifetime()
 		.make_state<rpl::event_stream<QStringView>>();
 
-	// Rows are created once, when Spellchecker::Dictionaries() becomes
-	// non-empty. Manifest is fetched lazily and may arrive after the box
-	// opens, so we subscribe to DictionariesChanged and populate rows
-	// then if we haven't already.
-	const auto built = content->lifetime().make_state<bool>(false);
+	const auto built = content->lifetime().make_state<base::flat_set<int>>();
 	const auto buildRows = [=] {
-		if (*built) {
-			return;
-		}
 		const auto dicts = Spellchecker::Dictionaries();
-		if (dicts.empty()) {
-			return;
-		}
-		*built = true;
 		for (const auto &dict : dicts) {
 			const auto id = dict.id;
+			if (built->contains(id)) {
+				continue;
+			}
+			built->emplace(id);
 			const auto row = AddButtonWithLoader(
 				content,
 				session,

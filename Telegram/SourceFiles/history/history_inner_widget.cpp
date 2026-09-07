@@ -470,9 +470,25 @@ HistoryInner::HistoryInner(
 	});
 	Core::VimKeymap::RegisterKeyHandler(this, [=](
 			not_null<QKeyEvent*> e) {
+		if (!isVisible() || !window()->isActiveWindow()) {
+			return false;
+		}
 		return vimKeymapHandleHintKey(e)
 			|| vimKeymapHandleTextSelectionKey(e);
 	});
+	Core::VimKeymap::RegisterPreLayerKeyHandler(this, [=](
+			not_null<QKeyEvent*> e) {
+		if (!isVisible()
+			|| !window()->isActiveWindow()
+			|| (!_vimKeymapTextCursorItem
+				&& !_vimKeymapTextVisualMode
+				&& _vimKeymapHintMode == VimKeymapHintMode::None)) {
+			return false;
+		}
+		return (e->type() == QEvent::ShortcutOverride)
+			|| vimKeymapHandleHintKey(e)
+			|| vimKeymapHandleTextSelectionKey(e);
+	}, true);
 	Core::App().inAppKeyPressed(
 	) | rpl::on_next([=] {
 		registerReadMetricsActivity();
@@ -1338,6 +1354,7 @@ bool HistoryInner::vimKeymapTextSelectionActive() const {
 }
 
 void HistoryInner::vimKeymapClearTextCursor() {
+	_vimKeymapTextPendingStart = false;
 	if (!_vimKeymapTextCursorItem) {
 		return;
 	}
@@ -1353,6 +1370,7 @@ void HistoryInner::vimKeymapClearTextCursor() {
 }
 
 void HistoryInner::clearTextSelection() {
+	_vimKeymapTextPendingStart = false;
 	if (_selectedTextItem) {
 		if (const auto view = viewByItem(_selectedTextItem)) {
 			repaintItem(view);
@@ -1445,6 +1463,10 @@ bool HistoryInner::vimKeymapBeginTextSelection(not_null<Element*> view) {
 		return false;
 	}
 	vimKeymapSetTextCursor(view, *cursor);
+	if (_vimKeymapTextCursorRect) {
+		const auto rect = _vimKeymapTextCursorRect->translated(0, itemTop(view));
+		_scroll->scrollToY(rect.top(), rect.bottom() + 1);
+	}
 	Core::VimKeymap::SetNormalMode(true);
 	setFocus(Qt::ShortcutFocusReason);
 	return true;
@@ -1488,10 +1510,10 @@ void HistoryInner::vimKeymapPaintTextCursor(Painter &p) {
 	if (!_vimKeymapTextCursorRect) {
 		return;
 	}
-	const auto inner = view->innerGeometry().translated(0, top);
+	const auto bounds = QRect(0, top, view->width(), view->height());
 	Core::VimKeymap::PaintMessageCursor(
 		p,
-		_vimKeymapTextCursorRect->translated(0, top).intersected(inner));
+		_vimKeymapTextCursorRect->translated(0, top).intersected(bounds));
 }
 
 TextSelection HistoryInner::getSelectedTextRange(
@@ -4308,20 +4330,33 @@ bool HistoryInner::vimKeymapHandleTextSelectionKey(
 	if (!selectionActive && !cursorActive) {
 		return false;
 	}
-	if (Core::VimKeymap::Bindings::IsTextYank(e)
+	const auto textModeActive = cursorActive || _vimKeymapTextVisualMode;
+	const auto followLink = textModeActive
+		&& Core::VimKeymap::NormalMode()
+		&& Core::VimKeymap::Bindings::IsTextFollowLink(
+			e,
+			_vimKeymapTextPendingStart);
+	const auto motion = Core::VimKeymap::TextMotionKey(
+		e,
+		_vimKeymapTextPendingStart);
+	if (e->isAutoRepeat()) {
+		return textModeActive;
+	}
+	if (!followLink && (Core::VimKeymap::Bindings::IsTextYank(e)
+		|| e->matches(QKeySequence::Copy)
 		|| Core::VimKeymap::ActionKey(e)
-			== Core::VimKeymap::Action::CopyMessage) {
+			== Core::VimKeymap::Action::CopyMessage)) {
 		if (selectionActive) {
 			const auto copied = copySelectedText();
-			if (Core::VimKeymap::TextVisualYankCompletes(
-					selectionActive,
-					copied)) {
-				clearTextSelection();
+			if (copied) {
+				if (!textModeActive) {
+					clearTextSelection();
+				}
 				Core::VimKeymap::SetNormalMode(true);
 				_controller->showToast(tr::lng_text_copied(tr::now));
 				Core::VimKeymap::TraceKey(
 					e,
-					u"copy selected message text and exit visual"_q);
+					u"copy selected message text"_q);
 			} else {
 				Core::VimKeymap::TraceKey(
 					e,
@@ -4331,7 +4366,7 @@ bool HistoryInner::vimKeymapHandleTextSelectionKey(
 			Core::VimKeymap::TraceKey(e, u"message text cursor copy ignored"_q);
 		}
 		return true;
-	} else if (e->key() == Qt::Key_Escape) {
+	} else if (Core::VimKeymap::Bindings::IsPlainEscape(e)) {
 		if (selectionActive) {
 			const auto view = viewByItem(_selectedTextItem);
 			const auto focus = _selectedTextSelection.focus;
@@ -4368,15 +4403,14 @@ bool HistoryInner::vimKeymapHandleTextSelectionKey(
 			view,
 			_vimKeymapTextCursor);
 		if (!selection) {
-			return false;
+			return true;
 		}
 		setTextSelection(view, *selection, true);
 		Core::VimKeymap::TraceKey(e, u"message text visual"_q);
 		return true;
 	}
-	const auto motion = Core::VimKeymap::TextMotionKey(e);
-	if (!motion) {
-		return false;
+	if (!motion && !followLink) {
+		return textModeActive;
 	}
 	const auto item = selectionActive
 		? _selectedTextItem
@@ -4386,7 +4420,33 @@ bool HistoryInner::vimKeymapHandleTextSelectionKey(
 		if (cursorActive) {
 			vimKeymapClearTextCursor();
 		}
-		return false;
+		return true;
+	}
+	if (followLink) {
+		if (selectionActive && !_selectedTextSelection.focus.isFlat()) {
+			return true;
+		}
+		const auto cursor = selectionActive
+			? HistoryView::MessageSelectionFlatEndpoint{
+				.symbol = _selectedTextSelection.focus.flat.symbol,
+				.afterSymbol = false,
+			}
+			: _vimKeymapTextCursor;
+		const auto point = _keyboardTextSelection.cursorPoint(view, cursor);
+		if (point) {
+			auto request = HistoryView::StateRequest();
+			request.flags = Ui::Text::StateRequest::Flag::LookupLink;
+			request.onlyMessageText = true;
+			const auto state = view->textState(*point, request);
+			if (state.link) {
+				Core::VimKeymap::TraceKey(e, u"follow message text link"_q);
+				ActivateClickHandler(
+					window(),
+					state.link,
+					prepareClickContext(Qt::LeftButton, state.itemId));
+			}
+		}
+		return true;
 	}
 	auto key = Qt::Key_unknown;
 	auto modifiers = selectionActive
@@ -4415,11 +4475,21 @@ bool HistoryInner::vimKeymapHandleTextSelectionKey(
 		modifiers |= Qt::ControlModifier;
 #endif // Q_OS_MAC
 		break;
+	case Core::VimKeymap::TextMotion::TextStart:
 	case Core::VimKeymap::TextMotion::LineStart:
 		key = Qt::Key_Home;
 		break;
+	case Core::VimKeymap::TextMotion::TextEnd:
 	case Core::VimKeymap::TextMotion::LineEnd:
 		key = Qt::Key_End;
+		break;
+	case Core::VimKeymap::TextMotion::ParagraphPrevious:
+		key = Qt::Key_Up;
+		modifiers |= Qt::ControlModifier;
+		break;
+	case Core::VimKeymap::TextMotion::ParagraphNext:
+		key = Qt::Key_Down;
+		modifiers |= Qt::ControlModifier;
 		break;
 	case Core::VimKeymap::TextMotion::LineUp:
 		key = Qt::Key_Up;
@@ -4435,7 +4505,7 @@ bool HistoryInner::vimKeymapHandleTextSelectionKey(
 			key,
 			modifiers);
 		if (!next) {
-			return false;
+			return true;
 		}
 		setTextSelection(view, *next, true);
 		Core::VimKeymap::TraceKey(e, u"extend message text selection"_q);
@@ -4446,10 +4516,14 @@ bool HistoryInner::vimKeymapHandleTextSelectionKey(
 			key,
 			modifiers);
 		if (!next) {
-			return false;
+			return true;
 		}
 		vimKeymapSetTextCursor(view, *next);
 		Core::VimKeymap::TraceKey(e, u"move message text cursor"_q);
+	}
+	if (_vimKeymapTextCursorRect) {
+		const auto rect = _vimKeymapTextCursorRect->translated(0, itemTop(view));
+		_scroll->scrollToY(rect.top(), rect.bottom() + 1);
 	}
 	return true;
 }
@@ -4487,6 +4561,10 @@ void HistoryInner::vimKeymapBuildMessageHints(VimKeymapHintMode mode) {
 	const auto now = base::unixtime::now();
 	for (const auto view : accessibleElements()) {
 		const auto item = view->data();
+		if (mode == VimKeymapHintMode::SelectMessageText
+			&& view->selectedText(AllTextSelection).empty()) {
+			continue;
+		}
 		if (mode == VimKeymapHintMode::ShareMessage && !item->allowsForward()) {
 			continue;
 		}
@@ -4966,12 +5044,12 @@ bool HistoryInner::vimKeymapBeginHints(Core::VimKeymap::Action action) {
 	return _vimKeymapHintMode != VimKeymapHintMode::None;
 }
 
-bool HistoryInner::vimKeymapTriggerHint(VimKeymapHint hint) {
+void HistoryInner::vimKeymapTriggerHint(VimKeymapHint hint) {
 	const auto item = hint.itemId ? session().data().message(hint.itemId) : nullptr;
 	if (Core::App().passcodeLocked()
 		|| (hint.itemId && (!item || !viewByItem(item)))) {
 		vimKeymapClearHints();
-		return false;
+		return;
 	}
 	const auto mode = _vimKeymapHintMode;
 	if (mode == VimKeymapHintMode::ActivateLink) {
@@ -4982,17 +5060,17 @@ bool HistoryInner::vimKeymapTriggerHint(VimKeymapHint hint) {
 			if (root && target) {
 				Core::VimKeymap::KeyboardNavigation::Get(root)->focusTarget(target);
 			}
-			return true;
+			return;
 		} else if (hint.photo) {
 			const auto photo = hint.photo;
 			vimKeymapClearHints();
 			elementOpenPhoto(not_null{ photo }, hint.itemId);
-			return true;
+			return;
 		} else if (hint.document) {
 			const auto document = hint.document;
 			vimKeymapClearHints();
 			elementOpenDocument(not_null{ document }, hint.itemId, true);
-			return true;
+			return;
 		} else if (hint.link) {
 			const auto link = hint.link;
 			vimKeymapClearHints();
@@ -5000,39 +5078,43 @@ bool HistoryInner::vimKeymapTriggerHint(VimKeymapHint hint) {
 				window(),
 				link,
 				prepareClickContext(Qt::LeftButton, hint.itemId));
-			return true;
+			return;
 		} else if (hint.useClickPoint) {
 			const auto globalPoint = mapToGlobal(hint.clickPoint);
 			vimKeymapClearHints();
 			mouseActionStart(globalPoint, Qt::LeftButton);
 			mouseActionFinish(globalPoint, Qt::LeftButton);
-			return true;
+			return;
 		}
 		vimKeymapClearHints();
-		return false;
+		return;
 	}
 	if (!item) {
 		vimKeymapClearHints();
-		return false;
+		return;
 	}
 	const auto view = viewByItem(item);
 	if (!view) {
 		vimKeymapClearHints();
-		return false;
+		return;
 	}
 	if (mode == VimKeymapHintMode::PickMessageLinks) {
 		vimKeymapBuildLinkHints(view);
-		return true;
+		return;
 	} else if (mode == VimKeymapHintMode::SelectMessageText) {
-		vimKeymapClearHints();
-		return vimKeymapBeginTextSelection(view);
+		if (vimKeymapBeginTextSelection(view)) {
+			vimKeymapClearHints();
+		} else {
+			_vimKeymapHintPrefix.clear();
+			update();
+		}
+		return;
 	} else if (mode == VimKeymapHintMode::ShareMessage) {
 		vimKeymapClearHints();
 		if (item->allowsForward()) {
 			FastShareMessage(_controller, item);
-			return true;
 		}
-		return false;
+		return;
 	}
 	const auto result = (mode == VimKeymapHintMode::CopyMessage)
 		? vimKeymapCopyItem(item)
@@ -5049,12 +5131,13 @@ bool HistoryInner::vimKeymapTriggerHint(VimKeymapHint hint) {
 		_vimKeymapHintPrefix.clear();
 		update();
 	}
-	return result;
 }
 
 bool HistoryInner::vimKeymapHandleHintKey(not_null<QKeyEvent*> e) {
 	if (_vimKeymapHintMode == VimKeymapHintMode::None) {
 		return false;
+	} else if (e->isAutoRepeat()) {
+		return true;
 	} else if (e->key() == Qt::Key_Escape) {
 		vimKeymapClearHints();
 		return true;
@@ -5087,7 +5170,8 @@ bool HistoryInner::vimKeymapHandleHintKey(not_null<QKeyEvent*> e) {
 		}
 	}
 	if (exact) {
-		return vimKeymapTriggerHint(*exact);
+		vimKeymapTriggerHint(*exact);
+		return true;
 	} else if (!hasPrefix) {
 		_vimKeymapHintPrefix.clear();
 	}
@@ -6042,6 +6126,7 @@ void HistoryInner::setupThanosEffect() {
 }
 
 HistoryInner::~HistoryInner() {
+	Core::VimKeymap::UnregisterPreLayerKeyHandler(this);
 	Core::VimKeymap::UnregisterKeyHandler(this);
 	Core::VimKeymap::UnregisterActionHandler(this);
 	if (_overlayHost) {

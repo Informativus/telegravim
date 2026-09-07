@@ -87,6 +87,10 @@ enum class TextMotion {
 	LineEnd,
 	LineUp,
 	LineDown,
+	ParagraphPrevious,
+	ParagraphNext,
+	TextStart,
+	TextEnd,
 };
 
 enum class ChatNavigation {
@@ -118,6 +122,7 @@ void SetNormalMode(bool enabled);
 [[nodiscard]] int HoldScrollDelta();
 [[nodiscard]] int SingleScrollDurationMs();
 
+[[nodiscard]] bool HandleApplicationShortcutOverride(not_null<QKeyEvent*> e);
 [[nodiscard]] bool HandleApplicationKeyPress(
 	not_null<QObject*> object,
 	not_null<QKeyEvent*> e);
@@ -129,7 +134,8 @@ void RegisterKeyHandler(
 void UnregisterKeyHandler(not_null<QObject*> owner);
 void RegisterPreLayerKeyHandler(
 	not_null<QObject*> owner,
-	Fn<bool(not_null<QKeyEvent*>)> handler);
+	Fn<bool(not_null<QKeyEvent*>)> handler,
+	bool acceptShortcutOverride = false);
 void UnregisterPreLayerKeyHandler(not_null<QObject*> owner);
 void RegisterTextInputPassthroughHandler(
 	not_null<QObject*> owner,
@@ -161,7 +167,9 @@ void TraceKey(not_null<QKeyEvent*> e, const QString &status);
 [[nodiscard]] bool RedoKey(not_null<QKeyEvent*> e);
 [[nodiscard]] std::optional<Qt::Key> NavigationKey(not_null<QKeyEvent*> e);
 [[nodiscard]] std::optional<Action> ActionKey(not_null<QKeyEvent*> e);
-[[nodiscard]] std::optional<TextMotion> TextMotionKey(not_null<QKeyEvent*> e);
+[[nodiscard]] std::optional<TextMotion> TextMotionKey(
+	not_null<QKeyEvent*> e,
+	bool &pendingStart);
 [[nodiscard]] bool TextVisualKey(not_null<QKeyEvent*> e);
 [[nodiscard]] bool IsJumpToBottomKey(not_null<QKeyEvent*> e);
 [[nodiscard]] QString HintLabel(int index, int total);

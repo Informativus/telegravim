@@ -25,6 +25,10 @@ PRIVATE
     core/local_socket_security.h
     core/vim_keymap_bindings.cpp
     core/vim_keymap_bindings.h
+    chat_helpers/spellchecker_bundled.cpp
+    chat_helpers/spellchecker_bundled.h
+    chat_helpers/spellchecker_menu.cpp
+    chat_helpers/spellchecker_menu.h
     core/vim_keymap_options.cpp
     core/vim_keymap_options.h
     core/vim_keymap_config.cpp
@@ -38,6 +42,7 @@ PRIVATE
     tests/test_vim_keymap.cpp
     tests/vim_config_tests.h
     tests/vim_security_tests.h
+    tests/spellchecker_tests.h
     tests/vim_focus_labels_tests.h
     ui/widgets/continuous_sliders.cpp
     ui/widgets/continuous_sliders.h
@@ -49,11 +54,22 @@ target_sources(test_vim_keymap PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}/gen/styles/style_vim_keymap.cpp)
 add_dependencies(test_vim_keymap td_ui_styles)
 
+qt_add_resources(test_vim_keymap spellcheck_test_resources
+    PREFIX "/dictionaries"
+    BASE ${res_loc}/dictionaries
+    FILES
+        ${res_loc}/dictionaries/ru_RU.aff
+        ${res_loc}/dictionaries/ru_RU.dic.1
+        ${res_loc}/dictionaries/ru_RU.dic.2
+        ${res_loc}/dictionaries/en_US.aff
+        ${res_loc}/dictionaries/en_US.dic)
+
 target_link_libraries(test_vim_keymap
 PRIVATE
     desktop-app::lib_base
     desktop-app::lib_crl
     desktop-app::lib_ui
+    desktop-app::lib_spellcheck
     desktop-app::external_qt
 )
 

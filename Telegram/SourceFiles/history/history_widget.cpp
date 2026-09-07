@@ -203,6 +203,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/shortcuts.h"
 #include "core/ui_integration.h"
 #include "core/vim_keymap_bindings.h"
+#include "chat_helpers/spellchecker_menu.h"
 #include "support/support_common.h"
 #include "support/support_autocomplete.h"
 #include "support/support_helper.h"
@@ -9920,6 +9921,16 @@ bool HistoryWidget::vimKeymapHandleComposeTextKey(not_null<QKeyEvent*> e) {
 	const auto stateActive = _vimKeymapComposeOperator
 		|| _vimKeymapComposeVisualMode
 		|| _vimKeymapComposePending;
+#ifndef TDESKTOP_DISABLE_SPELLCHECK
+	if (!stateActive
+		&& Core::VimKeymap::NormalMode()
+		&& Core::VimKeymap::Bindings::SpellcheckKey(e)) {
+		if (!e->isAutoRepeat()) {
+			Spellchecker::ShowSuggestionsMenu(_field);
+		}
+		return true;
+	}
+#endif // !TDESKTOP_DISABLE_SPELLCHECK
 	const auto messageAction = Core::VimKeymap::ActionKey(e).has_value();
 	if (Core::VimKeymap::EmptyComposeDefersToMessageAction(
 			stateActive,

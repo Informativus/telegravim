@@ -558,6 +558,7 @@ public:
 		QPoint point,
 		StateRequest request) const = 0;
 	virtual void updatePressed(QPoint point) = 0;
+	[[nodiscard]] virtual QRect textCursorRect(int symbol) const;
 	virtual void drawInfo(
 		Painter &p,
 		const PaintContext &context,

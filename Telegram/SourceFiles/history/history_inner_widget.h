@@ -622,7 +622,7 @@ private:
 	void vimKeymapAddWidgetHints();
 	void vimKeymapAssignHintLabels();
 	void vimKeymapUpdateWidgetHintPrefix();
-	[[nodiscard]] bool vimKeymapTriggerHint(VimKeymapHint hint);
+	void vimKeymapTriggerHint(VimKeymapHint hint);
 	void vimKeymapPaintHints(Painter &p) const;
 	[[nodiscard]] bool vimKeymapCopyItem(not_null<HistoryItem*> item);
 	[[nodiscard]] bool vimKeymapReplyToItem(not_null<HistoryItem*> item);
@@ -691,6 +691,7 @@ private:
 	std::optional<QRect> _vimKeymapTextCursorRect;
 	QSize _vimKeymapTextCursorViewSize;
 	bool _vimKeymapTextVisualMode = false;
+	bool _vimKeymapTextPendingStart = false;
 	std::optional<Data::ReportInput> _chooseForReportReason;
 
 	const std::unique_ptr<Ui::PathShiftGradient> _pathGradient;

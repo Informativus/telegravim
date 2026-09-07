@@ -199,6 +199,7 @@ public:
 		QPoint point,
 		StateRequest request) const override;
 	void updatePressed(QPoint point) override;
+	[[nodiscard]] QRect textCursorRect(int symbol) const override;
 	bool consumeHorizontalScroll(
 		QPoint position,
 		int delta,
@@ -491,7 +492,7 @@ private:
 
 	void updateViewButtonExistence();
 	[[nodiscard]] int viewButtonHeight() const;
-	[[nodiscard]] bool prepareRichPageTextRect(QRect &trect) const;
+	[[nodiscard]] bool prepareTextRect(QRect &trect) const;
 	[[nodiscard]] QRect richPageRect(QRect trect) const;
 	[[nodiscard]] QPoint prepareRichPageStateRect(
 		QPoint point,
@@ -541,8 +542,8 @@ private:
 	mutable std::unique_ptr<Ui::RoundCheckbox> _selectionRoundCheckbox;
 	mutable uint32 _fromNameVersion : 16 = 0;
 	uint32 _nonTextMaxWidth : 16 = 0;
-	mutable int _bubbleTextualWidthMinimum : 16 = -1;
-	mutable int _bubbleTextualWidthCache : 16 = 0;
+	mutable signed int _bubbleTextualWidthMinimum : 16 = -1;
+	mutable signed int _bubbleTextualWidthCache : 16 = 0;
 	uint32 _bubbleWidthLimit : 26 = 0;
 	uint32 _invertMedia : 1 = 0;
 	uint32 _hideReply : 1 = 0;
