@@ -29,6 +29,7 @@ PRIVATE
     chat_helpers/spellchecker_bundled.h
     chat_helpers/spellchecker_menu.cpp
     chat_helpers/spellchecker_menu.h
+    chat_helpers/spellchecker_russian.cpp
     core/vim_keymap_options.cpp
     core/vim_keymap_options.h
     core/vim_keymap_config.cpp
@@ -63,6 +64,10 @@ qt_add_resources(test_vim_keymap spellcheck_test_resources
         ${res_loc}/dictionaries/ru_RU.dic.2
         ${res_loc}/dictionaries/en_US.aff
         ${res_loc}/dictionaries/en_US.dic)
+qt_add_resources(test_vim_keymap russian_suggestion_test_resources
+    PREFIX "/dictionaries"
+    BASE ${res_loc}/dictionaries
+    FILES ${res_loc}/dictionaries/ru_frequency.json)
 
 target_link_libraries(test_vim_keymap
 PRIVATE

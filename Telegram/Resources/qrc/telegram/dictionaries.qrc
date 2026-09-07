@@ -8,5 +8,7 @@
     <file alias="LICENSE_ru_RU.txt">../../dictionaries/LICENSE_ru_RU.txt</file>
     <file alias="LICENSE_en_US.txt">../../dictionaries/LICENSE_en_US.txt</file>
     <file alias="SOURCE.json">../../dictionaries/SOURCE.json</file>
+    <file alias="ru_frequency.json">../../dictionaries/ru_frequency.json</file>
+    <file alias="LICENSE_ru_frequency.txt">../../dictionaries/LICENSE_ru_frequency.txt</file>
   </qresource>
 </RCC>

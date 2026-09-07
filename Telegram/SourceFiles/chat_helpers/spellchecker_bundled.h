@@ -7,10 +7,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "base/basic_types.h"
+
 #include <QtCore/QString>
 #include <vector>
 
 namespace Spellchecker {
+
+void SuggestRussianWords(
+	QString word,
+	std::vector<QString> original,
+	FnMut<void(std::vector<QString>)> done);
 
 [[nodiscard]] std::vector<int> InstallBundledDictionaries(
 	const QString &workingDir);

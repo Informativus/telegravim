@@ -81,8 +81,8 @@ void TestBuiltinSpellchecker() {
 	// The macOS test executable uses Cocoa and can receive physical input
 	// from the desktop while an asynchronous lookup is pending. Exclude
 	// that input while waiting, but keep the synthetic events sent below.
-	// Hunspell's single FIFO queue posts this fence after the menu result,
-	// so its completion also proves that the preceding lookup was handled.
+	// Hunspell posts its result before the first fence. That result queues
+	// Russian ranking, whose second fence then proves the menu is ready.
 	const auto flush = [&] {
 		auto loop = QEventLoop();
 		auto completed = false;
@@ -96,6 +96,16 @@ void TestBuiltinSpellchecker() {
 		QTimer::singleShot(5000, &loop, &QEventLoop::quit);
 		loop.exec(QEventLoop::ExcludeUserInputEvents);
 		Check(completed, "queued spelling requests finish before assertions");
+		completed = false;
+		Spellchecker::SuggestRussianWords({}, {}, [&, weak](auto result) {
+			if (weak) {
+				completed = true;
+				weak->quit();
+			}
+		});
+		QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+		loop.exec(QEventLoop::ExcludeUserInputEvents);
+		Check(completed, "queued Russian suggestions finish before assertions");
 	};
 	const auto cases = std::vector<std::pair<QString, QString>>{
 		{ u"превет"_q, u"привет"_q },
@@ -115,6 +125,78 @@ void TestBuiltinSpellchecker() {
 	}
 	Check(lookup(u"ёлка"_q).first && lookup(u"елка"_q).first,
 		"Russian spelling accepts both yo and e forms");
+	const auto improve = [&](const QString &word, std::vector<QString> original) {
+		const auto started = crl::now();
+		auto loop = QEventLoop();
+		auto completed = false;
+		auto result = std::vector<QString>();
+		const auto weak = QPointer<QEventLoop>(&loop);
+		Spellchecker::SuggestRussianWords(word, std::move(original),
+			[&, weak](std::vector<QString> suggestions) {
+				if (weak) {
+					result = std::move(suggestions);
+					completed = true;
+					weak->quit();
+				}
+			});
+		QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+		loop.exec(QEventLoop::ExcludeUserInputEvents);
+		Check(completed, "Russian ranking completes off the UI thread");
+		if (qEnvironmentVariableIsSet("TDESKTOP_TEST_RUSSIAN_SUGGESTIONS_REPORT")) {
+			std::cout << "Russian suggestions (" << (crl::now() - started)
+				<< " ms): " << word.toStdString();
+			for (const auto &candidate : result) {
+				std::cout << " | " << candidate.toStdString();
+			}
+			std::cout << std::endl;
+		}
+		return result;
+	};
+	for (const auto &[wrong, expected] : std::vector<std::pair<QString, QString>>{
+		{ u"превет"_q, u"привет"_q },
+		{ u"севодня"_q, u"сегодня"_q },
+		{ u"зделать"_q, u"сделать"_q },
+		{ u"рбаотает"_q, u"работает"_q },
+		{ u"пожалуста"_q, u"пожалуйста"_q },
+		{ u"спосибо"_q, u"спасибо"_q },
+		{ u"неправельно"_q, u"неправильно"_q },
+		{ u"конешно"_q, u"конечно"_q },
+		{ u"нормальн"_q, u"нормально"_q },
+		{ u"сообщениие"_q, u"сообщение"_q },
+		{ u"клавиатруа"_q, u"клавиатура"_q },
+		{ u"нажимашь"_q, u"нажимаешь"_q },
+		{ u"обновлиние"_q, u"обновление"_q },
+		{ u"работатет"_q, u"работает"_q },
+		{ u"сделат"_q, u"сделать"_q },
+		{ u"двикает"_q, u"двигает"_q },
+		{ u"хочутся"_q, u"хочется"_q },
+	}) {
+		const auto result = improve(wrong, lookup(wrong).second);
+		const auto first = !result.empty() && result.front() == expected;
+		if (!first) {
+			std::cout << "Russian ranking: " << wrong.toStdString();
+			for (const auto &candidate : result) {
+				std::cout << " " << candidate.toStdString();
+			}
+			std::cout << std::endl;
+		}
+		Check(first, "a common Russian correction ranks first");
+		Check(result.size() <= 8, "Russian suggestions remain a short list");
+	}
+	const auto expanded = improve(u"появлсяет"_q, lookup(u"появлсяет"_q).second);
+	Check(ranges::contains(expanded, u"появляется"_q),
+		"Russian retrieval recovers a correction missing from Hunspell");
+	for (const auto word : { u"ПРЕВЕТ"_q, u"Превет"_q }) {
+		const auto result = improve(word, {});
+		Check(!result.empty() && result.front() == (word == word.toUpper()
+			? u"ПРИВЕТ"_q : u"Привет"_q), "Russian corrections retain capitalization");
+	}
+	for (const auto word : { u"speling"_q, u"ghbdtn"_q, u"привeт"_q,
+		u"https://пример.рф"_q, QString(100, QChar(u'а')), QString() }) {
+		const auto original = std::vector<QString>{ u"unchanged"_q };
+		Check(improve(word, original) == original,
+			"Russian ranking preserves other scripts, links and oversized words");
+	}
 	{
 		const auto text = u"привет spelling, ошыбка speling!"_q;
 		auto loop = QEventLoop();
@@ -206,6 +288,8 @@ void TestBuiltinSpellchecker() {
 		const auto menu = visibleMenu();
 		Check(menu != nullptr, "multi-suggestion menu appears");
 		if (menu) {
+			const auto &actions = menu->menu()->actions();
+			const auto expected = actions[reverse ? 3 : 4]->text();
 			auto down = QKeyEvent(QEvent::KeyPress, 0x041e, Qt::NoModifier);
 			QApplication::sendEvent(menu, &down);
 			if (reverse) {
@@ -215,8 +299,36 @@ void TestBuiltinSpellchecker() {
 			auto enter = QKeyEvent(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
 			QApplication::sendEvent(menu, &enter);
 			DrainMainQueue();
-			Check(field.getTextWithTags().text == (reverse ? u"неправильно"_q : u"неправедно"_q),
+			Check(field.getTextWithTags().text == expected,
 				"Latin and Cyrillic j/k select the requested correction");
+		}
+	}
+	setText(u"появлсяет рядом"_q);
+	root.activateWindow();
+	QApplication::setActiveWindow(&root);
+	root.setFocus();
+	QGuiApplication::sync();
+	Check(Spellchecker::ShowSuggestionsMenu(&field), "expanded correction menu starts");
+	flush();
+	const auto expandedMenu = visibleMenu();
+	Check(expandedMenu != nullptr, "expanded correction menu appears");
+	if (expandedMenu) {
+		const auto &actions = expandedMenu->menu()->actions();
+		const auto target = ranges::find(actions, u"появляется"_q, &QAction::text);
+		Check(target != actions.end(), "menu includes a newly retrieved correction");
+		if (target != actions.end()) {
+			for (auto i = 3; i < target - actions.begin(); ++i) {
+				auto down = QKeyEvent(QEvent::KeyPress, Qt::Key_J, Qt::NoModifier);
+				QApplication::sendEvent(expandedMenu, &down);
+			}
+			auto enter = QKeyEvent(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+			QApplication::sendEvent(expandedMenu, &enter);
+			DrainMainQueue();
+			Check(field.getTextWithTags().text == u"появляется рядом"_q,
+				"new corrections replace only the selected word");
+			field.rawTextEdit()->undo();
+			Check(field.getTextWithTags().text == u"появлсяет рядом"_q,
+				"new corrections remain a single undo operation");
 		}
 	}
 	setText(u"ошыбка"_q);
