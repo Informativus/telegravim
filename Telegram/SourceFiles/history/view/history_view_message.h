@@ -540,15 +540,15 @@ private:
 	mutable Ui::Text::String _fromName;
 	mutable std::unique_ptr<FromNameStatus> _fromNameStatus;
 	mutable std::unique_ptr<Ui::RoundCheckbox> _selectionRoundCheckbox;
-	mutable uint32 _fromNameVersion : 16 = 0;
-	uint32 _nonTextMaxWidth : 16 = 0;
+	mutable unsigned int _fromNameVersion : 16 = 0;
+	unsigned int _nonTextMaxWidth : 16 = 0;
 	mutable signed int _bubbleTextualWidthMinimum : 16 = -1;
 	mutable signed int _bubbleTextualWidthCache : 16 = 0;
-	uint32 _bubbleWidthLimit : 26 = 0;
-	uint32 _invertMedia : 1 = 0;
-	uint32 _hideReply : 1 = 0;
-	uint32 _postShowingAuthor : 1 = 0;
-	mutable uint32 _fromLinkRipplePointSet : 1 = 0;
+	unsigned int _bubbleWidthLimit : 26 = 0;
+	unsigned int _invertMedia : 1 = 0;
+	unsigned int _hideReply : 1 = 0;
+	unsigned int _postShowingAuthor : 1 = 0;
+	mutable unsigned int _fromLinkRipplePointSet : 1 = 0;
 
 	BottomInfo _bottomInfo;
 	mutable QPoint _lastMediaPosition;

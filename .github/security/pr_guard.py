@@ -811,8 +811,6 @@ def reviewed_finding(run: dict, result: dict, source: Path, reviews: list) -> bo
         },
         "Telegram/SourceFiles/tests/spellchecker_tests.h": {"cpp/poorly-documented-function"},
         "Telegram/SourceFiles/history/view/history_view_element.cpp": {"cpp/constant-comparison"},
-        "Telegram/SourceFiles/history/view/history_view_element.h": {"cpp/ambiguously-signed-bit-field"},
-        "Telegram/SourceFiles/history/view/history_view_message.h": {"cpp/ambiguously-signed-bit-field"},
     }
     if rule not in allowed.get(path, set()):
         return False
