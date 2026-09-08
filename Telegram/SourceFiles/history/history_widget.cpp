@@ -9732,10 +9732,29 @@ void HistoryWidget::vimKeymapScrollTick() {
 }
 
 bool HistoryWidget::vimKeymapHandleEscapeFieldState(not_null<QKeyEvent*> e) {
-	if (!Core::VimKeymap::EscapeClosesComposer()
-		|| e->isAutoRepeat()
+	if (!Core::VimKeymap::Enabled()
 		|| e->key() != Qt::Key_Escape
 		|| VimKeymapCleanModifiers(e) != Qt::NoModifier) {
+		return false;
+	}
+	if (e->isAutoRepeat()) {
+		return bool(_editMsgId);
+	}
+	if (_editMsgId && !Core::VimKeymap::NormalMode()) {
+		Core::VimKeymap::SetNormalMode(true);
+		_field->setFocusFast();
+		vimKeymapRefreshComposeCursor();
+		Core::VimKeymap::TraceKey(e, u"edit insert to view mode"_q);
+		return true;
+	}
+	if (_editMsgId
+		&& (_vimKeymapComposeVisualMode
+			|| _vimKeymapComposeOperator
+			|| _vimKeymapComposePending)
+		&& vimKeymapHandleComposeTextKey(e)) {
+		return true;
+	}
+	if (!Core::VimKeymap::EscapeClosesComposer()) {
 		return false;
 	}
 	const auto hasFieldState = _previewDrawPreview
@@ -12306,7 +12325,17 @@ void HistoryWidget::editMessage(
 	SelectTextInFieldWithMargins(_field, selection);
 
 	saveDraftWithTextNow();
-	setInnerFocus();
+	if (Core::VimKeymap::Enabled()) {
+		_vimKeymapComposeOperator = 0;
+		_vimKeymapComposeVisualMode = 0;
+		_vimKeymapComposeVisualAnchor = -1;
+		_vimKeymapComposePending = 0;
+		Core::VimKeymap::SetNormalMode(true);
+		_field->setFocusFast();
+		vimKeymapRefreshComposeCursor();
+	} else {
+		setInnerFocus();
+	}
 }
 
 void HistoryWidget::fillSenderUserpicMenu(

@@ -4299,8 +4299,6 @@ bool HistoryInner::vimKeymapEditItem(not_null<HistoryItem*> item) {
 	}
 	const auto editItem = session().data().groups().findItemToEdit(item).get();
 	_widget->editMessage(editItem, {});
-	Core::VimKeymap::SetNormalMode(false);
-	_widget->setInnerFocus();
 	return true;
 }
 
@@ -4588,14 +4586,9 @@ void HistoryInner::vimKeymapBuildMessageHints(VimKeymapHintMode mode) {
 	auto index = 0;
 	const auto total = int(views.size());
 	for (const auto view : views) {
-		const auto top = itemTop(view);
-		const auto y = std::min(
-			std::max(top + 12, _visibleAreaTop + 6),
-			_visibleAreaBottom - 24);
 		_vimKeymapHints.push_back({
 			.label = Core::VimKeymap::HintLabel(index++, total),
 			.itemId = view->data()->fullId(),
-			.badge = QRect(12, y, 1, 1),
 		});
 	}
 	if (_vimKeymapHints.empty()) {
@@ -5187,6 +5180,17 @@ void HistoryInner::vimKeymapPaintHints(Painter &p) const {
 	}
 	const auto hintSize = Core::VimKeymap::HintSize();
 	const auto font = QFont(u"Menlo"_q, hintSize, QFont::DemiBold);
+	const auto metrics = QFontMetrics(font);
+	const auto padding = QSize(
+		std::max(st::vimHintPadding.width(), hintSize / 2),
+		std::max(st::vimHintPadding.height(), hintSize / 4));
+	const auto margin = st::vimHintMargin;
+	const auto bounds = QRect(
+		0,
+		_visibleAreaTop,
+		width(),
+		_visibleAreaBottom - _visibleAreaTop
+	).marginsRemoved(QMargins(margin, margin, margin, margin));
 	const auto textSelectionHints
 		= (_vimKeymapHintMode == VimKeymapHintMode::SelectMessageText);
 	auto badges = std::vector<Core::VimKeymap::HintBadge>();
@@ -5195,19 +5199,44 @@ void HistoryInner::vimKeymapPaintHints(Painter &p) const {
 		if (!hint.itemId) {
 			continue;
 		}
-		badges.push_back({ hint.label, hint.badge.topLeft(), hint.target });
+		if (_vimKeymapHintMode == VimKeymapHintMode::ActivateLink) {
+			badges.push_back({ hint.label, hint.badge.topLeft(), hint.target });
+			continue;
+		}
+		const auto item = session().data().message(hint.itemId);
+		const auto view = item ? viewByItem(item) : nullptr;
+		if (!view) {
+			continue;
+		}
+		const auto target = view->innerGeometry().translated(0, itemTop(view));
+		const auto visible = target.intersected(bounds);
+		if (visible.isEmpty()) {
+			continue;
+		}
+		const auto remaining = hint.label.mid(_vimKeymapHintPrefix.size());
+		const auto size = QSize(
+			metrics.horizontalAdvance(remaining.isEmpty() ? hint.label : remaining)
+				+ 2 * padding.width(),
+			metrics.height() + 2 * padding.height());
+		const auto left = view->hasOutLayout()
+			? target.left() - st::vimHintGap - size.width()
+			: target.right() + st::vimHintGap + 1;
+		const auto anchor = QPoint(
+			left,
+			visible.top() + (visible.height() - size.height()) / 2);
+		badges.push_back({
+			hint.label,
+			anchor,
+			QRect(bounds.left(), visible.top(), bounds.width(), visible.height()),
+		});
 	}
-	const auto margin = st::vimHintMargin;
 	Core::VimKeymap::PaintHintBadges(
 		p,
 		badges,
 		_vimKeymapHintPrefix,
 		font,
-		QRect(0, _visibleAreaTop, width(), _visibleAreaBottom - _visibleAreaTop)
-			.marginsRemoved(QMargins(margin, margin, margin, margin)),
-		QSize(
-			std::max(st::vimHintPadding.width(), hintSize / 2),
-			std::max(st::vimHintPadding.height(), hintSize / 4)),
+		bounds,
+		padding,
 		st::vimHintGap,
 		textSelectionHints);
 }
