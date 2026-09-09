@@ -58,7 +58,10 @@ include(cmake/target_prepare_qrc.cmake)
 include(cmake/options.cmake)
 include(cmake/external/qt/package.cmake)
 
-if (WIN32 AND NOT DESKTOP_APP_USE_PACKAGED AND TARGET WrapWebP::WrapWebP)
+if (WIN32 AND NOT DESKTOP_APP_USE_PACKAGED)
+    set_target_properties(ZLIB::ZLIB PROPERTIES
+        IMPORTED_LOCATION_RELEASE "${libs_loc}/zlib/Release/libzs.lib"
+        IMPORTED_LOCATION_DEBUG "${libs_loc}/zlib/Debug/libzsd.lib")
     if (build_win64)
         set(webp_arch x64)
     elseif (build_winarm)
