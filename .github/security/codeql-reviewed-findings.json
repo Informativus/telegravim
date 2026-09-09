@@ -1049,5 +1049,34 @@
         "reason": "The comment-percentage metric reports no execution or security defect. The reviewed function expresses its operation in named code and assertions; adding filler comments would conflict with repository style. This exception applies only to this exact diagnostic and source digest."
       }
     ]
+  },
+  {
+    "path": "Telegram/SourceFiles/tests/vim_config_tests.h",
+    "source_sha256": [
+      "965ee0942cca93bab28c687731d4eb88a4af2e0520deb6605ebde9b1bf9dc5c4"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "f0fd83f29ce02426:1",
+        "message_sha256": "9dcb0c3afb560bdada03e1d2d3d32f5bec553170bb2ac08f0f5e19108fe158e4",
+        "reason": "The confirmations counter increments in the registered confirmDiscard callback. The test dispatches UI actions before asserting counts two and three; no-build extraction does not model that callback. Native configuration tests pass on Windows, Linux, and macOS."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "ac634bb592cca27d:1",
+        "message_sha256": "9dcb0c3afb560bdada03e1d2d3d32f5bec553170bb2ac08f0f5e19108fe158e4",
+        "reason": "The confirmations counter increments in the registered confirmDiscard callback. The test dispatches UI actions before asserting counts two and three; no-build extraction does not model that callback. Native configuration tests pass on Windows, Linux, and macOS."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "e0c0473553f29d87:1",
+        "message_sha256": "4faf78d470e181d889ca04888b7461a0728f6099f58876af3988285e88b31468",
+        "reason": "The reviewed editor test describes each behavior in named Check assertions. Comment percentage reports no runtime or security defect, and filler comments conflict with repository style. This review is limited to the exact diagnostic and source digest."
+      }
+    ]
   }
 ]
