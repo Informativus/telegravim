@@ -1498,9 +1498,13 @@ void TestHintBadgeLayoutAndPainting() {
 				{ u"fc"_q, { 12, 80 } }, { u"ga"_q, { 12, 80 } },
 			};
 			const auto metrics = QFontMetrics(font);
-			const auto rects = LayoutHintBadges(std::vector<QRect>(3,
-				QRect(QPoint(12, 80), QSize(metrics.horizontalAdvance(u"a"_q) + 14,
-					metrics.height() + 6))), bounds, 3);
+			auto desired = std::vector<QRect>();
+			for (const auto label : { u"a"_q, u"b"_q, u"c"_q }) {
+				desired.emplace_back(QPoint(12, 80), QSize(
+					metrics.horizontalAdvance(label) + 14,
+					metrics.height() + 6));
+			}
+			const auto rects = LayoutHintBadges(desired, bounds, 3);
 			{
 				auto painter = QPainter(&canvas);
 				PaintHintBadges(painter, hints, u"f"_q, font, bounds, { 7, 3 }, 3, false);
@@ -2348,6 +2352,15 @@ void TestMessageCaptionCursorGeometry() {
 						? symbol
 						: boundary.toPreviousBoundary();
 					const auto till = boundary.toNextBoundary();
+					if (!((state.uponSymbol || caption[symbol].isSpace())
+						&& state.symbol >= from && state.symbol < till)) {
+						std::cerr << "Caption cursor: width=" << width
+							<< " symbol=" << symbol
+							<< " codepoint=" << caption[symbol].unicode()
+							<< " hit=" << state.symbol
+							<< " upon=" << state.uponSymbol
+							<< " after=" << state.afterSymbol << '\n';
+					}
 					Check((state.uponSymbol || caption[symbol].isSpace())
 						&& state.symbol >= from && state.symbol < till,
 						"cursor stays on the requested letter, space or complete emoji");
@@ -2805,13 +2818,26 @@ void TestPopupHandlerScope() {
 
 void TestPopupMenuKeyboardCycle() {
 	auto owner = QWidget();
+	owner.setAttribute(Qt::WA_DontShowOnScreen);
+	owner.resize(400, 400);
+	owner.show();
 	auto menu = Ui::PopupMenu(&owner, st::defaultPopupMenu);
+	menu.setAttribute(Qt::WA_DontShowOnScreen);
 	menu.deleteOnHide(false);
 	const auto first = menu.addAction(u"Share"_q, [] {});
 	menu.addSeparator();
 	const auto disabled = menu.addAction(u"Unavailable"_q, [] {});
 	disabled->setEnabled(false);
 	const auto last = menu.addAction(u"Copy link"_q, [] {});
+	menu.popup(owner.mapToGlobal(QPoint(20, 20)));
+	{
+		auto loop = QEventLoop();
+		QTimer::singleShot(
+			st::defaultPopupMenu.showDuration + 50,
+			&loop,
+			&QEventLoop::quit);
+		loop.exec();
+	}
 	const auto send = [&](Qt::Key key, Qt::KeyboardModifiers mods = Qt::NoModifier) {
 		auto event = QKeyEvent(QEvent::KeyPress, key, mods);
 		QApplication::sendEvent(&menu, &event);

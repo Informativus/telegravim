@@ -7,6 +7,10 @@ on:
         description: Source commit or ref (empty uses the workflow ref)
         type: string
         required: false
+      tests_only:
+        description: Build and run native tests without packaging the application
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -28,12 +32,14 @@ jobs:
         with:
           tool-cache: true
       - name: Restore compiler cache
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4
         with:
           path: .local/build-cache/ccache
           key: linux-x86_64-ccache-v1-${{ github.sha }}
           restore-keys: linux-x86_64-ccache-v1-
       - name: Build Release and native tests
+        env:
+          BUILD_TARGET: ${{ inputs.tests_only && 'test_vim_keymap' || 'Telegram' }}
         run: |
           mkdir -p .local/build-cache/ccache
           docker pull "$BUILD_IMAGE"
@@ -41,17 +47,37 @@ jobs:
             --volume "$PWD:/usr/src/tdesktop" \
             --volume "$PWD/.local/build-cache/ccache:/var/cache/ccache" \
             --env CCACHE_MAXSIZE=5G --env CCACHE_COMPILERCHECK=content \
+            --env BUILD_TARGET \
             --env CONFIG=Release --env CMAKE_BUILD_PARALLEL_LEVEL=3 \
             "$BUILD_IMAGE" \
-            /usr/src/tdesktop/Telegram/build/docker/centos_env/build.sh \
-            -D CMAKE_CONFIGURATION_TYPES=Release \
-            -D TDESKTOP_API_TEST=ON \
-            -D DESKTOP_APP_TEST_APPS=ON \
-            -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON \
-            -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
-      - name: Test and package
+            bash -euc '
+              unset CCACHE_DISABLE
+              cd /usr/src/tdesktop/Telegram
+              ./configure.sh \
+                -D CMAKE_CONFIGURATION_TYPES=Release \
+                -D TDESKTOP_API_TEST=ON \
+                -D DESKTOP_APP_TEST_APPS=ON \
+                -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON \
+                -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
+              cmake --build ../out --config Release --target "$BUILD_TARGET"
+              ccache --show-stats
+            '
+      - name: Save compiler cache
+        if: ${{ !cancelled() }}
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        with:
+          path: .local/build-cache/ccache
+          key: linux-x86_64-ccache-v1-${{ github.sha }}-${{ github.run_id }}
+      - name: Run native tests
         run: |
-          QT_QPA_PLATFORM=offscreen out/Release/test_vim_keymap
+          docker run --rm --user "$(id -u):$(id -g)" \
+            --volume "$PWD:/usr/src/tdesktop" \
+            --env QT_QPA_PLATFORM=offscreen \
+            "$BUILD_IMAGE" \
+            /usr/src/tdesktop/out/Release/test_vim_keymap
+      - name: Package application
+        if: ${{ !inputs.tests_only }}
+        run: |
           strip --strip-unneeded out/Release/Telegram
           mkdir -p artifact/Telegravim
           cp out/Release/Telegram artifact/Telegravim/
@@ -63,6 +89,7 @@ jobs:
           cd artifact
           sha256sum Telegravim-linux-x86_64.tar.xz > SHA256-linux-x86_64.txt
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: ${{ !inputs.tests_only }}
         with:
           name: Telegravim-linux-x86_64
           path: |
