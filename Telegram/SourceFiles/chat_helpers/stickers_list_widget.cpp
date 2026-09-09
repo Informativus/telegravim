@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/timer_rpl.h"
 #include "core/application.h"
 #include "core/vim_keymap.h"
+#include "core/vim_keymap_bindings.h"
 #include "core/vim_keymap_widgets.h"
 #include "data/data_document.h"
 #include "data/data_document_media.h"
@@ -54,12 +55,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session_settings.h"
 #include "media/clip/media_clip_reader.h"
 #include "apiwrap.h"
+#include "mainwindow.h"
 #include "api/api_toggling_media.h" // Api::ToggleFavedSticker
 #include "api/api_premium.h"
 #include "styles/style_chat_helpers.h"
 #include "styles/style_window.h"
 #include "styles/style_menu_icons.h"
 
+#include <QtGui/QKeyEvent>
 #include <QtGui/QPen>
 #include <QtWidgets/QApplication>
 
@@ -264,6 +267,10 @@ StickersListWidget::StickersListWidget(
 	if (!_isMasks && !_isEffects) {
 		setupSearch();
 	}
+	Core::VimKeymap::RegisterPreLayerKeyHandler(this, [=](
+			not_null<QKeyEvent*> e) {
+		return vimKeymapHandlePreviewKey(e);
+	});
 
 	_settings->addClickHandler([=] {
 		if (const auto window = _show->resolveWindow()) {
@@ -2396,6 +2403,10 @@ void StickersListWidget::mousePressEvent(QMouseEvent *e) {
 	if (e->button() != Qt::LeftButton) {
 		return;
 	}
+	if (_previewShown) {
+		vimKeymapHidePreview();
+		return;
+	}
 	_vimKeymapSelection = false;
 	_lastMousePosition = e->globalPos();
 	updateSelected();
@@ -3799,6 +3810,9 @@ bool StickersListWidget::vimKeymapMoveSelection(int dx, int dy) {
 	}
 
 	const auto rect = stickerRect(target.section, target.index);
+	if (dx || dy) {
+		vimKeymapHidePreview();
+	}
 	_vimKeymapSelected = target;
 	_vimKeymapSelection = true;
 	_lastMousePosition = QCursor::pos();
@@ -3815,6 +3829,7 @@ bool StickersListWidget::vimKeymapMoveSelection(int dx, int dy) {
 }
 
 bool StickersListWidget::vimKeymapActivateSelection() {
+	vimKeymapHidePreview();
 	const auto &sets = shownSets();
 	const auto selected = _vimKeymapSelection
 		? OverState(_vimKeymapSelected)
@@ -3851,10 +3866,63 @@ bool StickersListWidget::vimKeymapFocusSearch() {
 	if (!_search) {
 		return false;
 	}
+	vimKeymapHidePreview();
 	_vimKeymapSelection = false;
 	_search->stealFocus();
 	update();
 	return true;
+}
+
+bool StickersListWidget::vimKeymapHandlePreviewKey(
+		not_null<QKeyEvent*> e) {
+	using Action = Core::VimKeymap::Bindings::StickerGridAction;
+	const auto top = window();
+	if (!top || !top->isActiveWindow() || !isVisibleTo(top)) {
+		return false;
+	}
+	const auto action = Core::VimKeymap::Bindings::StickerGridActionKey(e);
+	if (action == Action::ClosePreview && _previewShown) {
+		if (!e->isAutoRepeat()) {
+			vimKeymapHidePreview();
+		}
+		return true;
+	}
+	if (action != Action::Preview
+		|| !Core::VimKeymap::NormalMode()
+		|| Core::VimKeymap::KeyboardInputActive(this)
+		|| (!Ui::InFocusChain(this)
+			&& !rect().contains(mapFromGlobal(QCursor::pos())))) {
+		return false;
+	}
+	const auto selected = _vimKeymapSelection
+		? OverState(_vimKeymapSelected)
+		: _selected;
+	const auto sticker = std::get_if<OverSticker>(&selected);
+	const auto &sets = shownSets();
+	if (!sticker
+		|| sticker->section < 0
+		|| sticker->section >= sets.size()
+		|| sticker->index < 0
+		|| sticker->index >= sets[sticker->section].stickers.size()) {
+		return false;
+	}
+	const auto document = sets[sticker->section].stickers[sticker->index].document;
+	_previewTimer.cancel();
+	_previewShown = _show->showMediaPreview(
+		document->stickerSetOrigin(),
+		document);
+	return _previewShown;
+}
+
+void StickersListWidget::vimKeymapHidePreview() {
+	_previewTimer.cancel();
+	if (!base::take(_previewShown)) {
+		return;
+	}
+	setPressed(v::null);
+	if (const auto window = _show->resolveWindow()) {
+		window->widget()->hideMediaPreview();
+	}
 }
 
 void StickersListWidget::showPreview() {
@@ -3983,6 +4051,7 @@ void StickersListWidget::afterShown() {
 }
 
 void StickersListWidget::beforeHiding() {
+	vimKeymapHidePreview();
 	_vimKeymapSelection = false;
 	if (_search) {
 		_search->returnFocus();
@@ -4110,7 +4179,9 @@ void StickersListWidget::filterEffectsByEmoji(
 	}
 }
 
-StickersListWidget::~StickersListWidget() = default;
+StickersListWidget::~StickersListWidget() {
+	Core::VimKeymap::UnregisterPreLayerKeyHandler(this);
+}
 
 object_ptr<Ui::BoxContent> MakeConfirmRemoveSetBox(
 		not_null<Main::Session*> session,

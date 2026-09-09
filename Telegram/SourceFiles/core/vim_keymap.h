@@ -68,10 +68,12 @@ enum class Action {
 	ChatPreview,
 	SelectMessageText,
 	ReplyToMessage,
+	ReactToMessage,
 	EditMessage,
 	DeleteMessage,
 	LinkHints,
 	ShareMessage,
+	SelectMessages,
 };
 
 [[nodiscard]] constexpr bool ActionUsesMessageHints(Action action) {

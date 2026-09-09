@@ -74,7 +74,7 @@ base::options::toggle VimKeymapOption({
 base::options::toggle VimKeymapEscapeClosesComposerOption({
 	.id = kOptionVimKeymapEscapeClosesComposer,
 	.name = "Vim Esc closes composer state",
-	.description = "Let Esc close reply, edit, forward and similar composer state before changing Vim mode.",
+	.description = "Let Esc close reply, forward and similar composer state, and cancel message editing from Vim view mode.",
 	.defaultValue = true,
 });
 
