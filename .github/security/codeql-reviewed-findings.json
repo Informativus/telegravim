@@ -894,5 +894,160 @@
         "reason": "The break follows an unconditional return from the touch-event switch branch. It is a redundant unreachable statement with no runtime effect; the preceding return deliberately exits the handler."
       }
     ]
+  },
+  {
+    "path": "Telegram/SourceFiles/tests/test_vim_keymap.cpp",
+    "source_sha256": [
+      "64b15ab22848a2e6807e7c553dd8bbc5fc47fb527968d899658baa21e334cff8"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/missing-return",
+        "level": "error",
+        "line_hash": "9756903eea18be60:1",
+        "message_sha256": "d43e6b61ded2aa725c14ba1bccaf36d8514fd8bdef9e5c3f54568c86720e7815",
+        "reason": "No-build extraction treats the MatchOptions default initializer as the function body; MatchesKey explicitly returns Bindings::Matches. The native compiler and binding assertions verify the real body."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "c099bb51cb9cedb:1",
+        "message_sha256": "4c1b8c69ba38125c2fe035a0b1cbb6b1a31c23adc38d9a8491eb9a2c8fe9112c",
+        "reason": "The observed counter is updated by registered Qt callbacks during event dispatch or deferred activation. No-build extraction does not model these callbacks; native keyboard and callback regression assertions pass."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "82fafdc3241236a7:1",
+        "message_sha256": "7c79a0421a9113f2f8c3ad4b8abee7b3f09e54ed768ad629cf5b54579c514b40",
+        "reason": "The observed counter is updated by registered Qt callbacks during event dispatch or deferred activation. No-build extraction does not model these callbacks; native keyboard and callback regression assertions pass."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "de970ea76c22df89:1",
+        "message_sha256": "40a8f47669e67a67792831fc14acecd130c0d1d52c5455cbbbf5c1bc2ebde1d2",
+        "reason": "The observed counter is updated by registered Qt callbacks during event dispatch or deferred activation. No-build extraction does not model these callbacks; native keyboard and callback regression assertions pass."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "11449c715f610109:1",
+        "message_sha256": "07f8e2a589a58a7bc83e9936632ad4ae184e84003743a73c949ca0a9a2d354dc",
+        "reason": "The loop dereferences the optional result of MediaPlaybackSpeed and reaches 2.0 after ten increments. No-build extraction loses the optional call result; the native speed regression passes."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "d2e338c0e4f5c70c:1",
+        "message_sha256": "bfe50b052b3e3545ee8b507b5470a3170e6ba2b074e194ca7e76cf30163214f7",
+        "reason": "The accumulator is updated from Qt image pixels inside coordinate loops. No-build extraction lacks the Qt image and geometry definitions; native rendering assertions verify nonempty pixels."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "8ea0deef084730e:1",
+        "message_sha256": "8fe2170992d3db7198ecb360429add534781dc550b27a4d59850f1b904f4f611",
+        "reason": "The observed counter is updated by registered Qt callbacks during event dispatch or deferred activation. No-build extraction does not model these callbacks; native keyboard and callback regression assertions pass."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "ec34fe611159fd64:1",
+        "message_sha256": "4c1b8c69ba38125c2fe035a0b1cbb6b1a31c23adc38d9a8491eb9a2c8fe9112c",
+        "reason": "The observed counter is updated by registered Qt callbacks during event dispatch or deferred activation. No-build extraction does not model these callbacks; native keyboard and callback regression assertions pass."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "878840dc0c8afbc7:1",
+        "message_sha256": "6e1f6ec43e375d24ab0e67098195623b3825674901f98416a9c3419cab8049c2",
+        "reason": "The accumulator is updated from Qt image pixels inside coordinate loops. No-build extraction lacks the Qt image and geometry definitions; native rendering assertions verify nonempty pixels."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "d4fbd26b6e598164:1",
+        "message_sha256": "8fe2170992d3db7198ecb360429add534781dc550b27a4d59850f1b904f4f611",
+        "reason": "The observed counter is updated by registered Qt callbacks during event dispatch or deferred activation. No-build extraction does not model these callbacks; native keyboard and callback regression assertions pass."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "c28a15a0e9a8597d:1",
+        "message_sha256": "8fe2170992d3db7198ecb360429add534781dc550b27a4d59850f1b904f4f611",
+        "reason": "The observed counter is updated by registered Qt callbacks during event dispatch or deferred activation. No-build extraction does not model these callbacks; native keyboard and callback regression assertions pass."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "7ca04c91c448924a:1",
+        "message_sha256": "fa2152fc16acd2f151215a83a08d833727fef8a39e3645d2b9d51e16d31817a5",
+        "reason": "The variable is updated inside callbacks invoked by Qt event dispatch or the selection-search callback. No-build extraction loses the invocation; the native link activation and bounded selection regression assertions pass."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "141cb7adf6d34fa9:1",
+        "message_sha256": "4c1b8c69ba38125c2fe035a0b1cbb6b1a31c23adc38d9a8491eb9a2c8fe9112c",
+        "reason": "The variable is updated inside callbacks invoked by Qt event dispatch or the selection-search callback. No-build extraction loses the invocation; the native link activation and bounded selection regression assertions pass."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "5b0209730834eb1a:1",
+        "message_sha256": "0dccd51d5202474650694b991916792208692e0f653ab342bd570c2e2668aa67",
+        "reason": "This test function expresses its behavior through named Check assertions. The comment-percentage metric does not account for assertion descriptions; the repository forbids filler comments. No execution or security defect is reported."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "b162878d14d77b88:1",
+        "message_sha256": "c8e861783e201ba690749292f72a6976901793c23f65065a60ee48cfdb104051",
+        "reason": "This test function expresses its behavior through named Check assertions. The comment-percentage metric does not account for assertion descriptions; the repository forbids filler comments. No execution or security defect is reported."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "261ee86eec90be67:1",
+        "message_sha256": "0f830a83278b2b8e8b551de4c8aa9bc26cada9239b2dd420cd69699dd7110901",
+        "reason": "This test function expresses its behavior through named Check assertions. The comment-percentage metric does not account for assertion descriptions; the repository forbids filler comments. No execution or security defect is reported."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "8b75c5a246c1107a:1",
+        "message_sha256": "690390a7a169988778235691cdab695973fefe18ce91f03518f26f0aa7ed7802",
+        "reason": "This test function expresses its behavior through named Check assertions. The comment-percentage metric does not account for assertion descriptions; the repository forbids filler comments. No execution or security defect is reported."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "e7b926364a4c8b80:1",
+        "message_sha256": "282c4be4cae7f41ad73cb774a99ac32ce712bc491b1f638150dc6b5ab63cfa30",
+        "reason": "Named Check assertions document each behavior and boundary in this test suite. The percentage-of-comments metric ignores assertion descriptions and conflicts with the repository rule against filler comments."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "abde5830390a68f4:1",
+        "message_sha256": "9de258bd1c8d6b67063bf28c3ab5831383b1ee8c54ee6328a7ae1e9af93feb30",
+        "reason": "This test function expresses its behavior through named Check assertions. The comment-percentage metric does not account for assertion descriptions; the repository forbids filler comments. No execution or security defect is reported."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "5f4d668af127cd1c:1",
+        "message_sha256": "bb2c5c85f0a97ef674497e4623e50c59b19e87a447b65160ac3a48351f93ebf4",
+        "reason": "Named Check assertions document each behavior and boundary in this test suite. The percentage-of-comments metric ignores assertion descriptions and conflicts with the repository rule against filler comments."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "3d7e16367ab345da:1",
+        "message_sha256": "4c072ca52591670b987b3ff84e974ba515e2adf4c8b671d2504b2b1dcea952fd",
+        "reason": "The comment-percentage metric reports no execution or security defect. The reviewed function expresses its operation in named code and assertions; adding filler comments would conflict with repository style. This exception applies only to this exact diagnostic and source digest."
+      }
+    ]
   }
 ]
