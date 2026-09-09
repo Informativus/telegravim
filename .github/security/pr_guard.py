@@ -873,6 +873,10 @@ def reviewed_finding(run: dict, result: dict, source: Path, reviews: list) -> bo
             "cpp/member-const-no-effect",
             "cpp/missing-return",
         },
+        "Telegram/SourceFiles/tests/vim_config_tests.h": {
+            "cpp/constant-comparison",
+            "cpp/poorly-documented-function",
+        },
         "Telegram/SourceFiles/tests/test_vim_keymap.cpp": {
             "cpp/constant-comparison",
             "cpp/missing-return",
