@@ -30,7 +30,7 @@ jobs:
           git config --global user.email "build@example.invalid"
           git config --global user.name "Release build"
           $sources = nuget sources List
-          if ($sources -notmatch 'https://api.nuget.org/v3/index.json') {
+          if (-not ($sources -match 'https://api.nuget.org/v3/index.json')) {
             nuget sources Add -Name nuget.org -Source https://api.nuget.org/v3/index.json
             if ($LASTEXITCODE -ne 0) { throw 'NuGet configuration failed' }
           }
