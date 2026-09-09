@@ -373,6 +373,7 @@ public:
 		[[nodiscard]] bool vimKeymapCopyTarget();
 		[[nodiscard]] bool vimKeymapShareTarget();
 		[[nodiscard]] bool vimKeymapReplyToTarget();
+		[[nodiscard]] bool vimKeymapReactToTarget();
 		[[nodiscard]] bool vimKeymapEditTarget();
 		[[nodiscard]] MessageIdsList getSelectedIds() const;
 	[[nodiscard]] SelectedItems getSelectedItems() const;

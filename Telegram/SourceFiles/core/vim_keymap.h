@@ -68,6 +68,7 @@ enum class Action {
 	ChatPreview,
 	SelectMessageText,
 	ReplyToMessage,
+	ReactToMessage,
 	EditMessage,
 	DeleteMessage,
 	LinkHints,

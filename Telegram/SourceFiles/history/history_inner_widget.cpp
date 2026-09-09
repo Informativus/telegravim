@@ -4660,6 +4660,9 @@ void HistoryInner::vimKeymapBuildMessageHints(VimKeymapHintMode mode) {
 			&& !item->canBeSelected()) {
 			continue;
 		}
+		if (mode == VimKeymapHintMode::ReactToMessage && !item->canReact()) {
+			continue;
+		}
 		if (mode == VimKeymapHintMode::ShareMessage && !item->allowsForward()) {
 			continue;
 		}
@@ -5125,6 +5128,9 @@ bool HistoryInner::vimKeymapBeginHints(Core::VimKeymap::Action action) {
 	case Core::VimKeymap::Action::ReplyToMessage:
 		vimKeymapBuildMessageHints(VimKeymapHintMode::ReplyToMessage);
 		break;
+	case Core::VimKeymap::Action::ReactToMessage:
+		vimKeymapBuildMessageHints(VimKeymapHintMode::ReactToMessage);
+		break;
 	case Core::VimKeymap::Action::EditMessage:
 		vimKeymapBuildMessageHints(VimKeymapHintMode::EditMessage);
 		break;
@@ -5218,7 +5224,9 @@ void HistoryInner::vimKeymapTriggerHint(VimKeymapHint hint) {
 	}
 	const auto result = (mode == VimKeymapHintMode::CopyMessage)
 		? vimKeymapCopyItem(item)
-		: (mode == VimKeymapHintMode::ReplyToMessage)
+		: (mode == VimKeymapHintMode::ReactToMessage)
+			? vimKeymapReactToItem(item)
+			: (mode == VimKeymapHintMode::ReplyToMessage)
 			? vimKeymapReplyToItem(item)
 			: (mode == VimKeymapHintMode::EditMessage)
 			? vimKeymapEditItem(item)
@@ -5231,6 +5239,26 @@ void HistoryInner::vimKeymapTriggerHint(VimKeymapHint hint) {
 		_vimKeymapHintPrefix.clear();
 		update();
 	}
+}
+
+bool HistoryInner::vimKeymapReactToItem(not_null<HistoryItem*> item) {
+	const auto view = viewByItem(item);
+	if (!view || !item->canReact() || _controller->showFrozenError()) {
+		return false;
+	}
+	const auto bounds = view->innerGeometry().translated(0, itemTop(view))
+		.intersected(QRect(
+			0,
+			_visibleAreaTop,
+			width(),
+			_visibleAreaBottom - _visibleAreaTop));
+	_menu = HistoryView::Reactions::ShowKeyboardSelector(
+		this,
+		_controller,
+		mapToGlobal(bounds.center()),
+		item,
+		[=](ChosenReaction reaction) { reactionChosen(reaction); });
+	return _menu != nullptr;
 }
 
 bool HistoryInner::vimKeymapHandleHintKey(not_null<QKeyEvent*> e) {

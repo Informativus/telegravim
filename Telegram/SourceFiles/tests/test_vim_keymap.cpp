@@ -385,6 +385,31 @@ void TestVimKeymapActionBindings() {
 		Qt::Key_R,
 		Qt::NoModifier,
 		u"r"_q);
+	for (const auto &[key, text] : {
+		std::pair(Qt::Key_R, u"R"_q),
+		std::pair(Qt::Key_unknown, u"К"_q) }) {
+		auto reaction = QKeyEvent(QEvent::KeyPress, key, Qt::ShiftModifier, text);
+		Check(Core::VimKeymap::Bindings::IsMessageReaction(&reaction),
+			"Shift R opens reactions in either layout");
+		auto repeat = QKeyEvent(QEvent::KeyPress, key, Qt::ShiftModifier, text, true);
+		Check(Core::VimKeymap::Bindings::IsMessageReaction(&repeat),
+			"held reaction shortcut stays distinct from reply and compose input");
+		auto reply = QKeyEvent(QEvent::KeyPress, key, Qt::NoModifier, text.toLower());
+		Check(!Core::VimKeymap::Bindings::IsMessageReaction(&reply),
+			"plain r remains reply");
+		for (const auto modifier : {
+				Qt::ControlModifier,
+				Qt::MetaModifier,
+				Qt::AltModifier }) {
+			auto modified = QKeyEvent(
+				QEvent::KeyPress,
+				key,
+				Qt::ShiftModifier | modifier,
+				text);
+			Check(!Core::VimKeymap::Bindings::IsMessageReaction(&modified),
+				"reaction shortcut preserves modified system shortcuts");
+		}
+	}
 	ExpectMatches(
 		"edit hint",
 		u"e, \u0443"_q,

@@ -110,6 +110,10 @@ bool IsMessageSelection(not_null<QKeyEvent*> e) {
 		&& KeyIs(e, Qt::Key_S, u"s"_q, u"\u044B"_q);
 }
 
+bool IsMessageReaction(not_null<QKeyEvent*> e) {
+	return Matches(u"Shift+r, Shift+к"_q, e);
+}
+
 bool IsSelectionForward(not_null<QKeyEvent*> e) {
 	return CleanModifiers(e) == Qt::NoModifier
 		&& KeyIs(e, Qt::Key_F, u"f"_q, u"\u0430"_q);

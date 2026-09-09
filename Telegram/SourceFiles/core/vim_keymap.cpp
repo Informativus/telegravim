@@ -1098,6 +1098,9 @@ void ShowHelpBox() {
 			result += u"В тексте сообщения: gg/G - начало/конец, {/} - абзацы\n"_q;
 			result += u"Лишние клавиши сохраняют курсор и выделение; Esc - выход\n"_q;
 			result += reply + u" - подсказки для ответа на сообщение\n"_q;
+			result += u"Shift+R / Shift+К - реакции: нажмите букву сообщения, чтобы открыть панель\n"_q;
+			result += u"В реакциях: h/j/k/l или стрелки - выбор; Enter - поставить; Esc - закрыть\n"_q;
+			result += u"Поиск реакций: Ctrl+F / ⌘F; Tab / Shift+Tab - поиск или сетка\n"_q;
 			result += edit
 				+ u" - подсказки для редактирования своих сообщений\n"_q;
 			result += deleteMessage
@@ -1168,6 +1171,9 @@ void ShowHelpBox() {
 			result += u"Message text: gg/G - start/end, {/} - paragraphs\n"_q;
 			result += u"Other keys keep the cursor and selection; Esc exits\n"_q;
 			result += reply + u" - show reply message hints\n"_q;
+			result += u"Shift+R / Shift+К - reactions: press a message letter to open its picker\n"_q;
+			result += u"In reactions: h/j/k/l or arrows - choose; Enter - apply; Esc - close\n"_q;
+			result += u"Search reactions: Ctrl+F / ⌘F; Tab / Shift+Tab - search or grid\n"_q;
 			result += edit + u" - show edit message hints\n"_q;
 			result += deleteMessage + u" - show delete message hints\n"_q;
 			result += u"s - show letters; a message letter - start selection there; j/k - change the range\n"_q;
@@ -1518,6 +1524,9 @@ bool HandleApplicationKeyPress(
 		if (const auto delta = Bindings::TabNavigationDelta(e)) {
 			if (!dynamic_cast<Ui::PopupMenu*>(scope.data())) {
 				FocusModalNextPrevChild(scope, delta > 0);
+				e->accept();
+				return true;
+			} else if (HandleRegisteredKey(e, scope)) {
 				e->accept();
 				return true;
 			}
@@ -1890,6 +1899,10 @@ std::optional<Qt::Key> NavigationKey(not_null<QKeyEvent*> e) {
 std::optional<Action> ActionKey(not_null<QKeyEvent*> e) {
 	if (!NormalMode()) {
 		return std::nullopt;
+	} else if (Bindings::IsMessageReaction(e)) {
+		return e->isAutoRepeat()
+			? std::nullopt
+			: std::make_optional(Action::ReactToMessage);
 	} else if (MatchesBindings(VimKeymapKeyCopyMessageOption, e, true)) {
 		return Action::CopyMessage;
 	} else if (ChatPreviewKey(e)) {

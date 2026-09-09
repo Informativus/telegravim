@@ -9950,6 +9950,11 @@ bool HistoryWidget::vimKeymapHandleComposeTextKey(not_null<QKeyEvent*> e) {
 		return true;
 	}
 #endif // !TDESKTOP_DISABLE_SPELLCHECK
+	if (!stateActive
+		&& Core::VimKeymap::NormalMode()
+		&& Core::VimKeymap::Bindings::IsMessageReaction(e)) {
+		return false;
+	}
 	const auto messageAction = Core::VimKeymap::ActionKey(e).has_value();
 	if (Core::VimKeymap::EmptyComposeDefersToMessageAction(
 			stateActive,
