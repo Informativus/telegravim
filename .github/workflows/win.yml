@@ -51,7 +51,10 @@ jobs:
           path: |
             TBuild/Libraries
             !TBuild/Libraries/win64/Qt-*
-          key: windows-x64-libraries-v2-${{ hashFiles('TBuild/tdesktop/Telegram/build/prepare/**', 'TBuild/tdesktop/Telegram/build/qt_version.py') }}
+            !TBuild/Libraries/**/*.obj
+            !TBuild/Libraries/**/*.pch
+            !TBuild/Libraries/**/.git
+          key: windows-x64-libraries-v3-${{ hashFiles('TBuild/tdesktop/Telegram/build/prepare/**', 'TBuild/tdesktop/Telegram/build/qt_version.py') }}
       - uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4
         id: qt
         with:
@@ -73,7 +76,10 @@ jobs:
           path: |
             TBuild/Libraries
             !TBuild/Libraries/win64/Qt-*
-          key: windows-x64-libraries-v2-${{ hashFiles('TBuild/tdesktop/Telegram/build/prepare/**', 'TBuild/tdesktop/Telegram/build/qt_version.py') }}
+            !TBuild/Libraries/**/*.obj
+            !TBuild/Libraries/**/*.pch
+            !TBuild/Libraries/**/.git
+          key: windows-x64-libraries-v3-${{ hashFiles('TBuild/tdesktop/Telegram/build/prepare/**', 'TBuild/tdesktop/Telegram/build/qt_version.py') }}
       - name: Save prepared Qt
         if: steps.qt.outputs.cache-hit != 'true'
         uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4
