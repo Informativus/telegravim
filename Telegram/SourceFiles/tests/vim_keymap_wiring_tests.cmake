@@ -30,6 +30,9 @@ expect(history/history_inner_widget.cpp
 expect(history/history_inner_widget.cpp
     "if \\(current && !showCopyRestriction\\(current\\)[\n\t ]*&& !showCopyMediaRestriction\\(current\\)\\) \\{[\n\t ]*media->setToClipboard\\(\\)"
     "Delayed image copying must recheck restrictions after the download")
+expect(history/history_inner_widget.cpp
+    "mode == VimKeymapHintMode::CopyMessage && hint.photo[^}]*media->photo\\(\\) == hint.photo[^}]*vimKeymapCopyItem\\(item\\)"
+    "An album photo hint must validate its current photo identity and use guarded copying")
 expect(history/view/history_view_list_widget.cpp
     "showCopyMediaRestriction\\(item\\)\\) \\{[^}]*\\}[\n\t ]*const auto media = photo->createMediaView\\(\\);[\n\t ]*if \\(media->setToClipboard\\(\\)"
     "Auxiliary histories must enforce media restrictions before photo copying")

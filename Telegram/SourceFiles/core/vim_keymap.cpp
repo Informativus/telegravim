@@ -1092,7 +1092,7 @@ void ShowHelpBox() {
 			result += scrollDown + u" - скролл вниз\n"_q;
 			result += scrollUp + u" - скролл вверх\n"_q;
 			result += jumpBottom + u" - перейти вниз\n"_q;
-			result += copy + u" - подсказки для копирования сообщений\n"_q;
+			result += copy + u" - копирование; в альбоме своя буква у каждого фото\n"_q;
 			result += selectMessageText
 				+ u" - подсказки для visual-выделения текста сообщения\n"_q;
 			result += u"В поиске эта команда закрывает поиск, сохраняя место в чате\n"_q;
@@ -1166,7 +1166,7 @@ void ShowHelpBox() {
 			result += scrollDown + u" - scroll down\n"_q;
 			result += scrollUp + u" - scroll up\n"_q;
 			result += jumpBottom + u" - jump to bottom\n"_q;
-			result += copy + u" - show copy message hints\n"_q;
+			result += copy + u" - copy hints; each album photo has its own letter\n"_q;
 			result += selectMessageText
 				+ u" - show message text visual selection hints\n"_q;
 			result += u"In search, this closes search and keeps the current chat position\n"_q;
