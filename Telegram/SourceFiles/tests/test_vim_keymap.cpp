@@ -2338,6 +2338,14 @@ void TestMessageCaptionCursorGeometry() {
 			const auto bounds = QRect(origin, QSize(width, height));
 			for (auto symbol = 0; symbol < text.length(); ++symbol) {
 				const auto cell = TextCursorRect(text, width, symbol);
+				if (cell.isEmpty() || !bounds.contains(cell.translated(origin))) {
+					std::cerr << "Caption bounds: width=" << width
+						<< " symbol=" << symbol
+						<< " codepoint=" << int(caption[symbol].unicode())
+						<< " cell=" << cell.x() << ',' << cell.y()
+						<< ',' << cell.width() << ',' << cell.height()
+						<< " height=" << height << '\n';
+				}
 				Check(!cell.isEmpty() && bounds.contains(cell.translated(origin)),
 					"every caption position has a cursor inside the laid-out text");
 				if (cell.isEmpty()) {

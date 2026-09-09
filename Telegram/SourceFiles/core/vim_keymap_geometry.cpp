@@ -261,7 +261,7 @@ QRect TextCursorRect(const Ui::Text::String &text, int width, int symbol) {
 			: (line.left + line.width);
 		return QRect(
 			std::clamp(left, 0, std::max(0, width - space)),
-			y - height / 2,
+			bounds.top() + (bounds.height() - height) / 2,
 			std::min(space, width),
 			height);
 	}

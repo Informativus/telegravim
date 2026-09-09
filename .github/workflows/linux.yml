@@ -47,6 +47,7 @@ jobs:
             --volume "$PWD:/usr/src/tdesktop" \
             --volume "$PWD/.local/build-cache/ccache:/var/cache/ccache" \
             --env CCACHE_MAXSIZE=5G --env CCACHE_COMPILERCHECK=content \
+            --env CCACHE_SLOPPINESS=pch_defines,time_macros \
             --env BUILD_TARGET \
             --env CONFIG=Release --env CMAKE_BUILD_PARALLEL_LEVEL=3 \
             "$BUILD_IMAGE" \
