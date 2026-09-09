@@ -18,7 +18,8 @@ void TestVimConfig() {
 	Check(ValidateConfig(encode(defaults)).error.isEmpty(), "actual defaults are valid JSON config");
 	const auto schema = ConfigSchema().value(u"properties"_q).toObject();
 	auto guideFile = QFile(QString::fromUtf8(VIM_KEYMAP_DOCS_DIR) + u"/vim-keymap.md"_q);
-	Check(guideFile.open(QIODevice::ReadOnly), "standalone user guide exists in the repository");
+	Check(guideFile.open(QIODevice::ReadOnly | QIODevice::Text),
+		"standalone user guide exists in the repository");
 	const auto guide = QString::fromUtf8(guideFile.readAll());
 	auto changed = defaults;
 	for (const auto &field : fields) {
@@ -173,6 +174,9 @@ void TestVimConfigEditor() {
 		&& text->document()->findChild<QSyntaxHighlighter*>(),
 		"JSON editor supplies line numbers and incremental highlighting");
 	const auto output = qEnvironmentVariable("VIM_KEYMAP_FOCUS_SNAPSHOTS");
+	const auto multiline = text->toPlainText();
+	text->setPlainText(QJsonDocument::fromJson(multiline.toUtf8()).toJson(
+		QJsonDocument::Compact));
 	for (const auto width : { 320, 400, 720 }) {
 		editor.resizeToWidth(width);
 		DrainMainQueue();
@@ -191,6 +195,8 @@ void TestVimConfigEditor() {
 			Check(editor.grab().save(output + u"/json-%1.png"_q.arg(width)), "JSON editor screenshot saved");
 		}
 	}
+	text->setPlainText(multiline);
+	DrainMainQueue();
 	const auto originalPalette = style::main_palette::save();
 	for (const auto dark : { false, true }) {
 		auto palette = style::palette();
@@ -249,7 +255,8 @@ void TestVimConfigDocuments() {
 				"generate guide, example and schema from the real option registry");
 		}
 		auto file = QFile(path);
-		Check(file.open(QIODevice::ReadOnly) && file.readAll() == expected,
+		Check(file.open(QIODevice::ReadOnly | QIODevice::Text)
+			&& file.readAll() == expected,
 			"checked-in documentation exactly matches current Vim settings and defaults");
 	}
 }
