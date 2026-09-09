@@ -178,5 +178,721 @@
         "reason": "KeyboardStyle::minButtonWidth assigns iconWidth from generated st::msgBotKb*Icon widths and the sending icon. chat.style defines these nonempty icons. No-build analysis lacks generated style definitions and incorrectly treats all branches as zero; the existing condition is necessary for icon-free buttons."
       }
     ]
+  },
+  {
+    "path": "Telegram/SourceFiles/boxes/edit_caption_box.cpp",
+    "source_sha256": [
+      "4f00c96de995f8485bfaf5bf743af8cca1af80e2e03008ad98cfe73af5af25aa"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "db6e2863f533f3e9:1",
+        "message_sha256": "f038010bce37f0ed0e4a8aa3b4bdab3493cfa760f2ea60f5246292649b15b233",
+        "reason": "The comment-percentage metric reports no execution or security defect. The reviewed function expresses its operation in named code and assertions; adding filler comments would conflict with repository style. This exception applies only to this exact diagnostic and source digest."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/calls/calls_call.h",
+    "source_sha256": [
+      "fc6de0fbfd8d3b29b731cce444aa8d17c67d7294dbc099a277d09fa599196e61"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/member-const-no-effect",
+        "level": "warning",
+        "line_hash": "6f4d92981bc8031f:1",
+        "message_sha256": "dc2cb9240322c1efe5fe9182c19e33c8f4abe06c2c0d70b3d60ab3bb6afec682",
+        "reason": "The trailing return type is a reference to a const vector or shared_ptr. Const qualifies the referred object and is meaningful; no-build extraction loses the reference declarator."
+      },
+      {
+        "rule": "cpp/non-member-const-no-effect",
+        "level": "warning",
+        "line_hash": "6f4d92981bc8031f:1",
+        "message_sha256": "f6d6b0e33cbe3d9f7224c6e05409bb96f381b85162ccae4a5571c1c3cd12d08a",
+        "reason": "The trailing return type is a reference to a const vector or shared_ptr. Const qualifies the referred object and is meaningful; no-build extraction loses the reference declarator."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/chat_helpers/field_autocomplete.cpp",
+    "source_sha256": [
+      "d999d6bbaf2866e355417579a425d67f08d65ac14eaf946645274ab47fbc02b8"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "3a56ed50beba175:1",
+        "message_sha256": "a5a93bc1f05d31c0f09d53f53b70307e254b17f2c188fdbe17fd72150d458538",
+        "reason": "The comment-percentage metric reports no execution or security defect. The reviewed function expresses its operation in named code and assertions; adding filler comments would conflict with repository style. This exception applies only to this exact diagnostic and source digest."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "82ef23b820110df4:1",
+        "message_sha256": "af8a248237036b4eff05ebdecb331b2ea76766abeb47c05a2865a6f9ef233142",
+        "reason": "The comment-percentage metric reports no execution or security defect. The reviewed function expresses its operation in named code and assertions; adding filler comments would conflict with repository style. This exception applies only to this exact diagnostic and source digest."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/data/data_document.h",
+    "source_sha256": [
+      "c7a50a5781e69569d21708445a1e7772456675e3c54a57af397ef407938f9518"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/member-const-no-effect",
+        "level": "warning",
+        "line_hash": "b9f99e54655a7c3f:1",
+        "message_sha256": "dc2cb9240322c1efe5fe9182c19e33c8f4abe06c2c0d70b3d60ab3bb6afec682",
+        "reason": "The trailing return type is a reference to a const vector or shared_ptr. Const qualifies the referred object and is meaningful; no-build extraction loses the reference declarator."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/editor/editor_paint.cpp",
+    "source_sha256": [
+      "dbf136eca533e40eaa26bc315983096c1fb9c2fabeb7ab7b9588fe3b03644fc9"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "80d314a135ee52dc:1",
+        "message_sha256": "11a11dff4a81113cffaed6e56046ab2783889297a2394602c988785654ae1d00",
+        "reason": "The comment-percentage metric reports no execution or security defect. The reviewed function expresses its operation in named code and assertions; adding filler comments would conflict with repository style. This exception applies only to this exact diagnostic and source digest."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/editor/photo_editor_controls.cpp",
+    "source_sha256": [
+      "734c829a751352995b00cc44d233b07668144ad0a1c18971b24b22aec5e5a273"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "a3ef709e5792ada5:1",
+        "message_sha256": "e75fe8cde58084e3d9c32c730c1d468114c5887a58c5e1b26cdea60d4082ee3f",
+        "reason": "The comment-percentage metric reports no execution or security defect. The reviewed function expresses its operation in named code and assertions; adding filler comments would conflict with repository style. This exception applies only to this exact diagnostic and source digest."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/editor/scene/scene.cpp",
+    "source_sha256": [
+      "c4482a6f891c3af7fbac58611a8b024fbde0b843aaf2129df64ae1a7eaaf623c"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/ambiguously-signed-bit-field",
+        "level": "warning",
+        "line_hash": "b546958a60f2cd9c:1",
+        "message_sha256": "c89f56f60b52d327a2276b462a2266cc9873b3e4aa868c67dee0acca6e60e344",
+        "reason": "The reported location is a Qt signal or slot label, a base-class initializer, or a normal constructor. There is no bit field here; absent Qt and template definitions cause no-build parser recovery to invent one."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "84c82d16aa9012f8:1",
+        "message_sha256": "98f7b83afdcfeebf7fb2c7d3bd3d978a1b7d2bcfde6acb586164bb729ffe2f0a",
+        "reason": "The comment-percentage metric reports no execution or security defect. The reviewed function expresses its operation in named code and assertions; adding filler comments would conflict with repository style. This exception applies only to this exact diagnostic and source digest."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/editor/scene/scene_item_base.cpp",
+    "source_sha256": [
+      "09c23457c496ea65e22a7bc0230b06de35f67d68c706e0d1b56b37ceeed53a5c"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/virtual-call-in-constructor",
+        "level": "warning",
+        "line_hash": "5fe84227dbb4498a:1",
+        "message_sha256": "0995c7734788203d733688c676ec12f815f35e9edd615bbab341e2a15914099e",
+        "reason": "ItemBase construction intentionally sets initial flipped state through its empty base performFlip implementation. Derived image and sticker constructors apply their own flip after initialization; shape and text rendering read the saved flipped state. No derived state is accessed during base construction."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/editor/video/video_editor.cpp",
+    "source_sha256": [
+      "9ecc747e1fb9e7d84962b5a92970ecdbc1f082b13bd73edc522d176e9acd12dd"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "f030bea0c5d50c74:1",
+        "message_sha256": "f74905822816e81676fdfd1da8a64faf5017dbc0e95d12d72fd874b7754e189e",
+        "reason": "The comment-percentage metric reports no execution or security defect. The reviewed function expresses its operation in named code and assertions; adding filler comments would conflict with repository style. This exception applies only to this exact diagnostic and source digest."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/history/history_drag_area.cpp",
+    "source_sha256": [
+      "696fc2d5286f715564b5b013811add4a7ae1ef8dd0eb31bd8b4619dd607a6b07"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/dead-code-goto",
+        "level": "warning",
+        "line_hash": "adaff50ec04a5b32:1",
+        "message_sha256": "e8083dd9e79427f19d2cafb764d1d61c24e2f7af2b42b7ccfd788afef91f8524",
+        "reason": "This is a switch case entry or break with a reachable branch when its event or enum value is selected. No-build extraction lacks Qt enum and callback definitions and misidentifies the case control flow; no operation after the branch is required to run."
+      },
+      {
+        "rule": "cpp/dead-code-goto",
+        "level": "warning",
+        "line_hash": "2597cedb4ee88016:1",
+        "message_sha256": "e8083dd9e79427f19d2cafb764d1d61c24e2f7af2b42b7ccfd788afef91f8524",
+        "reason": "This is a switch case entry or break with a reachable branch when its event or enum value is selected. No-build extraction lacks Qt enum and callback definitions and misidentifies the case control flow; no operation after the branch is required to run."
+      },
+      {
+        "rule": "cpp/dead-code-goto",
+        "level": "warning",
+        "line_hash": "8d253b332ef8fcba:1",
+        "message_sha256": "e8083dd9e79427f19d2cafb764d1d61c24e2f7af2b42b7ccfd788afef91f8524",
+        "reason": "This is a switch case entry or break with a reachable branch when its event or enum value is selected. No-build extraction lacks Qt enum and callback definitions and misidentifies the case control flow; no operation after the branch is required to run."
+      },
+      {
+        "rule": "cpp/dead-code-goto",
+        "level": "warning",
+        "line_hash": "848a78771ff3ba0:1",
+        "message_sha256": "e8083dd9e79427f19d2cafb764d1d61c24e2f7af2b42b7ccfd788afef91f8524",
+        "reason": "This is a switch case entry or break with a reachable branch when its event or enum value is selected. No-build extraction lacks Qt enum and callback definitions and misidentifies the case control flow; no operation after the branch is required to run."
+      },
+      {
+        "rule": "cpp/dead-code-goto",
+        "level": "warning",
+        "line_hash": "d529fb5a877ee7e0:1",
+        "message_sha256": "e8083dd9e79427f19d2cafb764d1d61c24e2f7af2b42b7ccfd788afef91f8524",
+        "reason": "This is a switch case entry or break with a reachable branch when its event or enum value is selected. No-build extraction lacks Qt enum and callback definitions and misidentifies the case control flow; no operation after the branch is required to run."
+      },
+      {
+        "rule": "cpp/dead-code-goto",
+        "level": "warning",
+        "line_hash": "6d71597b142930f3:1",
+        "message_sha256": "e8083dd9e79427f19d2cafb764d1d61c24e2f7af2b42b7ccfd788afef91f8524",
+        "reason": "This is a switch case entry or break with a reachable branch when its event or enum value is selected. No-build extraction lacks Qt enum and callback definitions and misidentifies the case control flow; no operation after the branch is required to run."
+      },
+      {
+        "rule": "cpp/dead-code-goto",
+        "level": "warning",
+        "line_hash": "ac98e1e64339fcf1:1",
+        "message_sha256": "e8083dd9e79427f19d2cafb764d1d61c24e2f7af2b42b7ccfd788afef91f8524",
+        "reason": "This is a switch case entry or break with a reachable branch when its event or enum value is selected. No-build extraction lacks Qt enum and callback definitions and misidentifies the case control flow; no operation after the branch is required to run."
+      },
+      {
+        "rule": "cpp/dead-code-goto",
+        "level": "warning",
+        "line_hash": "165444d3fec8d611:1",
+        "message_sha256": "e8083dd9e79427f19d2cafb764d1d61c24e2f7af2b42b7ccfd788afef91f8524",
+        "reason": "This is a switch case entry or break with a reachable branch when its event or enum value is selected. No-build extraction lacks Qt enum and callback definitions and misidentifies the case control flow; no operation after the branch is required to run."
+      },
+      {
+        "rule": "cpp/dead-code-goto",
+        "level": "warning",
+        "line_hash": "e8672ddada5f4705:1",
+        "message_sha256": "e8083dd9e79427f19d2cafb764d1d61c24e2f7af2b42b7ccfd788afef91f8524",
+        "reason": "This is a switch case entry or break with a reachable branch when its event or enum value is selected. No-build extraction lacks Qt enum and callback definitions and misidentifies the case control flow; no operation after the branch is required to run."
+      },
+      {
+        "rule": "cpp/dead-code-goto",
+        "level": "warning",
+        "line_hash": "3c5738616809f876:1",
+        "message_sha256": "e8083dd9e79427f19d2cafb764d1d61c24e2f7af2b42b7ccfd788afef91f8524",
+        "reason": "This is a switch case entry or break with a reachable branch when its event or enum value is selected. No-build extraction lacks Qt enum and callback definitions and misidentifies the case control flow; no operation after the branch is required to run."
+      },
+      {
+        "rule": "cpp/dead-code-goto",
+        "level": "warning",
+        "line_hash": "7f2fb1a0f083de48:1",
+        "message_sha256": "e8083dd9e79427f19d2cafb764d1d61c24e2f7af2b42b7ccfd788afef91f8524",
+        "reason": "This is a switch case entry or break with a reachable branch when its event or enum value is selected. No-build extraction lacks Qt enum and callback definitions and misidentifies the case control flow; no operation after the branch is required to run."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/history/view/history_view_element.cpp",
+    "source_sha256": [
+      "59d27843052afc1cd60e62fbb8dae73c756c5a9608a33c65c03ef35743213313"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "21e77fd901c348e6:1",
+        "message_sha256": "16553ee0cc00d87e99ec11a3ca5072f6940e6f377bb5735da1e1768c52e20a82",
+        "reason": "iconWidth is populated by generated style icon widths before this comparison. Those generated definitions are absent from no-build extraction; positive widths require this branch in the native application."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/history/view/history_view_list_widget.h",
+    "source_sha256": [
+      "3d7510219c418ed82a20b0b9b35aaf995822a2da98c2a9554fa2030142f9267b"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/missing-return",
+        "level": "error",
+        "line_hash": "1ff60609f2a60fce:1",
+        "message_sha256": "4f3ff99b0d1358b51481ad92a6ebf5fd23365e2359f87c2e8a97006d61ec2635",
+        "reason": "No-build extraction treats an empty-brace default argument as a function body. This location is a declaration with a default argument; the separately compiled definition returns bool."
+      },
+      {
+        "rule": "cpp/member-const-no-effect",
+        "level": "warning",
+        "line_hash": "27925eec5eb4f5dd:1",
+        "message_sha256": "dc2cb9240322c1efe5fe9182c19e33c8f4abe06c2c0d70b3d60ab3bb6afec682",
+        "reason": "The trailing return type is a reference to a const vector or shared_ptr. Const qualifies the referred object and is meaningful; no-build extraction loses the reference declarator."
+      },
+      {
+        "rule": "cpp/member-const-no-effect",
+        "level": "warning",
+        "line_hash": "89239f4104b178d7:1",
+        "message_sha256": "dc2cb9240322c1efe5fe9182c19e33c8f4abe06c2c0d70b3d60ab3bb6afec682",
+        "reason": "The trailing return type is a reference to a const vector or shared_ptr. Const qualifies the referred object and is meaningful; no-build extraction loses the reference declarator."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/history/view/history_view_reply.h",
+    "source_sha256": [
+      "5cd4bcc2b0da593a0a4099929cce9587de90bdb4990567d9cb1c84e891e99951"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/ambiguously-signed-bit-field",
+        "level": "warning",
+        "line_hash": "ee7a7b924e02e60e:1",
+        "message_sha256": "71078fba17a19acb52a56e74234da6b7b786de7e3fae9594ad4082d18f964822",
+        "reason": "These fields use uint8, defined as quint8 in base/basic_types.h and as unsigned char by Qt. The no-build extractor lacks this external alias; native compilers preserve explicitly unsigned storage."
+      },
+      {
+        "rule": "cpp/ambiguously-signed-bit-field",
+        "level": "warning",
+        "line_hash": "62bb0a2617e4a158:1",
+        "message_sha256": "566cbf92295aab555e380fb5fde60309982b1fa7c0f561ecd0705d7c47743c61",
+        "reason": "These fields use uint8, defined as quint8 in base/basic_types.h and as unsigned char by Qt. The no-build extractor lacks this external alias; native compilers preserve explicitly unsigned storage."
+      },
+      {
+        "rule": "cpp/ambiguously-signed-bit-field",
+        "level": "warning",
+        "line_hash": "44ba0c2a7df11d87:1",
+        "message_sha256": "b00d7f17bea9290d45a9e973a31b7674bb5e3e699e6a2eae852d34645b14e0b0",
+        "reason": "These fields use uint8, defined as quint8 in base/basic_types.h and as unsigned char by Qt. The no-build extractor lacks this external alias; native compilers preserve explicitly unsigned storage."
+      },
+      {
+        "rule": "cpp/ambiguously-signed-bit-field",
+        "level": "warning",
+        "line_hash": "a0595f30f5cd644f:1",
+        "message_sha256": "8d3911f3911e1dc316a7ea4fc0e68541f7f5f66b8f004e573a742efb13854b66",
+        "reason": "These fields use uint8, defined as quint8 in base/basic_types.h and as unsigned char by Qt. The no-build extractor lacks this external alias; native compilers preserve explicitly unsigned storage."
+      },
+      {
+        "rule": "cpp/ambiguously-signed-bit-field",
+        "level": "warning",
+        "line_hash": "8cf7ed4295ae995d:1",
+        "message_sha256": "999e7c8ded3056acfa7c7edc8c50234d9f23b239e3340e38c021dc18eddd7b49",
+        "reason": "These fields use uint8, defined as quint8 in base/basic_types.h and as unsigned char by Qt. The no-build extractor lacks this external alias; native compilers preserve explicitly unsigned storage."
+      },
+      {
+        "rule": "cpp/ambiguously-signed-bit-field",
+        "level": "warning",
+        "line_hash": "a12fa74514b6c1b4:1",
+        "message_sha256": "1934a38a2103f8c0aa6eb4f2c3409799c5bf333ffbb5d8800799031be5ef0a65",
+        "reason": "These fields use uint8, defined as quint8 in base/basic_types.h and as unsigned char by Qt. The no-build extractor lacks this external alias; native compilers preserve explicitly unsigned storage."
+      },
+      {
+        "rule": "cpp/ambiguously-signed-bit-field",
+        "level": "warning",
+        "line_hash": "c3995d7f7ca41490:1",
+        "message_sha256": "5e2ee90cba0f02df024664e84d9ef549db6ef43cf5c21e600037c92a92a83a42",
+        "reason": "These fields use uint8, defined as quint8 in base/basic_types.h and as unsigned char by Qt. The no-build extractor lacks this external alias; native compilers preserve explicitly unsigned storage."
+      },
+      {
+        "rule": "cpp/ambiguously-signed-bit-field",
+        "level": "warning",
+        "line_hash": "305dda75d2a5735b:1",
+        "message_sha256": "492d6a3151c399cb3ca935b907c5d4e37445d2d5f5eded0ac4df15c559ba0a40",
+        "reason": "These fields use uint8, defined as quint8 in base/basic_types.h and as unsigned char by Qt. The no-build extractor lacks this external alias; native compilers preserve explicitly unsigned storage."
+      },
+      {
+        "rule": "cpp/ambiguously-signed-bit-field",
+        "level": "warning",
+        "line_hash": "43f641a8b734af61:1",
+        "message_sha256": "89aed7c7e2d0bc99e3ed30d32615586eb5fc30269e329d8eb8bb5a69162e194c",
+        "reason": "These fields use uint8, defined as quint8 in base/basic_types.h and as unsigned char by Qt. The no-build extractor lacks this external alias; native compilers preserve explicitly unsigned storage."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/history/view/history_view_top_bar_widget.cpp",
+    "source_sha256": [
+      "2971338c7341a97cecb08344925a9f06fd53de5f2cad5b106252c446d505bdf4"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "98d023a46118eae7:1",
+        "message_sha256": "499a94efc75d2576884e0177640dd49d3a6d4c645155b6fa5e296b325028256a",
+        "reason": "The comment-percentage metric reports no execution or security defect. The reviewed function expresses its operation in named code and assertions; adding filler comments would conflict with repository style. This exception applies only to this exact diagnostic and source digest."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/iv/markdown/iv_markdown_article.cpp",
+    "source_sha256": [
+      "db689e91471b50f7b7e9e79703f092ce6fad0aca2c18989da0b8daafb9805c3d"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/dead-code-goto",
+        "level": "warning",
+        "line_hash": "7326e8b2b7d566ea:1",
+        "message_sha256": "c032fcb6d78b4a52e9b0a5c607dac80b71f0618f6f93abae3598a0ce44e1e44a",
+        "reason": "This is a switch case entry or break with a reachable branch when its event or enum value is selected. No-build extraction lacks Qt enum and callback definitions and misidentifies the case control flow; no operation after the branch is required to run."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "91885047eb33eda9:1",
+        "message_sha256": "27012bdc7c4da348a681beab73929047c8d5575b4b115eb7683e7d41897298d9",
+        "reason": "The comment-percentage metric reports no execution or security defect. The reviewed function expresses its operation in named code and assertions; adding filler comments would conflict with repository style. This exception applies only to this exact diagnostic and source digest."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/iv/markdown/iv_markdown_article_layout_blocks.cpp",
+    "source_sha256": [
+      "71cfb557f31c941817d0bfa826ae14fd62414f488ed0523c06a4621c840e2172"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "99014f84d718a72c:1",
+        "message_sha256": "d056ece61f07ed3a89a1b97c85d35685b089fddb1b29a2fb620235a25790905b",
+        "reason": "The comment-percentage metric reports no execution or security defect. The reviewed function expresses its operation in named code and assertions; adding filler comments would conflict with repository style. This exception applies only to this exact diagnostic and source digest."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "11b5a3348e7e0c9c:1",
+        "message_sha256": "50ef187605367e84e46f04738e8c9e71a6de862e3b78ccfc2088ea654e9d6426",
+        "reason": "The comment-percentage metric reports no execution or security defect. The reviewed function expresses its operation in named code and assertions; adding filler comments would conflict with repository style. This exception applies only to this exact diagnostic and source digest."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/overview/overview_layout.cpp",
+    "source_sha256": [
+      "e2b9b26b02c879538c9514338a2011aecbffd3876979bef985d469acf61a0efa"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "ea5ee61772187b40:1",
+        "message_sha256": "f7a898193c8fae32b151a149c7281671e16a7e9050c1138aed0d03f88e05343f",
+        "reason": "The comment-percentage metric reports no execution or security defect. The reviewed function expresses its operation in named code and assertions; adding filler comments would conflict with repository style. This exception applies only to this exact diagnostic and source digest."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "6c84550a20952f20:1",
+        "message_sha256": "f038010bce37f0ed0e4a8aa3b4bdab3493cfa760f2ea60f5246292649b15b233",
+        "reason": "The comment-percentage metric reports no execution or security defect. The reviewed function expresses its operation in named code and assertions; adding filler comments would conflict with repository style. This exception applies only to this exact diagnostic and source digest."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/overview/overview_layout.h",
+    "source_sha256": [
+      "a71c1b56bd4034534d225e44c0ff874c88a24c484e4f83883fbe2118ec8e12b8"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/ambiguously-signed-bit-field",
+        "level": "warning",
+        "line_hash": "45de7081ccbb4edd:1",
+        "message_sha256": "c89f56f60b52d327a2276b462a2266cc9873b3e4aa868c67dee0acca6e60e344",
+        "reason": "The reported location is a Qt signal or slot label, a base-class initializer, or a normal constructor. There is no bit field here; absent Qt and template definitions cause no-build parser recovery to invent one."
+      },
+      {
+        "rule": "cpp/virtual-destructor",
+        "level": "warning",
+        "line_hash": "1ab876de8ab3747d:1",
+        "message_sha256": "a274fa4f854e36e91a70a4c2f5287473e4508f2873efeb1a5058d1b5e83d9ebf",
+        "reason": "RadialProgressItem inherits the virtual destructor of AbstractLayoutItem through LayoutItemBase and Overview::Layout::ItemBase. No-build extraction loses that inheritance chain; destruction is virtual in C++."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/settings/settings_experimental.cpp",
+    "source_sha256": [
+      "85f3969008199aedd0df1da69e1c0720ea0417b6276877a3feba912e01f83d32"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/ambiguously-signed-bit-field",
+        "level": "warning",
+        "line_hash": "94b7c964efec739d:1",
+        "message_sha256": "7940d221ea83ab0e2c8bed4c1269a4613183728f81a0bd3c479ac4a121b2d2a0",
+        "reason": "The reported location is a Qt signal or slot label, a base-class initializer, or a normal constructor. There is no bit field here; absent Qt and template definitions cause no-build parser recovery to invent one."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/storage/localimageloader.h",
+    "source_sha256": [
+      "c1ed18898366f2904f4a3f594d2cf4193601d804153c96de13c4e5b3210cf321"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/missing-return",
+        "level": "error",
+        "line_hash": "4ca49c92072a717f:1",
+        "message_sha256": "f44912179eb1593e5b195ba66e4bc540ed313062e1ccc1bca990d1e4a38cec39",
+        "reason": "No-build extraction treats an empty-brace default argument as a function body. This location is a declaration with a default argument; the separately compiled definition returns bool."
+      },
+      {
+        "rule": "cpp/member-const-no-effect",
+        "level": "warning",
+        "line_hash": "c8a5b8250aca7c46:1",
+        "message_sha256": "dc2cb9240322c1efe5fe9182c19e33c8f4abe06c2c0d70b3d60ab3bb6afec682",
+        "reason": "The trailing return type is a reference to a const vector or shared_ptr. Const qualifies the referred object and is meaningful; no-build extraction loses the reference declarator."
+      },
+      {
+        "rule": "cpp/ambiguously-signed-bit-field",
+        "level": "warning",
+        "line_hash": "9ef49e76092b3ffd:1",
+        "message_sha256": "03cdcce67bda1b7598c0143860207c894cfa3a14f32b53fcabf8113b914fb55c",
+        "reason": "The reported location is a Qt signal or slot label, a base-class initializer, or a normal constructor. There is no bit field here; absent Qt and template definitions cause no-build parser recovery to invent one."
+      },
+      {
+        "rule": "cpp/ambiguously-signed-bit-field",
+        "level": "warning",
+        "line_hash": "c5d56c8432685d9e:1",
+        "message_sha256": "074d1e05cdd82098815f57182996f48d5a135121a936158c44b894f0889fc31d",
+        "reason": "The reported location is a Qt signal or slot label, a base-class initializer, or a normal constructor. There is no bit field here; absent Qt and template definitions cause no-build parser recovery to invent one."
+      },
+      {
+        "rule": "cpp/ambiguously-signed-bit-field",
+        "level": "warning",
+        "line_hash": "76f7d97e893b5113:1",
+        "message_sha256": "074d1e05cdd82098815f57182996f48d5a135121a936158c44b894f0889fc31d",
+        "reason": "The reported location is a Qt signal or slot label, a base-class initializer, or a normal constructor. There is no bit field here; absent Qt and template definitions cause no-build parser recovery to invent one."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/tests/test_vim_keymap.cpp",
+    "source_sha256": [
+      "32d67d024351f3aff57e69cd881b724c844348f4a2fe0f61651b226f694fade8"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/missing-return",
+        "level": "error",
+        "line_hash": "9756903eea18be60:1",
+        "message_sha256": "d43e6b61ded2aa725c14ba1bccaf36d8514fd8bdef9e5c3f54568c86720e7815",
+        "reason": "No-build extraction treats an empty-brace default argument as a function body. This location is a declaration with a default argument; the separately compiled definition returns bool."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "c099bb51cb9cedb:1",
+        "message_sha256": "4c1b8c69ba38125c2fe035a0b1cbb6b1a31c23adc38d9a8491eb9a2c8fe9112c",
+        "reason": "The tested value is changed by Qt event callbacks, image-pixel operations, or optional-returning helpers unavailable to no-build extraction. These named assertions exercise the native implementation and are checked by the compiled Vim suite."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "82fafdc3241236a7:1",
+        "message_sha256": "7c79a0421a9113f2f8c3ad4b8abee7b3f09e54ed768ad629cf5b54579c514b40",
+        "reason": "The tested value is changed by Qt event callbacks, image-pixel operations, or optional-returning helpers unavailable to no-build extraction. These named assertions exercise the native implementation and are checked by the compiled Vim suite."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "de970ea76c22df89:1",
+        "message_sha256": "40a8f47669e67a67792831fc14acecd130c0d1d52c5455cbbbf5c1bc2ebde1d2",
+        "reason": "The tested value is changed by Qt event callbacks, image-pixel operations, or optional-returning helpers unavailable to no-build extraction. These named assertions exercise the native implementation and are checked by the compiled Vim suite."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "11449c715f610109:1",
+        "message_sha256": "07f8e2a589a58a7bc83e9936632ad4ae184e84003743a73c949ca0a9a2d354dc",
+        "reason": "The tested value is changed by Qt event callbacks, image-pixel operations, or optional-returning helpers unavailable to no-build extraction. These named assertions exercise the native implementation and are checked by the compiled Vim suite."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "d2e338c0e4f5c70c:1",
+        "message_sha256": "bfe50b052b3e3545ee8b507b5470a3170e6ba2b074e194ca7e76cf30163214f7",
+        "reason": "The tested value is changed by Qt event callbacks, image-pixel operations, or optional-returning helpers unavailable to no-build extraction. These named assertions exercise the native implementation and are checked by the compiled Vim suite."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "8ea0deef084730e:1",
+        "message_sha256": "8fe2170992d3db7198ecb360429add534781dc550b27a4d59850f1b904f4f611",
+        "reason": "The tested value is changed by Qt event callbacks, image-pixel operations, or optional-returning helpers unavailable to no-build extraction. These named assertions exercise the native implementation and are checked by the compiled Vim suite."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "ec34fe611159fd64:1",
+        "message_sha256": "4c1b8c69ba38125c2fe035a0b1cbb6b1a31c23adc38d9a8491eb9a2c8fe9112c",
+        "reason": "The tested value is changed by Qt event callbacks, image-pixel operations, or optional-returning helpers unavailable to no-build extraction. These named assertions exercise the native implementation and are checked by the compiled Vim suite."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "878840dc0c8afbc7:1",
+        "message_sha256": "6e1f6ec43e375d24ab0e67098195623b3825674901f98416a9c3419cab8049c2",
+        "reason": "The tested value is changed by Qt event callbacks, image-pixel operations, or optional-returning helpers unavailable to no-build extraction. These named assertions exercise the native implementation and are checked by the compiled Vim suite."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "d4fbd26b6e598164:1",
+        "message_sha256": "8fe2170992d3db7198ecb360429add534781dc550b27a4d59850f1b904f4f611",
+        "reason": "The tested value is changed by Qt event callbacks, image-pixel operations, or optional-returning helpers unavailable to no-build extraction. These named assertions exercise the native implementation and are checked by the compiled Vim suite."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "c28a15a0e9a8597d:1",
+        "message_sha256": "8fe2170992d3db7198ecb360429add534781dc550b27a4d59850f1b904f4f611",
+        "reason": "The tested value is changed by Qt event callbacks, image-pixel operations, or optional-returning helpers unavailable to no-build extraction. These named assertions exercise the native implementation and are checked by the compiled Vim suite."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "7ca04c91c448924a:1",
+        "message_sha256": "fa2152fc16acd2f151215a83a08d833727fef8a39e3645d2b9d51e16d31817a5",
+        "reason": "The tested value is changed by Qt event callbacks, image-pixel operations, or optional-returning helpers unavailable to no-build extraction. These named assertions exercise the native implementation and are checked by the compiled Vim suite."
+      },
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "141cb7adf6d34fa9:1",
+        "message_sha256": "4c1b8c69ba38125c2fe035a0b1cbb6b1a31c23adc38d9a8491eb9a2c8fe9112c",
+        "reason": "The tested value is changed by Qt event callbacks, image-pixel operations, or optional-returning helpers unavailable to no-build extraction. These named assertions exercise the native implementation and are checked by the compiled Vim suite."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "5b0209730834eb1a:1",
+        "message_sha256": "0dccd51d5202474650694b991916792208692e0f653ab342bd570c2e2668aa67",
+        "reason": "The comment-percentage metric reports no execution or security defect. The reviewed function expresses its operation in named code and assertions; adding filler comments would conflict with repository style. This exception applies only to this exact diagnostic and source digest."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "b162878d14d77b88:1",
+        "message_sha256": "c8e861783e201ba690749292f72a6976901793c23f65065a60ee48cfdb104051",
+        "reason": "The comment-percentage metric reports no execution or security defect. The reviewed function expresses its operation in named code and assertions; adding filler comments would conflict with repository style. This exception applies only to this exact diagnostic and source digest."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "261ee86eec90be67:1",
+        "message_sha256": "0f830a83278b2b8e8b551de4c8aa9bc26cada9239b2dd420cd69699dd7110901",
+        "reason": "The comment-percentage metric reports no execution or security defect. The reviewed function expresses its operation in named code and assertions; adding filler comments would conflict with repository style. This exception applies only to this exact diagnostic and source digest."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "8b75c5a246c1107a:1",
+        "message_sha256": "690390a7a169988778235691cdab695973fefe18ce91f03518f26f0aa7ed7802",
+        "reason": "The comment-percentage metric reports no execution or security defect. The reviewed function expresses its operation in named code and assertions; adding filler comments would conflict with repository style. This exception applies only to this exact diagnostic and source digest."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "e7b926364a4c8b80:1",
+        "message_sha256": "282c4be4cae7f41ad73cb774a99ac32ce712bc491b1f638150dc6b5ab63cfa30",
+        "reason": "The comment-percentage metric reports no execution or security defect. The reviewed function expresses its operation in named code and assertions; adding filler comments would conflict with repository style. This exception applies only to this exact diagnostic and source digest."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "abde5830390a68f4:1",
+        "message_sha256": "9de258bd1c8d6b67063bf28c3ab5831383b1ee8c54ee6328a7ae1e9af93feb30",
+        "reason": "The comment-percentage metric reports no execution or security defect. The reviewed function expresses its operation in named code and assertions; adding filler comments would conflict with repository style. This exception applies only to this exact diagnostic and source digest."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "5f4d668af127cd1c:1",
+        "message_sha256": "bb2c5c85f0a97ef674497e4623e50c59b19e87a447b65160ac3a48351f93ebf4",
+        "reason": "The comment-percentage metric reports no execution or security defect. The reviewed function expresses its operation in named code and assertions; adding filler comments would conflict with repository style. This exception applies only to this exact diagnostic and source digest."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "3d7e16367ab345da:1",
+        "message_sha256": "4c072ca52591670b987b3ff84e974ba515e2adf4c8b671d2504b2b1dcea952fd",
+        "reason": "The comment-percentage metric reports no execution or security defect. The reviewed function expresses its operation in named code and assertions; adding filler comments would conflict with repository style. This exception applies only to this exact diagnostic and source digest."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/ui/chat/message_bar.cpp",
+    "source_sha256": [
+      "5b19c7d242040058ea042682406e9117f57ebba13a6bc750620cb49fe0efa57f"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "850580e152060cde:1",
+        "message_sha256": "b42722da10a13a26e0c69044c95c294b07b91d3eca4db8957bce6f770a5dc82b",
+        "reason": "The comment-percentage metric reports no execution or security defect. The reviewed function expresses its operation in named code and assertions; adding filler comments would conflict with repository style. This exception applies only to this exact diagnostic and source digest."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/ui/controls/swipe_handler.cpp",
+    "source_sha256": [
+      "16274aa29f964c5af6959b15ac80f7732e88c10202429e2e9146452984848bdb"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/dead-code-goto",
+        "level": "warning",
+        "line_hash": "eebddab36e44b9f8:1",
+        "message_sha256": "f1e57d0c9e72c9200340577104f62350aec644f8a8d2921fe46e3d7cc73481ac",
+        "reason": "This is a switch case entry or break with a reachable branch when its event or enum value is selected. No-build extraction lacks Qt enum and callback definitions and misidentifies the case control flow; no operation after the branch is required to run."
+      },
+      {
+        "rule": "cpp/dead-code-goto",
+        "level": "warning",
+        "line_hash": "b9c3040a18f08eeb:1",
+        "message_sha256": "f1e57d0c9e72c9200340577104f62350aec644f8a8d2921fe46e3d7cc73481ac",
+        "reason": "This is a switch case entry or break with a reachable branch when its event or enum value is selected. No-build extraction lacks Qt enum and callback definitions and misidentifies the case control flow; no operation after the branch is required to run."
+      },
+      {
+        "rule": "cpp/dead-code-goto",
+        "level": "warning",
+        "line_hash": "4501059a38c23cb5:1",
+        "message_sha256": "f1e57d0c9e72c9200340577104f62350aec644f8a8d2921fe46e3d7cc73481ac",
+        "reason": "The break follows an unconditional return from the touch-event switch branch. It is a redundant unreachable statement with no runtime effect; the preceding return deliberately exits the handler."
+      }
+    ]
   }
 ]

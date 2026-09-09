@@ -40,6 +40,11 @@ policy commit. Only GitHub-hosted runners are used.
   and failed analysis still block. The report counts accepted diagnostics and
   retains them in SARIF. Contributor copies of the registry are never read.
   Updating an exception is a separate policy change requiring owner review.
+  The Telegram 7.2.7 import adds exact reviewed records for Qt macros and aliases,
+  reference return types, default arguments, inherited virtual destruction,
+  switch extraction, intentional base-constructor initialization, callback-driven
+  assertions and comment-percentage diagnostics. Each record includes the reviewed
+  reason. Source changes invalidate these records; no rule is disabled globally.
   The initial records cover Qt callback/image/optional extraction errors, a
   default-initializer parse error and comment-percentage metrics in assertion
   suites, plus generated icon styles absent from no-build extraction. Message
