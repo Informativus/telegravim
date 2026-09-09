@@ -797,6 +797,30 @@ HistoryWidget::HistoryWidget(
 
 	_fieldBarCancel->addClickHandler([=] { cancelFieldAreaState(); });
 	Core::VimKeymap::RegisterModeIndicatorWidget(this);
+	Core::VimKeymap::RegisterPreLayerKeyHandler(this, [=](
+			not_null<QKeyEvent*> e) {
+		if (!_composeSearch
+			|| !isVisible()
+			|| !window()->isActiveWindow()
+			|| !Core::VimKeymap::SelectMessageTextKey(e)) {
+			return false;
+		}
+		if (e->type() == QEvent::KeyPress && !e->isAutoRepeat()) {
+			const auto chat = this->controller()->activeChatEntryCurrent().key;
+			vimKeymapLeaveSearchInputMode();
+			_composeSearch->hideAnimated();
+			crl::on_main(this, [=] {
+				if (isVisible()
+					&& window()->isActiveWindow()
+					&& chat
+					&& this->controller()->activeChatEntryCurrent().key == chat) {
+					Core::VimKeymap::InvokeAction(
+						Core::VimKeymap::Action::SelectMessageText);
+				}
+			});
+		}
+		return true;
+	}, true);
 	Core::VimKeymap::RegisterKeyHandler(this, [=](
 			not_null<QKeyEvent*> e) {
 		if (!window() || !window()->isActiveWindow()) {
