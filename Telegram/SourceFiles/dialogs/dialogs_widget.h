@@ -318,6 +318,7 @@ private:
 	struct CancelSearchOptions {
 		bool forceFullCancel = false;
 		bool jumpBackToSearchedChat = false;
+		bool preserveShownChat = false;
 	};
 	bool cancelSearch(CancelSearchOptions options);
 

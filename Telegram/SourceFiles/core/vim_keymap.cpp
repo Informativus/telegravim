@@ -1095,6 +1095,7 @@ void ShowHelpBox() {
 			result += copy + u" - подсказки для копирования сообщений\n"_q;
 			result += selectMessageText
 				+ u" - подсказки для visual-выделения текста сообщения\n"_q;
+			result += u"В поиске эта команда закрывает поиск, сохраняя место в чате\n"_q;
 			result += u"В тексте сообщения: gg/G - начало/конец, {/} - абзацы\n"_q;
 			result += u"Лишние клавиши сохраняют курсор и выделение; Esc - выход\n"_q;
 			result += reply + u" - подсказки для ответа на сообщение\n"_q;
@@ -1168,6 +1169,7 @@ void ShowHelpBox() {
 			result += copy + u" - show copy message hints\n"_q;
 			result += selectMessageText
 				+ u" - show message text visual selection hints\n"_q;
+			result += u"In search, this closes search and keeps the current chat position\n"_q;
 			result += u"Message text: gg/G - start/end, {/} - paragraphs\n"_q;
 			result += u"Other keys keep the cursor and selection; Esc exits\n"_q;
 			result += reply + u" - show reply message hints\n"_q;
@@ -1661,6 +1663,16 @@ bool HandleApplicationKeyPress(
 	return false;
 }
 
+bool InvokeAction(Action action) {
+	const auto active = App().activeWindow();
+	return Enabled()
+		&& NormalMode()
+		&& !App().passcodeLocked()
+		&& (!active || !active->locked())
+		&& !ActiveKeyboardScope()
+		&& HandleRegisteredAction(action);
+}
+
 void RegisterActionHandler(
 		not_null<QObject*> owner,
 		Fn<bool(Action)> handler) {
@@ -1896,6 +1908,10 @@ std::optional<Qt::Key> NavigationKey(not_null<QKeyEvent*> e) {
 	return NormalMode() ? ScrollNavigationKey(e) : std::nullopt;
 }
 
+bool SelectMessageTextKey(not_null<QKeyEvent*> e) {
+	return MatchesBindings(VimKeymapKeySelectMessageTextOption, e);
+}
+
 std::optional<Action> ActionKey(not_null<QKeyEvent*> e) {
 	if (!NormalMode()) {
 		return std::nullopt;
@@ -1907,7 +1923,7 @@ std::optional<Action> ActionKey(not_null<QKeyEvent*> e) {
 		return Action::CopyMessage;
 	} else if (ChatPreviewKey(e)) {
 		return Action::ChatPreview;
-	} else if (MatchesBindings(VimKeymapKeySelectMessageTextOption, e)) {
+	} else if (SelectMessageTextKey(e)) {
 		return Action::SelectMessageText;
 	} else if (MatchesBindings(VimKeymapKeyReplyToMessageOption, e, true)) {
 		return Action::ReplyToMessage;

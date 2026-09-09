@@ -759,6 +759,28 @@ Widget::Widget(
 		if (!isActiveWindow()) {
 			return false;
 		}
+		if (vimKeymapSearchOpen()
+			&& Core::VimKeymap::SelectMessageTextKey(e)) {
+			if (e->type() == QEvent::KeyPress && !e->isAutoRepeat()) {
+				cancelSearch({
+					.forceFullCancel = true,
+					.preserveShownChat = true,
+				});
+				vimKeymapReturnToViewMode();
+				const auto chat = controller()->activeChatEntryCurrent().key;
+				crl::on_main(this, [=] {
+					if (isActiveWindow()
+						&& chat
+						&& controller()->activeChatEntryCurrent().key == chat) {
+						Core::VimKeymap::InvokeAction(
+							Core::VimKeymap::Action::SelectMessageText);
+					}
+				});
+			}
+			return true;
+		} else if (e->type() == QEvent::ShortcutOverride) {
+			return false;
+		}
 		if (Core::VimKeymap::Bindings::IsSystemPaste(e)) {
 			if (_inner->vimKeymapCancelChatHints()) {
 				Core::VimKeymap::TraceKey(e, u"cancel chat hints for paste"_q);
@@ -775,7 +797,7 @@ Widget::Widget(
 			Core::VimKeymap::TraceKey(e, u"chat hint input"_q);
 		}
 		return true;
-	});
+	}, true);
 	Core::VimKeymap::RegisterKeyHandler(this, [=](
 			not_null<QKeyEvent*> e) {
 		if (!isActiveWindow()) {
@@ -5307,7 +5329,7 @@ bool Widget::cancelSearch(CancelSearchOptions options) {
 		_vimKeymapSearchInputMode = false;
 	}
 	updateForceDisplayWide();
-	if (clearingInChat) {
+	if (clearingInChat && !options.preserveShownChat) {
 		if (const auto forum = controller()->shownForum().current()) {
 			if (forum->peer()->useSubsectionTabs()) {
 				const auto id = controller()->windowId();
