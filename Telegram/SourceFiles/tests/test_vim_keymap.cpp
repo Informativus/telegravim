@@ -51,6 +51,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtGui/QKeyEvent>
 #include <QtGui/QPainter>
 #include <QtGui/QClipboard>
+#include <QtGui/QFontDatabase>
 #include <QtGui/QtEvents>
 #include <QtCore/QMimeData>
 #include <QtCore/QEventLoop>
@@ -2991,6 +2992,14 @@ int main(int argc, char *argv[]) {
 	base::Integration::Set(&baseIntegration);
 	auto integration = TestIntegration();
 	Ui::Integration::Set(&integration);
+	const auto fonts = QDir(QString::fromUtf8(VIM_KEYMAP_DOCS_DIR)
+		+ u"/../Telegram/lib_ui/fonts"_q);
+	const auto fontFiles = fonts.entryList({ u"*.ttf"_q }, QDir::Files);
+	Check(!fontFiles.isEmpty(), "bundled fonts are available to native tests");
+	for (const auto &file : fontFiles) {
+		Check(QFontDatabase::addApplicationFont(fonts.filePath(file)) >= 0,
+			"native tests load the application's bundled font");
+	}
 	style::StartManager(100);
 	Ui::Emoji::Init();
 	Ui::Animations::Manager::SetScheduleWithInvokeQueued(true);
