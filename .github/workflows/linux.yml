@@ -2,6 +2,11 @@ name: Linux release package
 
 on:
   workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Source commit or ref (empty uses the workflow ref)
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -17,6 +22,7 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+          ref: ${{ inputs.source_ref || github.ref }}
       - name: Make space for the build image
         uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:

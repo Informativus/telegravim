@@ -2,6 +2,11 @@ name: Windows release package
 
 on:
   workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Source commit or ref (empty uses the workflow ref)
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -19,6 +24,7 @@ jobs:
           persist-credentials: false
           submodules: recursive
           path: TBuild/tdesktop
+          ref: ${{ inputs.source_ref || github.ref }}
       - name: Initialize x64 compiler
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
         with:
@@ -36,6 +42,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'NuGet configuration failed' }
           }
       - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        id: dependencies
         with:
           path: |
             TBuild/Libraries
@@ -45,6 +52,14 @@ jobs:
         run: |
           & TBuild\tdesktop\Telegram\build\prepare\win.bat silent qt6
           if ($LASTEXITCODE -ne 0) { throw 'Dependency build failed' }
+      - name: Save prepared dependencies
+        if: steps.dependencies.outputs.cache-hit != 'true'
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        with:
+          path: |
+            TBuild/Libraries
+            TBuild/ThirdParty
+          key: windows-x64-release-${{ hashFiles('TBuild/tdesktop/Telegram/build/prepare/**', 'TBuild/tdesktop/Telegram/build/qt_version.py') }}
       - name: Build Release and native tests
         run: |
           cd TBuild\tdesktop\Telegram
