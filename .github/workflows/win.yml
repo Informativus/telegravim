@@ -7,6 +7,10 @@ on:
         description: Source commit or ref (empty uses the workflow ref)
         type: string
         required: false
+      tests_only:
+        description: Build and run native tests without packaging the application
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -41,13 +45,27 @@ jobs:
             nuget sources Add -Name nuget.org -Source https://api.nuget.org/v3/index.json
             if ($LASTEXITCODE -ne 0) { throw 'NuGet configuration failed' }
           }
-      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+      - uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4
         id: dependencies
         with:
           path: |
-            TBuild/Libraries
-            TBuild/ThirdParty
-          key: windows-x64-release-${{ hashFiles('TBuild/tdesktop/Telegram/build/prepare/**', 'TBuild/tdesktop/Telegram/build/qt_version.py') }}
+            TBuild/Libraries/**
+            !TBuild/Libraries/**/
+            !TBuild/Libraries/win64/Qt-*/**
+            !TBuild/Libraries/**/*.obj
+            !TBuild/Libraries/**/*.pch
+            !TBuild/Libraries/**/.git/**
+          key: windows-x64-libraries-v4-${{ hashFiles('TBuild/tdesktop/Telegram/build/prepare/**', 'TBuild/tdesktop/Telegram/build/qt_version.py') }}
+      - uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        id: qt
+        with:
+          path: TBuild/Libraries/win64/Qt-*
+          key: windows-x64-qt-v2-${{ hashFiles('TBuild/tdesktop/Telegram/build/prepare/**', 'TBuild/tdesktop/Telegram/build/qt_version.py') }}
+      - uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        id: tools
+        with:
+          path: TBuild/ThirdParty
+          key: windows-x64-tools-v2-${{ hashFiles('TBuild/tdesktop/Telegram/build/prepare/**', 'TBuild/tdesktop/Telegram/build/qt_version.py') }}
       - name: Build dependencies
         run: |
           & TBuild\tdesktop\Telegram\build\prepare\win.bat silent qt6
@@ -57,10 +75,28 @@ jobs:
         uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4
         with:
           path: |
-            TBuild/Libraries
-            TBuild/ThirdParty
-          key: windows-x64-release-${{ hashFiles('TBuild/tdesktop/Telegram/build/prepare/**', 'TBuild/tdesktop/Telegram/build/qt_version.py') }}
+            TBuild/Libraries/**
+            !TBuild/Libraries/**/
+            !TBuild/Libraries/win64/Qt-*/**
+            !TBuild/Libraries/**/*.obj
+            !TBuild/Libraries/**/*.pch
+            !TBuild/Libraries/**/.git/**
+          key: windows-x64-libraries-v4-${{ hashFiles('TBuild/tdesktop/Telegram/build/prepare/**', 'TBuild/tdesktop/Telegram/build/qt_version.py') }}
+      - name: Save prepared Qt
+        if: steps.qt.outputs.cache-hit != 'true'
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        with:
+          path: TBuild/Libraries/win64/Qt-*
+          key: windows-x64-qt-v2-${{ hashFiles('TBuild/tdesktop/Telegram/build/prepare/**', 'TBuild/tdesktop/Telegram/build/qt_version.py') }}
+      - name: Save prepared tools
+        if: steps.tools.outputs.cache-hit != 'true'
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        with:
+          path: TBuild/ThirdParty
+          key: windows-x64-tools-v2-${{ hashFiles('TBuild/tdesktop/Telegram/build/prepare/**', 'TBuild/tdesktop/Telegram/build/qt_version.py') }}
       - name: Build Release and native tests
+        env:
+          BUILD_TARGET: ${{ inputs.tests_only && 'test_vim_keymap' || 'Telegram' }}
         run: |
           cd TBuild\tdesktop\Telegram
           & .\configure.bat -G "Ninja Multi-Config" qt6 `
@@ -70,14 +106,18 @@ jobs:
             -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON `
             -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
           if ($LASTEXITCODE -ne 0) { throw 'Configure failed' }
-          cmake --build ..\out --config Release --target Telegram --parallel 3
+          cmake --build ..\out --config Release --target $env:BUILD_TARGET --parallel 3
           if ($LASTEXITCODE -ne 0) { throw 'Application build failed' }
-      - name: Test and package
+      - name: Run native tests
         shell: pwsh
         working-directory: TBuild/tdesktop
         run: |
           & out/Release/test_vim_keymap.exe
           if ($LASTEXITCODE -ne 0) { throw 'Native tests failed' }
+      - name: Package application
+        if: ${{ !inputs.tests_only }}
+        working-directory: TBuild/tdesktop
+        run: |
           New-Item -ItemType Directory -Path artifact/Telegravim | Out-Null
           Copy-Item out/Release/Telegram.exe artifact/Telegravim/
           Copy-Item LICENSE,Telegram/Resources/dictionaries/LICENSE_*.txt artifact/Telegravim/
@@ -88,6 +128,7 @@ jobs:
           $hash = (Get-FileHash artifact/Telegravim-windows-x64.zip -Algorithm SHA256).Hash.ToLower()
           "$hash  Telegravim-windows-x64.zip" | Set-Content artifact/SHA256-windows-x64.txt -Encoding ascii
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: ${{ !inputs.tests_only }}
         with:
           name: Telegravim-windows-x64
           path: |
