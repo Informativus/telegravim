@@ -2104,9 +2104,9 @@ void TestMediaPlaybackAndShareBindings() {
 		Check(IsSelectionForward(&repeat),
 			"holding f stays owned by selection instead of starting link hints");
 	}
-	Check(!Core::VimKeymap::ActionUsesMessageHints(
+	Check(Core::VimKeymap::ActionUsesMessageHints(
 		Core::VimKeymap::Action::SelectMessages),
-		"message selection starts directly without message hints");
+		"message selection starts by choosing a message hint");
 	Check(Core::VimKeymap::ActionUsesMessageHints(Core::VimKeymap::Action::ShareMessage),
 		"sharing is a message-hint action");
 }

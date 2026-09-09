@@ -763,10 +763,12 @@ public:
 	HelpTabsWidget(
 		QWidget *parent,
 		QString hints,
-		bool russian)
+		bool russian,
+		not_null<Ui::InputField*> search)
 	: Ui::RpWidget(parent)
 	, _hints(std::move(hints))
 	, _russian(russian)
+	, _search(search)
 	, _slider(Ui::CreateChild<Ui::SettingsSlider>(this, st::settingsSlider))
 	, _label(Ui::CreateChild<Ui::FlatLabel>(this, st::boxLabel)) {
 		setFocusPolicy(Qt::StrongFocus);
@@ -778,6 +780,15 @@ public:
 			setActiveTab(index);
 		}, _slider->lifetime());
 		_label->setSelectable(true);
+		_search->changes() | rpl::on_next([=] {
+			updateLabel();
+		}, lifetime());
+		_search->cancelled() | rpl::on_next([=] {
+			cancelSearch();
+		}, lifetime());
+		_search->submits() | rpl::on_next([=] {
+			setFocus(Qt::ShortcutFocusReason);
+		}, lifetime());
 		updateLabel();
 	}
 
@@ -789,11 +800,37 @@ public:
 		return currentTitle() + u"\n"_q + currentText();
 	}
 
+	bool handleSearchEscape(not_null<QKeyEvent*> e) {
+		const auto focus = QApplication::focusWidget();
+		if (!Bindings::IsPlainEscape(e)
+			|| !isVisible()
+			|| !window()->isActiveWindow()
+			|| !focus
+			|| (focus != _search && !_search->isAncestorOf(focus))) {
+			return false;
+		}
+		if (e->type() != QEvent::ShortcutOverride && !e->isAutoRepeat()) {
+			cancelSearch();
+		}
+		return true;
+	}
+
 	bool handleBoxKey(
 			not_null<Ui::GenericBox*> box,
 			not_null<QKeyEvent*> e) {
 		const auto modifiers = CleanModifiers(e);
 		const auto text = e->text().toCaseFolded();
+		const auto focus = QApplication::focusWidget();
+		const auto searching = focus
+			&& (focus == _search || _search->isAncestorOf(focus));
+		if (e->matches(QKeySequence::Find)
+			|| (!searching && modifiers == Qt::NoModifier && text == u"/"_q)) {
+			_search->setFocus();
+			e->accept();
+			return true;
+		} else if (searching) {
+			return false;
+		}
 		const auto previousTab = (e->key() == Qt::Key_Backtab)
 			|| ((e->key() == Qt::Key_Tab)
 				&& (modifiers == Qt::ShiftModifier))
@@ -857,7 +894,7 @@ public:
 		_slider->resizeToWidth(newWidth);
 		_label->resizeToWidth(newWidth);
 		layoutChildren(newWidth);
-		return _slider->height() + kTabGap + _label->height();
+		return _slider->height() + st::vimHelpTabGap + _label->height();
 	}
 
 protected:
@@ -892,7 +929,14 @@ protected:
 
 private:
 	static constexpr auto kTabsCount = 2;
-	static constexpr auto kTabGap = 10;
+
+	void cancelSearch() {
+		if (_search->getLastText().isEmpty()) {
+			setFocus(Qt::ShortcutFocusReason);
+		} else {
+			_search->setText(QString());
+		}
+	}
 
 	[[nodiscard]] QString tabTitle(int index) const {
 		if (_russian) {
@@ -906,7 +950,25 @@ private:
 	}
 
 	[[nodiscard]] QString currentText() const {
-		return (_activeTab == 0) ? _hints : keyLogText();
+		const auto content = (_activeTab == 0) ? _hints : keyLogText();
+		const auto words = _search->getLastText().simplified().split(
+			QChar(' '),
+			Qt::SkipEmptyParts);
+		if (words.empty()) {
+			return content;
+		}
+		auto matches = QStringList();
+		for (const auto &line : content.split(QChar('\n'))) {
+			if (ranges::all_of(words, [&](const QString &word) {
+				return line.contains(word, Qt::CaseInsensitive);
+			})) {
+				matches.push_back(line);
+			}
+		}
+		return matches.empty()
+			? (_russian ? u"Ничего не найдено. Измените запрос."_q
+				: u"No matches. Try another search."_q)
+			: matches.join(QChar('\n'));
 	}
 
 	void setActiveTab(int tab) {
@@ -923,8 +985,7 @@ private:
 
 	void updateLabel() {
 		_label->setText(currentText());
-		_label->resizeToWidth(std::max(1, width()));
-		layoutChildren(width());
+		resizeToWidth(std::max(1, width()));
 	}
 
 	[[nodiscard]] QString keyLogText() const {
@@ -955,11 +1016,12 @@ private:
 
 	void layoutChildren(int newWidth) {
 		_slider->moveToLeft(0, 0, newWidth);
-		_label->moveToLeft(0, _slider->height() + kTabGap, newWidth);
+		_label->moveToLeft(0, _slider->height() + st::vimHelpTabGap, newWidth);
 	}
 
 	QString _hints;
 	bool _russian = false;
+	not_null<Ui::InputField*> _search;
 	not_null<Ui::SettingsSlider*> _slider;
 	not_null<Ui::FlatLabel*> _label;
 	int _activeTab = 0;
@@ -1040,8 +1102,10 @@ void ShowHelpBox() {
 				+ u" - подсказки для редактирования своих сообщений\n"_q;
 			result += deleteMessage
 				+ u" - подсказки для удаления сообщений\n"_q;
-			result += u"s/ы - выделить сообщения; j/k - расширить или сократить диапазон\n"_q;
+			result += u"s/ы - показать буквы; буква сообщения - начать выделение с него; j/k - изменить диапазон\n"_q;
 			result += u"В выделении: d - удалить с подтверждением, f - переслать, y - копировать, Esc - выйти\n"_q;
+			result += u"Реакции: правый клик по сообщению → эмодзи над контекстным меню.\n"_q;
+			result += u"Больше реакций: стрелка раскрытия рядом с эмодзи, если она доступна.\n"_q;
 			result += focus
 				+ u" - подсказки для медиа, ссылок, голосований, ответов и пересланных авторов\n"_q;
 			result += openChats + u" - подсказки для открытия чатов\n"_q;
@@ -1106,8 +1170,10 @@ void ShowHelpBox() {
 			result += reply + u" - show reply message hints\n"_q;
 			result += edit + u" - show edit message hints\n"_q;
 			result += deleteMessage + u" - show delete message hints\n"_q;
-			result += u"s - select messages; j/k - grow or shrink the range\n"_q;
+			result += u"s - show letters; a message letter - start selection there; j/k - change the range\n"_q;
 			result += u"While selected: d - confirm deletion, f - forward, y - copy, Esc - cancel\n"_q;
+			result += u"Reactions: right-click a message → choose an emoji above the context menu.\n"_q;
+			result += u"More reactions: click the expand arrow beside the emoji, when available.\n"_q;
 			result += focus
 				+ u" - show media, link, poll, reply and forwarded-source hints\n"_q;
 			result += openChats + u" - show chat open hints\n"_q;
@@ -1152,16 +1218,33 @@ void ShowHelpBox() {
 	}();
 	window->show(Box([=](not_null<Ui::GenericBox*> box) {
 		box->setTitle(russian ? u"Vim-навигация"_q : u"Vim navigation"_q);
-		box->setWidth(560);
-		box->setMaxHeight(640);
+		box->setWidth(st::vimHelpWidth);
+		box->setMaxHeight(st::vimHelpMaxHeight);
+		const auto top = box->setPinnedToTopContent(
+			object_ptr<Ui::VerticalLayout>(box));
+		const auto searchField = top->add(
+			object_ptr<Ui::InputField>(
+				top,
+				st::defaultInputField,
+				rpl::single(russian
+					? u"Поиск по справке ( / или Ctrl+F / ⌘F )"_q
+					: u"Search help ( / or Ctrl+F / ⌘F )"_q)),
+			st::boxRowPadding);
 		const auto tabs = box->addRow(
 			object_ptr<HelpTabsWidget>(
 				box.get(),
 				hints,
-				russian));
+				russian,
+				searchField));
+		searchField->changes() | rpl::on_next([=] {
+			box->scrollTo({ 0, 0 }, anim::type::instant);
+		}, box->lifetime());
 		RegisterKeyHandler(tabs, [=](not_null<QKeyEvent*> e) {
 			return tabs->handleGlobalKey(box, e);
 		});
+		RegisterPreLayerKeyHandler(tabs, [=](not_null<QKeyEvent*> e) {
+			return tabs->handleSearchEscape(e);
+		}, true);
 		box->setFocusCallback([=] {
 			tabs->setFocus(Qt::ShortcutFocusReason);
 		});

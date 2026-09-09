@@ -487,7 +487,7 @@ private:
 	[[nodiscard]] bool vimKeymapBeginTextSelection(not_null<Element*> view);
 	[[nodiscard]] bool vimKeymapHandleTextSelectionKey(
 		not_null<QKeyEvent*> e);
-	[[nodiscard]] bool vimKeymapBeginMessageSelection();
+	[[nodiscard]] bool vimKeymapBeginMessageSelection(not_null<Element*> view);
 	[[nodiscard]] bool vimKeymapHandleMessageSelectionKey(
 		not_null<QKeyEvent*> e);
 	void vimKeymapMoveMessageSelection(int direction);
@@ -602,6 +602,7 @@ private:
 		EditMessage,
 		DeleteMessage,
 		SelectMessageText,
+		SelectMessages,
 		PickMessageLinks,
 		ActivateLink,
 	};

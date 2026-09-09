@@ -4535,20 +4535,16 @@ bool HistoryInner::vimKeymapReplyToTarget() {
 }
 
 bool HistoryInner::vimKeymapHandleAction(Core::VimKeymap::Action action) {
-	if (action == Core::VimKeymap::Action::SelectMessages) {
-		return vimKeymapBeginMessageSelection();
-	}
 	return Core::VimKeymap::ActionUsesMessageHints(action)
 		&& vimKeymapBeginHints(action);
 }
 
-bool HistoryInner::vimKeymapBeginMessageSelection() {
-	const auto view = vimKeymapTargetView();
-	if (!view || !view->data()->canBeSelected() || hasSelectRestriction()) {
+bool HistoryInner::vimKeymapBeginMessageSelection(not_null<Element*> view) {
+	if (!view->data()->canBeSelected() || hasSelectRestriction()) {
 		return false;
 	}
 	const auto elements = accessibleElements();
-	const auto i = ranges::find(elements, view);
+	const auto i = ranges::find(elements, view.get());
 	if (i == end(elements)) {
 		return false;
 	}
@@ -4658,6 +4654,10 @@ void HistoryInner::vimKeymapBuildMessageHints(VimKeymapHintMode mode) {
 		const auto item = view->data();
 		if (mode == VimKeymapHintMode::SelectMessageText
 			&& view->selectedText(AllTextSelection).empty()) {
+			continue;
+		}
+		if (mode == VimKeymapHintMode::SelectMessages
+			&& !item->canBeSelected()) {
 			continue;
 		}
 		if (mode == VimKeymapHintMode::ShareMessage && !item->allowsForward()) {
@@ -5116,6 +5116,12 @@ bool HistoryInner::vimKeymapBeginHints(Core::VimKeymap::Action action) {
 	case Core::VimKeymap::Action::SelectMessageText:
 		vimKeymapBuildMessageHints(VimKeymapHintMode::SelectMessageText);
 		break;
+	case Core::VimKeymap::Action::SelectMessages:
+		if (hasSelectRestriction()) {
+			return false;
+		}
+		vimKeymapBuildMessageHints(VimKeymapHintMode::SelectMessages);
+		break;
 	case Core::VimKeymap::Action::ReplyToMessage:
 		vimKeymapBuildMessageHints(VimKeymapHintMode::ReplyToMessage);
 		break;
@@ -5129,7 +5135,6 @@ bool HistoryInner::vimKeymapBeginHints(Core::VimKeymap::Action action) {
 		vimKeymapBuildVisibleLinkHints();
 		break;
 	case Core::VimKeymap::Action::ChatPreview:
-	case Core::VimKeymap::Action::SelectMessages:
 		return false;
 	}
 	return _vimKeymapHintMode != VimKeymapHintMode::None;
@@ -5192,8 +5197,12 @@ void HistoryInner::vimKeymapTriggerHint(VimKeymapHint hint) {
 	if (mode == VimKeymapHintMode::PickMessageLinks) {
 		vimKeymapBuildLinkHints(view);
 		return;
-	} else if (mode == VimKeymapHintMode::SelectMessageText) {
-		if (vimKeymapBeginTextSelection(view)) {
+	} else if (mode == VimKeymapHintMode::SelectMessageText
+		|| mode == VimKeymapHintMode::SelectMessages) {
+		const auto selected = (mode == VimKeymapHintMode::SelectMessages)
+			? vimKeymapBeginMessageSelection(view)
+			: vimKeymapBeginTextSelection(view);
+		if (selected) {
 			vimKeymapClearHints();
 		} else {
 			_vimKeymapHintPrefix.clear();

@@ -792,7 +792,11 @@ private:
 		int delta,
 		AnimatedScroll type);
 	void vimKeymapStartScroll(int direction);
-	[[nodiscard]] bool vimKeymapBeginMessageSelection();
+	[[nodiscard]] bool vimKeymapBeginSelectionHints();
+	void vimKeymapClearSelectionHints();
+	[[nodiscard]] bool vimKeymapHandleSelectionHintKey(not_null<QKeyEvent*> e);
+	void vimKeymapPaintSelectionHints(Painter &p) const;
+	[[nodiscard]] bool vimKeymapBeginMessageSelection(not_null<Element*> view);
 	[[nodiscard]] bool vimKeymapHandleMessageSelectionKey(
 		not_null<QKeyEvent*> e);
 	void vimKeymapMoveMessageSelection(int direction);
@@ -1106,6 +1110,8 @@ private:
 	base::Timer _touchScrollTimer;
 	Ui::MiddleClickAutoscroll _middleClickAutoscroll;
 	base::Timer _vimKeymapScrollTimer;
+	std::vector<FullMsgId> _vimKeymapSelectionHints;
+	QString _vimKeymapSelectionHintPrefix;
 	rpl::lifetime _vimKeymapPhotoCopyLifetime;
 	int _vimKeymapScrollDirection = 0;
 	bool _vimKeymapScrollRepeating = false;

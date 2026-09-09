@@ -76,8 +76,7 @@ enum class Action {
 };
 
 [[nodiscard]] constexpr bool ActionUsesMessageHints(Action action) {
-	return action != Action::ChatPreview
-		&& action != Action::SelectMessages;
+	return action != Action::ChatPreview;
 }
 
 enum class TextMotion {
