@@ -256,13 +256,18 @@ QRect TextCursorRect(const Ui::Text::String &text, int width, int symbol) {
 		}
 		const auto space = std::max(1, text.style()->font->spacew);
 		const auto height = std::min(bounds.height(), text.style()->font->height);
+		const auto edge = std::clamp(line.rtl
+			? (width - line.width)
+			: (line.left + line.width), 0, width);
+		const auto cursorWidth = std::min(space, std::max(1,
+			line.rtl ? edge : (width - edge)));
 		const auto left = line.rtl
-			? (width - line.width - space)
-			: (line.left + line.width);
+			? std::max(0, edge - cursorWidth)
+			: std::min(edge, width - cursorWidth);
 		return QRect(
-			std::clamp(left, 0, std::max(0, width - space)),
+			left,
 			bounds.top() + (bounds.height() - height) / 2,
-			std::min(space, width),
+			cursorWidth,
 			height);
 	}
 	return {};
