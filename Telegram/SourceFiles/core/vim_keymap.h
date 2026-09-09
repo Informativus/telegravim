@@ -72,10 +72,12 @@ enum class Action {
 	DeleteMessage,
 	LinkHints,
 	ShareMessage,
+	SelectMessages,
 };
 
 [[nodiscard]] constexpr bool ActionUsesMessageHints(Action action) {
-	return action != Action::ChatPreview;
+	return action != Action::ChatPreview
+		&& action != Action::SelectMessages;
 }
 
 enum class TextMotion {

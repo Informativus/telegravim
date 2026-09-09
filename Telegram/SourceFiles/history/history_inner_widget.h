@@ -487,6 +487,10 @@ private:
 	[[nodiscard]] bool vimKeymapBeginTextSelection(not_null<Element*> view);
 	[[nodiscard]] bool vimKeymapHandleTextSelectionKey(
 		not_null<QKeyEvent*> e);
+	[[nodiscard]] bool vimKeymapBeginMessageSelection();
+	[[nodiscard]] bool vimKeymapHandleMessageSelectionKey(
+		not_null<QKeyEvent*> e);
+	void vimKeymapMoveMessageSelection(int direction);
 	[[nodiscard]] TextSelection getSelectedTextRange(
 		not_null<HistoryItem*> item) const;
 	[[nodiscard]] MessageSelection getSelectedTextSelection(

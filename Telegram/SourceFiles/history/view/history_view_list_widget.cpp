@@ -49,6 +49,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/core_settings.h"
 #include "core/phone_click_handler.h"
 #include "core/vim_keymap.h"
+#include "core/vim_keymap_bindings.h"
 #include "apiwrap.h"
 #include "api/api_who_reacted.h"
 #include "api/api_views.h"
@@ -627,6 +628,8 @@ ListWidget::ListWidget(
 			return false;
 		}
 		switch (action) {
+		case Core::VimKeymap::Action::SelectMessages:
+			return vimKeymapBeginMessageSelection();
 		case Core::VimKeymap::Action::CopyMessage:
 			return vimKeymapCopyTarget();
 		case Core::VimKeymap::Action::ShareMessage:
@@ -642,6 +645,10 @@ ListWidget::ListWidget(
 		}
 		return false;
 	});
+	Core::VimKeymap::RegisterPreLayerKeyHandler(this, [=](
+			not_null<QKeyEvent*> e) {
+		return vimKeymapHandleMessageSelectionKey(e);
+	}, true);
 	_session->data().viewResizeRequest(
 	) | rpl::on_next([this](auto view) {
 		if (view->delegate() == this) {
@@ -3631,6 +3638,99 @@ Element *ListWidget::vimKeymapTargetView() const {
 	return findItemByY(y).get();
 }
 
+bool ListWidget::vimKeymapBeginMessageSelection() {
+	const auto view = vimKeymapTargetView();
+	if (!view
+		|| !_selectEnabled
+		|| !view->data()->canBeSelected()
+		|| hasSelectRestriction()) {
+		return false;
+	}
+	const auto elements = accessibleElements();
+	const auto i = ranges::find(elements, view);
+	if (i == end(elements)) {
+		return false;
+	}
+	const auto elementIndex = int(i - begin(elements));
+	const auto barIndex = accessibilityUnreadBarIndex();
+	const auto index = elementIndex
+		+ ((barIndex >= 0 && elementIndex >= barIndex) ? 1 : 0);
+	vimKeymapStopScroll();
+	cancelSelection();
+	changeAccessibilitySelection(index, SelectAction::Select);
+	applyAccessibilityFocus(index, false);
+	_accessibilitySelectionAnchor = view->data();
+	return true;
+}
+
+bool ListWidget::vimKeymapHandleMessageSelectionKey(
+		not_null<QKeyEvent*> e) {
+	using namespace Core::VimKeymap;
+	if (!NormalMode()
+		|| !isVisible()
+		|| !window()->isActiveWindow()
+		|| !hasSelectedItems()) {
+		return false;
+	}
+	const auto navigation = NavigationKey(e);
+	const auto action = ActionKey(e);
+	const auto cancel = Bindings::IsPlainEscape(e);
+	const auto forward = Bindings::IsSelectionForward(e);
+	const auto remove = (action == Action::DeleteMessage);
+	const auto copy = (action == Action::CopyMessage);
+	if (!navigation && !cancel && !forward && !remove && !copy) {
+		return false;
+	} else if (e->type() == QEvent::ShortcutOverride) {
+		return true;
+	} else if (navigation) {
+		vimKeymapMoveMessageSelection((*navigation == Qt::Key_Down) ? 1 : -1);
+	} else if (cancel) {
+		cancelSelection();
+	} else if (!e->isAutoRepeat()) {
+		if (forward) {
+			ConfirmForwardSelectedItems(this);
+		} else if (remove) {
+			ConfirmDeleteSelectedItems(this);
+		} else if (copy && !showCopyRestrictionForSelected()) {
+			copySelectedText();
+			cancelSelection();
+		}
+	}
+	return true;
+}
+
+void ListWidget::vimKeymapMoveMessageSelection(int direction) {
+	const auto elements = accessibleElements();
+	const auto i = ranges::find_if(elements, [&](auto view) {
+		return view->data() == _accessibilityFocusedItem;
+	});
+	if (i == end(elements)) {
+		cancelSelection();
+		return;
+	}
+	const auto oldElementIndex = int(i - begin(elements));
+	const auto barIndex = accessibilityUnreadBarIndex();
+	const auto indexOf = [&](int index) {
+		return index + ((barIndex >= 0 && index >= barIndex) ? 1 : 0);
+	};
+	for (auto index = oldElementIndex + direction
+		; index >= 0 && index < int(elements.size())
+		; index += direction) {
+		const auto item = elements[index]->data();
+		if (!item->canBeSelected()) {
+			continue;
+		}
+		extendAccessibilitySelection(indexOf(oldElementIndex), indexOf(index));
+		if (!isSelectedAsGroup(_selected, item)) {
+			return;
+		}
+		const auto anchor = _accessibilitySelectionAnchor;
+		applyAccessibilityFocus(indexOf(index), false);
+		_accessibilitySelectionAnchor = anchor;
+		return;
+	}
+}
+
 bool ListWidget::vimKeymapCopyTarget() {
 	_vimKeymapPhotoCopyLifetime.destroy();
 	if (hasSelectedText() || hasSelectedItems()) {
@@ -3843,6 +3943,13 @@ void ListWidget::keyPressEvent(QKeyEvent *e) {
 		return;
 	} else if (const auto vimAction = Core::VimKeymap::ActionKey(e)) {
 		switch (*vimAction) {
+		case Core::VimKeymap::Action::SelectMessages:
+			if (vimKeymapBeginMessageSelection()) {
+				e->accept();
+			} else {
+				e->ignore();
+			}
+			return;
 		case Core::VimKeymap::Action::CopyMessage:
 			if (vimKeymapCopyTarget()) {
 				e->accept();
@@ -6270,6 +6377,7 @@ void ListWidget::overrideChatMode(std::optional<ElementChatMode> mode) {
 
 ListWidget::~ListWidget() {
 	Core::VimKeymap::UnregisterActionHandler(this);
+	Core::VimKeymap::UnregisterPreLayerKeyHandler(this);
 
 	// Stop listening to session events before any member is destroyed:
 	// ~TranslateTracker reverts translations still in flight, which fires

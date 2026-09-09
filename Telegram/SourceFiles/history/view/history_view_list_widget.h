@@ -792,6 +792,10 @@ private:
 		int delta,
 		AnimatedScroll type);
 	void vimKeymapStartScroll(int direction);
+	[[nodiscard]] bool vimKeymapBeginMessageSelection();
+	[[nodiscard]] bool vimKeymapHandleMessageSelectionKey(
+		not_null<QKeyEvent*> e);
+	void vimKeymapMoveMessageSelection(int direction);
 	void vimKeymapStopScroll();
 	void vimKeymapScrollTick();
 	bool vimKeymapScrollBy(int direction, int delta, bool animated = false);

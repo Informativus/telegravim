@@ -1040,6 +1040,8 @@ void ShowHelpBox() {
 				+ u" - подсказки для редактирования своих сообщений\n"_q;
 			result += deleteMessage
 				+ u" - подсказки для удаления сообщений\n"_q;
+			result += u"s/ы - выделить сообщения; j/k - расширить или сократить диапазон\n"_q;
+			result += u"В выделении: d - удалить с подтверждением, f - переслать, y - копировать, Esc - выйти\n"_q;
 			result += focus
 				+ u" - подсказки для медиа, ссылок, голосований, ответов и пересланных авторов\n"_q;
 			result += openChats + u" - подсказки для открытия чатов\n"_q;
@@ -1104,6 +1106,8 @@ void ShowHelpBox() {
 			result += reply + u" - show reply message hints\n"_q;
 			result += edit + u" - show edit message hints\n"_q;
 			result += deleteMessage + u" - show delete message hints\n"_q;
+			result += u"s - select messages; j/k - grow or shrink the range\n"_q;
+			result += u"While selected: d - confirm deletion, f - forward, y - copy, Esc - cancel\n"_q;
 			result += focus
 				+ u" - show media, link, poll, reply and forwarded-source hints\n"_q;
 			result += openChats + u" - show chat open hints\n"_q;
@@ -1817,8 +1821,8 @@ std::optional<Action> ActionKey(not_null<QKeyEvent*> e) {
 		return Action::DeleteMessage;
 	} else if (MatchesBindings(VimKeymapKeyFocusHintsOption, e, true)) {
 		return Action::LinkHints;
-	} else if (Bindings::IsMessageShare(e)) {
-		return Action::ShareMessage;
+	} else if (Bindings::IsMessageSelection(e)) {
+		return Action::SelectMessages;
 	}
 	return std::nullopt;
 }
