@@ -58,6 +58,21 @@ include(cmake/target_prepare_qrc.cmake)
 include(cmake/options.cmake)
 include(cmake/external/qt/package.cmake)
 
+if (WIN32 AND NOT DESKTOP_APP_USE_PACKAGED AND TARGET WrapWebP::WrapWebP)
+    if (build_win64)
+        set(webp_arch x64)
+    elseif (build_winarm)
+        set(webp_arch ARM64)
+    else()
+        set(webp_arch x86)
+    endif()
+    set(webp_lib_dir "${libs_loc}/libwebp/out/release-static/${webp_arch}/lib")
+    set_property(TARGET WrapWebP::WrapWebP PROPERTY INTERFACE_LINK_LIBRARIES
+        "${webp_lib_dir}/webp.lib"
+        "${webp_lib_dir}/webpdemux.lib"
+        "${webp_lib_dir}/webpmux.lib")
+endif()
+
 set(desktop_app_skip_libs
     glibmm
     variant
