@@ -78,6 +78,13 @@ PRIVATE
     desktop-app::external_qt
 )
 
+if (NOT APPLE AND TARGET Qt${QT_VERSION_MAJOR}::QOffscreenIntegrationPlugin_init)
+    target_link_libraries(test_vim_keymap PRIVATE
+        Qt${QT_VERSION_MAJOR}::QOffscreenIntegrationPlugin)
+    target_sources(test_vim_keymap PRIVATE
+        $<TARGET_OBJECTS:Qt${QT_VERSION_MAJOR}::QOffscreenIntegrationPlugin_init>)
+endif()
+
 set_target_properties(
     test_vim_keymap
     PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})

@@ -348,10 +348,15 @@ std::optional<MessageSelectionFlatEndpoint> KeyboardTextSelection::moveCursor(
 	} else if (key == Qt::Key_End) {
 		wanted = *maxOffset - 1;
 	} else if (byWord) {
-		const auto separator = [&](int symbol) {
+		const auto at = [&](int symbol) {
 			const auto one = view->selectedText(
 				TextSelection(uint16(symbol), uint16(symbol + 1))).rich.text;
-			return one.isEmpty() || Ui::Text::IsWordSeparator(one[0]);
+			return one.isEmpty()
+				? QChar(QChar::ObjectReplacementCharacter)
+				: one[0];
+		};
+		const auto separator = [&](int symbol) {
+			return Ui::Text::IsWordSeparator(at, *maxOffset, symbol);
 		};
 		auto symbol = std::clamp(position, 0, *maxOffset - 1);
 		if (forward) {

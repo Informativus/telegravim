@@ -1,0 +1,72 @@
+name: Linux release package
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Source commit or ref (empty uses the workflow ref)
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      BUILD_IMAGE: ghcr.io/telegramdesktop/tdesktop/centos_env@sha256:e2fe8063c7cddf0c0bd039032d0be7b69e4f01fd75e3b637f00d9df8d7e8a0ea
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          submodules: recursive
+          ref: ${{ inputs.source_ref || github.ref }}
+      - name: Make space for the build image
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: true
+      - name: Restore compiler cache
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        with:
+          path: .local/build-cache/ccache
+          key: linux-x86_64-ccache-v1-${{ github.sha }}
+          restore-keys: linux-x86_64-ccache-v1-
+      - name: Build Release and native tests
+        run: |
+          mkdir -p .local/build-cache/ccache
+          docker pull "$BUILD_IMAGE"
+          docker run --rm --user "$(id -u):$(id -g)" \
+            --volume "$PWD:/usr/src/tdesktop" \
+            --volume "$PWD/.local/build-cache/ccache:/var/cache/ccache" \
+            --env CCACHE_MAXSIZE=5G --env CCACHE_COMPILERCHECK=content \
+            --env CONFIG=Release --env CMAKE_BUILD_PARALLEL_LEVEL=3 \
+            "$BUILD_IMAGE" \
+            /usr/src/tdesktop/Telegram/build/docker/centos_env/build.sh \
+            -D CMAKE_CONFIGURATION_TYPES=Release \
+            -D TDESKTOP_API_TEST=ON \
+            -D DESKTOP_APP_TEST_APPS=ON \
+            -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON \
+            -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
+      - name: Test and package
+        run: |
+          QT_QPA_PLATFORM=offscreen out/Release/test_vim_keymap
+          strip --strip-unneeded out/Release/Telegram
+          mkdir -p artifact/Telegravim
+          cp out/Release/Telegram artifact/Telegravim/
+          cp LICENSE Telegram/Resources/dictionaries/LICENSE_*.txt artifact/Telegravim/
+          python3 Telegram/build/package_info.py artifact/Telegravim linux-x86_64
+          file artifact/Telegravim/Telegram
+          ldd artifact/Telegravim/Telegram
+          tar -C artifact -cJf artifact/Telegravim-linux-x86_64.tar.xz Telegravim
+          cd artifact
+          sha256sum Telegravim-linux-x86_64.tar.xz > SHA256-linux-x86_64.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Telegravim-linux-x86_64
+          path: |
+            artifact/Telegravim-linux-x86_64.tar.xz
+            artifact/SHA256-linux-x86_64.txt
+          retention-days: 14
+          if-no-files-found: error

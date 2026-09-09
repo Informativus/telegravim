@@ -1,0 +1,27 @@
+{
+	admin off
+	https_port 8443
+	auto_https disable_redirects
+	servers {
+		protocols h1 h2
+	}
+}
+
+{$NOTIFY_DOMAIN} {
+	tls {
+		issuer acme {
+			dir https://acme-v02.api.letsencrypt.org/directory
+			disable_http_challenge
+		}
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		-Server
+	}
+	request_body {
+		max_size 64KB
+	}
+	reverse_proxy ntfy:8080
+}

@@ -44,6 +44,10 @@ See the [branch and release workflow](docs/branch-flow.md) for commands, beta
 publication, upstream updates, and the local backup remote, and
 [Contributing](.github/CONTRIBUTING.md) for review requirements.
 
+[Upstream release notifications](docs/upstream-notifications.md) describe the
+notification-only server watcher. Compatibility checks and macOS builds remain
+manual and local; the watcher does not run an AI agent or install updates.
+
 ## Supported systems
 
 The latest version is available for

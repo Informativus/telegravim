@@ -68,10 +68,12 @@ enum class Action {
 	ChatPreview,
 	SelectMessageText,
 	ReplyToMessage,
+	ReactToMessage,
 	EditMessage,
 	DeleteMessage,
 	LinkHints,
 	ShareMessage,
+	SelectMessages,
 };
 
 [[nodiscard]] constexpr bool ActionUsesMessageHints(Action action) {
@@ -128,6 +130,7 @@ void SetNormalMode(bool enabled);
 	not_null<QKeyEvent*> e);
 void RegisterActionHandler(not_null<QObject*> owner, Fn<bool(Action)> handler);
 void UnregisterActionHandler(not_null<QObject*> owner);
+bool InvokeAction(Action action);
 void RegisterKeyHandler(
 	not_null<QObject*> owner,
 	Fn<bool(not_null<QKeyEvent*>)> handler);
@@ -165,6 +168,7 @@ void TraceKey(not_null<QKeyEvent*> e, const QString &status);
 [[nodiscard]] bool GlobalSearchKey(not_null<QKeyEvent*> e);
 [[nodiscard]] bool UndoKey(not_null<QKeyEvent*> e);
 [[nodiscard]] bool RedoKey(not_null<QKeyEvent*> e);
+[[nodiscard]] bool SelectMessageTextKey(not_null<QKeyEvent*> e);
 [[nodiscard]] std::optional<Qt::Key> NavigationKey(not_null<QKeyEvent*> e);
 [[nodiscard]] std::optional<Action> ActionKey(not_null<QKeyEvent*> e);
 [[nodiscard]] std::optional<TextMotion> TextMotionKey(

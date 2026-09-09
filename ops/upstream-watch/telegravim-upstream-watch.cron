@@ -1,0 +1,3 @@
+# Install in the dedicated server user's crontab, preserving existing entries.
+# Runs at 00:17, 06:17, 12:17, 18:17 in the server's timezone.
+17 */6 * * * /usr/bin/timeout --kill-after=5s 90s /usr/bin/python3 "$HOME/.local/lib/telegravim-upstream-watch/upstream_watch.py" --config "$HOME/.config/telegravim-upstream-watch/config.json" 2>&1 | /usr/bin/logger -t telegravim-upstream-watch
