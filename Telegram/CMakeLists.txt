@@ -526,6 +526,7 @@ PRIVATE
     chat_helpers/spellchecker_bundled.h
     chat_helpers/spellchecker_menu.cpp
     chat_helpers/spellchecker_menu.h
+    chat_helpers/spellchecker_russian.cpp
     chat_helpers/stickers_dice_pack.cpp
     chat_helpers/stickers_dice_pack.h
     chat_helpers/stickers_emoji_pack.cpp
