@@ -19,6 +19,16 @@ jobs:
           persist-credentials: false
           submodules: recursive
           path: TBuild/tdesktop
+      - name: Install ATL for dependency tools
+        run: |
+          $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer"
+          $installation = & "$installer\vswhere.exe" -latest -version '[17.0,18.0)' -property installationPath
+          if (-not $installation) { throw 'Visual Studio 2022 was not found' }
+          $process = Start-Process -FilePath "$installer\setup.exe" -Wait -PassThru -ArgumentList `
+            'modify', '--installPath', "`"$installation`"", `
+            '--add', 'Microsoft.VisualStudio.Component.VC.ATL', `
+            '--quiet', '--norestart', '--nocache'
+          if ($process.ExitCode -notin 0, 3010) { throw "ATL installation failed: $($process.ExitCode)" }
       - name: Initialize x64 compiler
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
         with:

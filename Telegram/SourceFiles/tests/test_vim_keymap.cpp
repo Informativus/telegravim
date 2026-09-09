@@ -122,6 +122,9 @@ public:
 	QString emojiCacheFolder() override {
 		return {};
 	}
+	QString fontsCacheFolder() override {
+		return {};
+	}
 	QString openglCheckFilePath() override {
 		return {};
 	}
