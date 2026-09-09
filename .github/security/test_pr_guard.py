@@ -330,6 +330,25 @@ class ReviewedTestFindingTests(unittest.TestCase):
             source.unlink()
             self.assertFalse(guard.reviewed_finding({}, result, root, reviews))
 
+    def test_reviewed_header_still_requires_exact_rule_and_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, result, reviews = self.fixture(root)
+            path = "Telegram/SourceFiles/storage/localimageloader.h"
+            target = root / path
+            target.parent.mkdir(parents=True)
+            source.rename(target)
+            result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"] = path
+            reviews[0]["path"] = path
+            self.assertTrue(guard.reviewed_finding({}, result, root, reviews))
+            self.assertFalse(guard.reviewed_finding({}, result, root, []))
+            unknown = result | {"ruleId": "cpp/overflow-buffer"}
+            unknown_reviews = copy.deepcopy(reviews)
+            unknown_reviews[0]["findings"][0]["rule"] = "cpp/overflow-buffer"
+            self.assertFalse(guard.reviewed_finding({}, unknown, root, unknown_reviews))
+            target.write_text("int example() {}\n")
+            self.assertFalse(guard.reviewed_finding({}, result, root, reviews))
+
     def test_production_paths_traversal_and_symlinks_cannot_be_reviewed(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
