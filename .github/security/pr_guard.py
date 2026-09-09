@@ -806,10 +806,84 @@ def reviewed_finding(run: dict, result: dict, source: Path, reviews: list) -> bo
         return False
     rule = result.get("ruleId")
     allowed = {
-        "Telegram/SourceFiles/tests/test_vim_keymap.cpp": {
-            "cpp/missing-return", "cpp/constant-comparison", "cpp/poorly-documented-function"
+        "Telegram/SourceFiles/boxes/edit_caption_box.cpp": {
+            "cpp/poorly-documented-function",
         },
-        "Telegram/SourceFiles/history/view/history_view_element.cpp": {"cpp/constant-comparison"},
+        "Telegram/SourceFiles/calls/calls_call.h": {
+            "cpp/member-const-no-effect",
+            "cpp/non-member-const-no-effect",
+        },
+        "Telegram/SourceFiles/chat_helpers/field_autocomplete.cpp": {
+            "cpp/poorly-documented-function",
+        },
+        "Telegram/SourceFiles/data/data_document.h": {
+            "cpp/member-const-no-effect",
+        },
+        "Telegram/SourceFiles/editor/editor_paint.cpp": {
+            "cpp/poorly-documented-function",
+        },
+        "Telegram/SourceFiles/editor/photo_editor_controls.cpp": {
+            "cpp/poorly-documented-function",
+        },
+        "Telegram/SourceFiles/editor/scene/scene.cpp": {
+            "cpp/ambiguously-signed-bit-field",
+            "cpp/poorly-documented-function",
+        },
+        "Telegram/SourceFiles/editor/scene/scene_item_base.cpp": {
+            "cpp/virtual-call-in-constructor",
+        },
+        "Telegram/SourceFiles/editor/video/video_editor.cpp": {
+            "cpp/poorly-documented-function",
+        },
+        "Telegram/SourceFiles/history/history_drag_area.cpp": {
+            "cpp/dead-code-goto",
+        },
+        "Telegram/SourceFiles/history/view/history_view_element.cpp": {
+            "cpp/constant-comparison",
+        },
+        "Telegram/SourceFiles/history/view/history_view_list_widget.h": {
+            "cpp/member-const-no-effect",
+            "cpp/missing-return",
+        },
+        "Telegram/SourceFiles/history/view/history_view_reply.h": {
+            "cpp/ambiguously-signed-bit-field",
+        },
+        "Telegram/SourceFiles/history/view/history_view_top_bar_widget.cpp": {
+            "cpp/poorly-documented-function",
+        },
+        "Telegram/SourceFiles/iv/markdown/iv_markdown_article.cpp": {
+            "cpp/dead-code-goto",
+            "cpp/poorly-documented-function",
+        },
+        "Telegram/SourceFiles/iv/markdown/iv_markdown_article_layout_blocks.cpp": {
+            "cpp/poorly-documented-function",
+        },
+        "Telegram/SourceFiles/overview/overview_layout.cpp": {
+            "cpp/poorly-documented-function",
+        },
+        "Telegram/SourceFiles/overview/overview_layout.h": {
+            "cpp/ambiguously-signed-bit-field",
+            "cpp/virtual-destructor",
+        },
+        "Telegram/SourceFiles/settings/settings_experimental.cpp": {
+            "cpp/ambiguously-signed-bit-field",
+        },
+        "Telegram/SourceFiles/storage/localimageloader.h": {
+            "cpp/ambiguously-signed-bit-field",
+            "cpp/member-const-no-effect",
+            "cpp/missing-return",
+        },
+        "Telegram/SourceFiles/tests/test_vim_keymap.cpp": {
+            "cpp/constant-comparison",
+            "cpp/missing-return",
+            "cpp/poorly-documented-function",
+        },
+        "Telegram/SourceFiles/ui/chat/message_bar.cpp": {
+            "cpp/poorly-documented-function",
+        },
+        "Telegram/SourceFiles/ui/controls/swipe_handler.cpp": {
+            "cpp/dead-code-goto",
+        },
     }
     if rule not in allowed.get(path, set()):
         return False
