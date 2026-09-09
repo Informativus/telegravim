@@ -205,8 +205,8 @@ expect(history/history_inner_widget.cpp
     "if [(]!motion && !followLink[)] [^{]*[{][\n\t ]*return textModeActive;"
     "Unsupported keys must be consumed while Vim text mode is active")
 expect(history/history_inner_widget.cpp
-    "if [(]copied[)] [^{]*[{][\n\t ]*if [(]!textModeActive[)] [^{]*[{][\n\t ]*clearTextSelection"
-    "Copying must preserve the Vim cursor and selection")
+    "if [(]copied[)] [^{]*[{][\n\t ]*if [(]yank \\|\\| !textModeActive[)] [^{]*[{][\n\t ]*clearSelected[(]true[)]"
+    "Successful y must clear both message text selection and cursor")
 expect(history/history_inner_widget.cpp
     "TextMotion::TextStart:[\n\t ]*case Core::VimKeymap::TextMotion::LineStart:[\n\t ]*key = Qt::Key_Home"
     "gg must use selected-message text coordinates")
