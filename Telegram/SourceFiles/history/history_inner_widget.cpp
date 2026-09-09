@@ -4686,17 +4686,67 @@ void HistoryInner::vimKeymapBuildMessageHints(VimKeymapHintMode mode) {
 		}
 		views.push_back(view);
 	}
-	auto index = 0;
-	const auto total = int(views.size());
+	const auto visibleArea = QRect(
+		0,
+		_visibleAreaTop,
+		width(),
+		_visibleAreaBottom - _visibleAreaTop);
 	for (const auto view : views) {
+		if (mode == VimKeymapHintMode::CopyMessage) {
+			const auto grouped
+				= dynamic_cast<HistoryView::GroupedMedia*>(view->media());
+			auto addedPhotos = false;
+			for (auto i = 0
+				; grouped && i != HistoryView::GroupedMedia::kMaxSize
+				; ++i) {
+				const auto rect = grouped->groupItemRect(i);
+				if (rect.isEmpty()) {
+					break;
+				}
+				const auto part = grouped->partMediaAt(rect.center());
+				const auto photo = part ? part->getPhoto() : nullptr;
+				if (!photo) {
+					continue;
+				}
+				const auto state = grouped->textState(
+					rect.center(),
+					StateRequest());
+				const auto item = session().data().message(state.itemId);
+				const auto media = item ? item->media() : nullptr;
+				if (!media || media->photo() != photo) {
+					continue;
+				}
+				addedPhotos = true;
+				const auto target = Core::VimKeymap::GroupedMediaHintRect(
+					rect,
+					view->innerGeometry().topLeft(),
+					itemTop(view)).intersected(visibleArea);
+				if (target.width() < st::vimHintMinVisibleHeight
+					|| target.height() < st::vimHintMinVisibleHeight) {
+					continue;
+				}
+				const auto badgePoint = target.topLeft() + QPoint(
+					st::vimHintTargetInset,
+					st::vimHintTargetInset);
+				_vimKeymapHints.push_back({
+					.itemId = item->fullId(),
+					.badge = QRect(badgePoint, badgePoint),
+					.target = target,
+					.photo = photo,
+				});
+			}
+			if (addedPhotos) {
+				continue;
+			}
+		}
 		_vimKeymapHints.push_back({
-			.label = Core::VimKeymap::HintLabel(index++, total),
 			.itemId = view->data()->fullId(),
 		});
 	}
 	if (_vimKeymapHints.empty()) {
 		_vimKeymapHintMode = VimKeymapHintMode::None;
 	}
+	vimKeymapAssignHintLabels();
 	update();
 }
 
@@ -5157,6 +5207,14 @@ void HistoryInner::vimKeymapTriggerHint(VimKeymapHint hint) {
 		return;
 	}
 	const auto mode = _vimKeymapHintMode;
+	if (mode == VimKeymapHintMode::CopyMessage && hint.photo) {
+		const auto media = item ? item->media() : nullptr;
+		if (media && media->photo() == hint.photo) {
+			vimKeymapCopyItem(item);
+		}
+		vimKeymapClearHints();
+		return;
+	}
 	if (mode == VimKeymapHintMode::ActivateLink) {
 		if (hint.widget) {
 			const auto target = hint.widget;
@@ -5337,7 +5395,9 @@ void HistoryInner::vimKeymapPaintHints(Painter &p) const {
 		if (!hint.itemId) {
 			continue;
 		}
-		if (_vimKeymapHintMode == VimKeymapHintMode::ActivateLink) {
+		if (_vimKeymapHintMode == VimKeymapHintMode::ActivateLink
+			|| (_vimKeymapHintMode == VimKeymapHintMode::CopyMessage
+				&& hint.photo)) {
 			badges.push_back({ hint.label, hint.badge.topLeft(), hint.target });
 			continue;
 		}
