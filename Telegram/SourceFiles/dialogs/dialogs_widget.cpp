@@ -762,12 +762,12 @@ Widget::Widget(
 		if (vimKeymapSearchOpen()
 			&& Core::VimKeymap::SelectMessageTextKey(e)) {
 			if (e->type() == QEvent::KeyPress && !e->isAutoRepeat()) {
+				const auto chat = controller()->activeChatEntryCurrent().key;
 				cancelSearch({
 					.forceFullCancel = true,
 					.preserveShownChat = true,
 				});
 				vimKeymapReturnToViewMode();
-				const auto chat = controller()->activeChatEntryCurrent().key;
 				crl::on_main(this, [=] {
 					if (isActiveWindow()
 						&& chat
