@@ -115,6 +115,7 @@ public:
 	void setExpandDown(bool expandDown);
 	void initGeometry(int innerTop);
 	void beforeDestroy();
+	void startKeyboardNavigation();
 
 	void setOpaqueHeightExpand(int expand, Fn<void(int)> apply);
 
@@ -165,6 +166,7 @@ private:
 	void leaveEventHook(QEvent *e) override;
 	void mousePressEvent(QMouseEvent *e) override;
 	void mouseReleaseEvent(QMouseEvent *e) override;
+	bool handleKeyboardNavigation(not_null<QKeyEvent*> e);
 
 	void paintAppearing(QPainter &p);
 	void paintCollapsed(QPainter &p);
@@ -243,6 +245,9 @@ private:
 	int _skipx = 0;
 	int _skipy = 0;
 	int _pressed = -1;
+	int _keyboardSelected = -1;
+	bool _keyboardNavigation = false;
+	QPoint _keyboardMousePosition;
 	crl::time _shownAt = 0;
 	bool _useTransparency = false;
 	bool _appearing = false;
@@ -263,6 +268,13 @@ enum class AttachSelectorResult {
 	Failed,
 	Attached,
 };
+
+[[nodiscard]] base::unique_qptr<Ui::PopupMenu> ShowKeyboardSelector(
+	not_null<QWidget*> parent,
+	not_null<Window::SessionController*> controller,
+	QPoint position,
+	not_null<HistoryItem*> item,
+	Fn<void(ChosenReaction)> chosen);
 
 #if 0 // not ready
 AttachSelectorResult MakeJustSelectorMenu(

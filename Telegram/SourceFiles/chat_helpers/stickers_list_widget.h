@@ -435,6 +435,8 @@ private:
 	void toggleSearchLoading(bool loading);
 
 	void showPreview();
+	[[nodiscard]] bool vimKeymapHandlePreviewKey(not_null<QKeyEvent*> e);
+	void vimKeymapHidePreview();
 
 	Ui::MessageSendingAnimationFrom messageSentAnimationInfo(
 		int section,

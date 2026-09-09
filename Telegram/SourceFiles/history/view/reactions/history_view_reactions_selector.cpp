@@ -7,6 +7,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/reactions/history_view_reactions_selector.h"
 
+#include "core/vim_keymap.h"
+#include "core/vim_keymap_bindings.h"
+#include "core/vim_keymap_widgets.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/scroll_area.h"
 #include "ui/widgets/popup_menu.h"
@@ -295,6 +298,9 @@ Selector::Selector(
 , _skipx(countSkipLeft())
 , _skipy((st::reactStripHeight - st::reactStripSize) / 2) {
 	setMouseTracking(true);
+	Core::VimKeymap::RegisterKeyHandler(this, [=](not_null<QKeyEvent*> e) {
+		return isVisible() && handleKeyboardNavigation(e);
+	});
 
 	if (_about) {
 		_about->setClickHandlerFilter([=](const auto &...) {
@@ -523,6 +529,7 @@ void Selector::initGeometry(int innerTop) {
 }
 
 void Selector::beforeDestroy() {
+	_keyboardNavigation = false;
 	if (_list) {
 		_list->beforeHiding();
 	}
@@ -685,6 +692,13 @@ void Selector::paintCollapsed(QPainter &p) {
 		_inner,
 		1.,
 		false);
+	if (_keyboardNavigation && _keyboardSelected >= 0) {
+		Core::VimKeymap::PaintKeyboardStickerFrame(p, QRect(
+			_inner.topLeft() + QPoint(
+				_skipx + _keyboardSelected * _size,
+				_skipy - skipYBubbleUpShift()),
+			QSize(_size, _size)));
+	}
 }
 
 void Selector::paintExpanding(Painter &p, float64 progress) {
@@ -849,6 +863,9 @@ void Selector::finishExpand() {
 	}
 	_scroll->show();
 	_list->afterShown();
+	if (_keyboardNavigation && _list->vimKeymapMoveSelection(0, 0)) {
+		_list->setFocus();
+	}
 	_show->session().api().updateCustomEmoji();
 }
 
@@ -886,6 +903,10 @@ void Selector::mouseMoveEvent(QMouseEvent *e) {
 	if (!_strip) {
 		return;
 	}
+	if (_keyboardNavigation && e->globalPos() == _keyboardMousePosition) {
+		return;
+	}
+	_keyboardSelected = -1;
 	setSelected(lookupSelectedIndex(e->pos()));
 }
 
@@ -926,10 +947,92 @@ void Selector::setSelected(int index) {
 }
 
 void Selector::leaveEventHook(QEvent *e) {
-	if (!_strip) {
+	if (!_strip || (_keyboardNavigation && _keyboardSelected >= 0)) {
 		return;
 	}
 	setSelected(-1);
+}
+
+void Selector::startKeyboardNavigation() {
+	_keyboardNavigation = true;
+	_keyboardMousePosition = QCursor::pos();
+	setFocusPolicy(Qt::StrongFocus);
+	setFocus();
+	_keyboardSelected = 0;
+	setSelected(0);
+	if (_reactions.customAllowed || recentCount() > _columns) {
+		expand();
+	}
+	update();
+}
+
+bool Selector::handleKeyboardNavigation(not_null<QKeyEvent*> e) {
+	using namespace Core::VimKeymap::Bindings;
+	if (_list && _expandFinished && Matches(u"Ctrl+F, Ctrl+\u0430"_q, e)) {
+		if (!_list->vimKeymapFocusSearch()) {
+			return false;
+		}
+		_keyboardNavigation = true;
+		return true;
+	} else if (!_keyboardNavigation) {
+		return false;
+	}
+	const auto tab = TabNavigationDelta(e);
+	if (tab && _list && _expandFinished) {
+		if (Core::VimKeymap::KeyboardScopeHasTextInput(this, nullptr)) {
+			_list->setFocus(tab > 0
+				? Qt::TabFocusReason
+				: Qt::BacktabFocusReason);
+			return _list->vimKeymapMoveSelection(0, 0) || _list->hasFocus();
+		} else if (_list->vimKeymapFocusSearch()) {
+			return true;
+		}
+	}
+	if (Core::VimKeymap::KeyboardScopeHasTextInput(this, nullptr)) {
+		return false;
+	}
+	if (!tab && CleanModifiers(e) != Qt::NoModifier) {
+		return false;
+	}
+	const auto dx = tab ? tab : (e->key() == Qt::Key_Left
+			|| KeyIs(e, Qt::Key_H, u"h"_q, u"р"_q)) ? -1
+		: (e->key() == Qt::Key_Right
+			|| KeyIs(e, Qt::Key_L, u"l"_q, u"д"_q)) ? 1 : 0;
+	const auto dy = (e->key() == Qt::Key_Up
+			|| KeyIs(e, Qt::Key_K, u"k"_q, u"л"_q)) ? -1
+		: (e->key() == Qt::Key_Down
+			|| KeyIs(e, Qt::Key_J, u"j"_q, u"о"_q)) ? 1 : 0;
+	const auto enter = e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter;
+	if (!dx && !dy && !enter) {
+		return false;
+	} else if (_expandScheduled && !_expandFinished) {
+		return true;
+	} else if (enter && e->isAutoRepeat()) {
+		return true;
+	}
+	if (_list && _expandFinished) {
+		return enter
+			? _list->vimKeymapActivateSelection()
+			: _list->vimKeymapMoveSelection(dx, dy);
+	} else if (enter) {
+		const auto selected = _strip->selected();
+		if (selected == Strip::AddedButton::Expand) {
+			expand();
+		} else if (const auto id = std::get_if<Data::ReactionId>(&selected)) {
+			if (!id->empty()) {
+				_chosen.fire(lookupChosen(*id));
+			}
+		}
+	} else {
+		_keyboardMousePosition = QCursor::pos();
+		_keyboardSelected = std::clamp(
+			_keyboardSelected + (dx ? dx : dy),
+			0,
+			_strip->count() - 1);
+		setSelected(_keyboardSelected);
+		update();
+	}
+	return true;
 }
 
 void Selector::mousePressEvent(QMouseEvent *e) {
@@ -1430,6 +1533,57 @@ AttachSelectorResult MakeJustSelectorMenu(
 	return AttachSelectorResult::Attached;
 }
 #endif
+
+base::unique_qptr<Ui::PopupMenu> ShowKeyboardSelector(
+		not_null<QWidget*> parent,
+		not_null<Window::SessionController*> controller,
+		QPoint position,
+		not_null<HistoryItem*> item,
+		Fn<void(ChosenReaction)> chosen) {
+	if (!item->canReact()) {
+		return nullptr;
+	}
+	auto menu = base::make_unique_q<Ui::PopupMenu>(parent, st::popupMenuWithIcons);
+	menu->addAction(tr::lng_close(tr::now), [] {});
+	const auto result = AttachSelectorToMenu(
+		menu.get(),
+		position,
+		st::reactPanelEmojiPan,
+		controller->uiShow(),
+		Data::LookupPossibleReactions(item, true),
+		ItemReactionsAbout(item));
+	if (!result) {
+		return nullptr;
+	}
+	const auto selector = *result;
+	const auto itemId = item->fullId();
+	const auto weakMenu = QPointer<Ui::PopupMenu>(menu.get());
+	selector->chosen() | rpl::on_next([=](ChosenReaction reaction) {
+		if (weakMenu) {
+			weakMenu->hideMenu();
+		}
+		reaction.context = itemId;
+		chosen(std::move(reaction));
+	}, selector->lifetime());
+	selector->escapes() | rpl::on_next([=] {
+		if (weakMenu) {
+			weakMenu->hideMenu();
+		}
+	}, selector->lifetime());
+	const auto start = [=] {
+		InvokeQueued(selector, [=] { selector->startKeyboardNavigation(); });
+	};
+	if (menu->useTransparency()) {
+		menu->animatePhaseValue(
+		) | rpl::filter([](Ui::PopupMenu::AnimatePhase phase) {
+			return phase == Ui::PopupMenu::AnimatePhase::Shown;
+		}) | rpl::take(1) | rpl::on_next(start, selector->lifetime());
+	} else {
+		start();
+	}
+	menu->popupPrepared();
+	return menu;
+}
 
 AttachSelectorResult AttachSelectorToMenu(
 		not_null<Ui::PopupMenu*> menu,

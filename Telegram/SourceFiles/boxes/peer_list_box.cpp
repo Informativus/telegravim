@@ -10,6 +10,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/peer_list_section_headers.h"
 #include "boxes/peer_list_section_index.h"
 #include "core/vim_keymap.h"
+#include "core/vim_keymap_bindings.h"
+#include "core/vim_keymap_widgets.h"
 #include "history/history.h" // chatListNameSortKey.
 #include "main/session/session_show.h"
 #include "main/main_session.h"
@@ -108,7 +110,7 @@ PeerListBox::PeerListBox(
 	Expects(_controller != nullptr);
 	Core::VimKeymap::RegisterKeyHandler(this, [=](
 			not_null<QKeyEvent*> e) {
-		if (!_select || !content() || !isVisible()) {
+		if (!content() || !isVisible()) {
 			return false;
 		}
 		const auto top = window();
@@ -121,10 +123,19 @@ PeerListBox::PeerListBox(
 		}
 		return handleVimKeyNavigation(e);
 	});
+	Core::VimKeymap::RegisterPreLayerKeyHandler(this, [=](
+			not_null<QKeyEvent*> e) {
+		return Core::VimKeymap::Enabled()
+			&& _select
+			&& isVisible()
+			&& window()->isActiveWindow()
+			&& Core::VimKeymap::LeaveKeyboardInput(this, _select, e);
+	});
 }
 
 PeerListBox::~PeerListBox() {
 	Core::VimKeymap::UnregisterKeyHandler(this);
+	Core::VimKeymap::UnregisterPreLayerKeyHandler(this);
 }
 
 void PeerListBox::createMultiSelect() {
@@ -207,11 +218,35 @@ void PeerListBox::updateScrollSkips() {
 }
 
 bool PeerListBox::handleVimKeyNavigation(not_null<QKeyEvent*> e) {
-	if (!Core::VimKeymap::Enabled()) {
+	using namespace Core::VimKeymap;
+	if (!Enabled()
+		|| !content()
+		|| KeyboardScopeHasTextInput(this, nullptr)) {
 		return false;
 	}
-	const auto modifiers = e->modifiers()
-		& ~(Qt::KeypadModifier | Qt::GroupSwitchModifier);
+	const auto modifiers = Bindings::CleanModifiers(e);
+	const auto action = Bindings::StickerGridActionKey(e);
+	const auto down = (action == Bindings::StickerGridAction::MoveDown);
+	const auto up = (action == Bindings::StickerGridAction::MoveUp);
+	if (down || up) {
+		if (up && !content()->hasSelection()) {
+			content()->selectLast();
+		} else {
+			content()->selectSkip(up ? -1 : 1);
+		}
+		setFocus(Qt::OtherFocusReason);
+		e->accept();
+		return true;
+	} else if ((e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter)
+		&& modifiers == Qt::NoModifier
+		&& (hasFocus() || content()->hasFocus())
+		&& content()->hasSelection()) {
+		if (!e->isAutoRepeat()) {
+			content()->submitted();
+		}
+		e->accept();
+		return true;
+	}
 	const auto tabForward = (e->key() == Qt::Key_Tab)
 		&& (modifiers == Qt::NoModifier);
 	const auto tabBackward = (e->key() == Qt::Key_Backtab)
@@ -397,7 +432,10 @@ void PeerListBox::paintEvent(QPaintEvent *e) {
 }
 
 void PeerListBox::setInnerFocus() {
-	if (!_select || !_select->toggled()) {
+	if (Core::VimKeymap::NormalMode()
+		&& (!_select || _select->entity()->getQuery().isEmpty())) {
+		setFocus(Qt::OtherFocusReason);
+	} else if (!_select || !_select->toggled()) {
 		content()->setFocus();
 	} else {
 		_select->entity()->setInnerFocus();

@@ -168,6 +168,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/localimageloader.h"
 #include "storage/storage_account.h"
 #include "storage/file_upload.h"
+#include "storage/storage_folder_archive.h"
 #include "storage/storage_media_prepare.h"
 #include "media/audio/media_audio.h"
 #include "media/audio/media_audio_capture.h"
@@ -796,6 +797,30 @@ HistoryWidget::HistoryWidget(
 
 	_fieldBarCancel->addClickHandler([=] { cancelFieldAreaState(); });
 	Core::VimKeymap::RegisterModeIndicatorWidget(this);
+	Core::VimKeymap::RegisterPreLayerKeyHandler(this, [=](
+			not_null<QKeyEvent*> e) {
+		if (!_composeSearch
+			|| !isVisible()
+			|| !window()->isActiveWindow()
+			|| !Core::VimKeymap::SelectMessageTextKey(e)) {
+			return false;
+		}
+		if (e->type() == QEvent::KeyPress && !e->isAutoRepeat()) {
+			const auto chat = this->controller()->activeChatEntryCurrent().key;
+			vimKeymapLeaveSearchInputMode();
+			_composeSearch->hideAnimated();
+			crl::on_main(this, [=] {
+				if (isVisible()
+					&& window()->isActiveWindow()
+					&& chat
+					&& this->controller()->activeChatEntryCurrent().key == chat) {
+					Core::VimKeymap::InvokeAction(
+						Core::VimKeymap::Action::SelectMessageText);
+				}
+			});
+		}
+		return true;
+	}, true);
 	Core::VimKeymap::RegisterKeyHandler(this, [=](
 			not_null<QKeyEvent*> e) {
 		if (!window() || !window()->isActiveWindow()) {
@@ -1204,13 +1229,25 @@ HistoryWidget::HistoryWidget(
 				: Data::CanSendAnyOf(_peer, Data::FilesSendRestrictions());
 		}),
 		crl::guard(this, [=](bool f) { _field->setAcceptDrops(f); }),
-		crl::guard(this, [=] { updateControlsGeometry(); }));
+		crl::guard(this, [=] { updateControlsGeometry(); }),
+		nullptr,
+		crl::guard(this, [=] { return (_editMsgId != 0); }));
 	_attachDragAreas.document->setDroppedCallback([=](const QMimeData *data) {
 		confirmSendingFiles(data, false);
 		Window::ActivateWindow(controller);
 	});
 	_attachDragAreas.photo->setDroppedCallback([=](const QMimeData *data) {
 		confirmSendingFiles(data, true);
+		Window::ActivateWindow(controller);
+	});
+	_attachDragAreas.photo->setArchiveDroppedCallback([=](
+			const QMimeData *data) {
+		const auto urls = Core::ReadMimeUrls(data);
+		if (!urls.isEmpty()) {
+			auto list = Ui::PreparedList();
+			list.files.push_back(Storage::PrepareFilesArchive(urls));
+			confirmSendingFiles(std::move(list), QString());
+		}
 		Window::ActivateWindow(controller);
 	});
 
@@ -1636,9 +1673,15 @@ HistoryWidget::HistoryWidget(
 		if (_creatingBotTopic
 			&& action.history == _creatingBotTopic->owningHistory()
 			&& action.replyTo.topicRootId == _creatingBotTopic->rootId()) {
-			Ui::PostponeCall(_creatingBotTopic, [=] {
+			// Guard 'this' (the call reads _creatingBotTopic) and re-check
+			// the topic: it may be gone or already handled by another call.
+			const auto weak = base::make_weak(_creatingBotTopic);
+			Ui::PostponeCall(this, [=] {
 				using namespace HistoryView;
 				const auto topic = base::take(_creatingBotTopic);
+				if (!topic || topic != weak.get()) {
+					return;
+				}
 				controller->showSection(
 					std::make_shared<ChatMemento>(ChatViewId{
 						.history = topic->owningHistory(),
@@ -2979,7 +3022,14 @@ void HistoryWidget::fileChosen(ChatHelpers::FileChosen &&data) {
 				sendMenuDetails(),
 				crl::guard(this, [=](
 						Api::SendOptions options,
-						TextWithTags caption) {
+						TextWithTags caption,
+						Ui::PreparedList &&edited) {
+					if (!edited.files.empty()) {
+						sendingFilesConfirmed(
+							Ui::MakeSingleFileBundle(std::move(edited)),
+							options);
+						return;
+					}
 					controller()->sendingAnimation().appendSending(from);
 					auto messageToSend = Api::MessageToSend(
 						prepareSendAction(options));
@@ -8484,6 +8534,32 @@ bool HistoryWidget::confirmSendingFiles(
 	const auto premium = controller()->session().user()->isPremium();
 
 	if (const auto urls = Core::ReadMimeUrls(data); !urls.empty()) {
+		const auto folder = Storage::SingleFolderPath(urls);
+		if (!folder.isEmpty()) {
+			if (overrideSendImagesAsPhotos == false && !_editMsgId) {
+				const auto files = Storage::FolderFilesForSending(folder);
+				if (!files.isEmpty()) {
+					auto list = Storage::PrepareMediaList(
+						files,
+						st::sendMediaPreviewSize,
+						premium);
+					confirmSendingFiles(std::move(list), QString());
+				}
+			} else {
+				auto list = Ui::PreparedList();
+				list.files.push_back(Storage::PrepareFolderArchive(folder));
+				confirmSendingFiles(std::move(list), QString());
+			}
+			return true;
+		}
+		if (overrideSendImagesAsPhotos == true
+			&& (Storage::ComputeMimeDataState(data)
+				== Storage::MimeDataState::FilesArchive)) {
+			auto list = Ui::PreparedList();
+			list.files.push_back(Storage::PrepareFilesArchive(urls));
+			confirmSendingFiles(std::move(list), QString());
+			return true;
+		}
 		auto list = Storage::PrepareMediaList(
 			urls,
 			st::sendMediaPreviewSize,
@@ -9732,10 +9808,29 @@ void HistoryWidget::vimKeymapScrollTick() {
 }
 
 bool HistoryWidget::vimKeymapHandleEscapeFieldState(not_null<QKeyEvent*> e) {
-	if (!Core::VimKeymap::EscapeClosesComposer()
-		|| e->isAutoRepeat()
+	if (!Core::VimKeymap::Enabled()
 		|| e->key() != Qt::Key_Escape
 		|| VimKeymapCleanModifiers(e) != Qt::NoModifier) {
+		return false;
+	}
+	if (e->isAutoRepeat()) {
+		return bool(_editMsgId);
+	}
+	if (_editMsgId && !Core::VimKeymap::NormalMode()) {
+		Core::VimKeymap::SetNormalMode(true);
+		_field->setFocusFast();
+		vimKeymapRefreshComposeCursor();
+		Core::VimKeymap::TraceKey(e, u"edit insert to view mode"_q);
+		return true;
+	}
+	if (_editMsgId
+		&& (_vimKeymapComposeVisualMode
+			|| _vimKeymapComposeOperator
+			|| _vimKeymapComposePending)
+		&& vimKeymapHandleComposeTextKey(e)) {
+		return true;
+	}
+	if (!Core::VimKeymap::EscapeClosesComposer()) {
 		return false;
 	}
 	const auto hasFieldState = _previewDrawPreview
@@ -9931,6 +10026,11 @@ bool HistoryWidget::vimKeymapHandleComposeTextKey(not_null<QKeyEvent*> e) {
 		return true;
 	}
 #endif // !TDESKTOP_DISABLE_SPELLCHECK
+	if (!stateActive
+		&& Core::VimKeymap::NormalMode()
+		&& Core::VimKeymap::Bindings::IsMessageReaction(e)) {
+		return false;
+	}
 	const auto messageAction = Core::VimKeymap::ActionKey(e).has_value();
 	if (Core::VimKeymap::EmptyComposeDefersToMessageAction(
 			stateActive,
@@ -12306,7 +12406,17 @@ void HistoryWidget::editMessage(
 	SelectTextInFieldWithMargins(_field, selection);
 
 	saveDraftWithTextNow();
-	setInnerFocus();
+	if (Core::VimKeymap::Enabled()) {
+		_vimKeymapComposeOperator = 0;
+		_vimKeymapComposeVisualMode = 0;
+		_vimKeymapComposeVisualAnchor = -1;
+		_vimKeymapComposePending = 0;
+		Core::VimKeymap::SetNormalMode(true);
+		_field->setFocusFast();
+		vimKeymapRefreshComposeCursor();
+	} else {
+		setInnerFocus();
+	}
 }
 
 void HistoryWidget::fillSenderUserpicMenu(

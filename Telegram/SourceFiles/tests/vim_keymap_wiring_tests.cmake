@@ -30,6 +30,9 @@ expect(history/history_inner_widget.cpp
 expect(history/history_inner_widget.cpp
     "if \\(current && !showCopyRestriction\\(current\\)[\n\t ]*&& !showCopyMediaRestriction\\(current\\)\\) \\{[\n\t ]*media->setToClipboard\\(\\)"
     "Delayed image copying must recheck restrictions after the download")
+expect(history/history_inner_widget.cpp
+    "mode == VimKeymapHintMode::CopyMessage && hint.photo[^}]*media->photo\\(\\) == hint.photo[^}]*vimKeymapCopyItem\\(item\\)"
+    "An album photo hint must validate its current photo identity and use guarded copying")
 expect(history/view/history_view_list_widget.cpp
     "showCopyMediaRestriction\\(item\\)\\) \\{[^}]*\\}[\n\t ]*const auto media = photo->createMediaView\\(\\);[\n\t ]*if \\(media->setToClipboard\\(\\)"
     "Auxiliary histories must enforce media restrictions before photo copying")
@@ -199,14 +202,14 @@ expect(core/vim_keymap.cpp
     "UpdateKeyboardScope[(]scope[)];[\n\t ]*if [(]!scope && HandlePreLayerKey[(]e[)][)] [^{]*[{][^}]*}[\n\t ]*const auto focus"
     "Active message text must receive keys before global focus and chat commands")
 expect(history/history_inner_widget.cpp
-    "RegisterPreLayerKeyHandler[(]this,[^{]*[{][^}]*_vimKeymapTextCursorItem[^}]*_vimKeymapTextVisualMode[^}]*_vimKeymapHintMode == VimKeymapHintMode::None[^}]*}[\n\t ]*return [(]e->type[(][)] == QEvent::ShortcutOverride[)][\n\t ]*\\|\\| vimKeymapHandleHintKey[(]e[)][\n\t ]*\\|\\| vimKeymapHandleTextSelectionKey"
+    "RegisterPreLayerKeyHandler[(]this,[^{]*[{][^}]*vimKeymapHandleMessageSelectionKey[(]e[)][^}]*}[^}]*_vimKeymapTextCursorItem[^}]*_vimKeymapTextVisualMode[^}]*_vimKeymapHintMode == VimKeymapHintMode::None[^}]*}[\n\t ]*return [(]e->type[(][)] == QEvent::ShortcutOverride[)][\n\t ]*\\|\\| vimKeymapHandleHintKey[(]e[)][\n\t ]*\\|\\| vimKeymapHandleTextSelectionKey"
     "Active message hints and text must own keys before Qt and chat commands")
 expect(history/history_inner_widget.cpp
     "if [(]!motion && !followLink[)] [^{]*[{][\n\t ]*return textModeActive;"
     "Unsupported keys must be consumed while Vim text mode is active")
 expect(history/history_inner_widget.cpp
-    "if [(]copied[)] [^{]*[{][\n\t ]*if [(]!textModeActive[)] [^{]*[{][\n\t ]*clearTextSelection"
-    "Copying must preserve the Vim cursor and selection")
+    "if [(]copied[)] [^{]*[{][\n\t ]*if [(]yank \\|\\| !textModeActive[)] [^{]*[{][\n\t ]*clearSelected[(]true[)]"
+    "Successful y must clear both message text selection and cursor")
 expect(history/history_inner_widget.cpp
     "TextMotion::TextStart:[\n\t ]*case Core::VimKeymap::TextMotion::LineStart:[\n\t ]*key = Qt::Key_Home"
     "gg must use selected-message text coordinates")
@@ -231,5 +234,16 @@ expect(history/history_inner_widget.cpp
 expect(history/view/history_view_keyboard_text_selection.cpp
     "maxOffset >= kInvalidTextOffset[^}]*FindTextSelectionLength[^}]*view->selectedText"
     "Photo captions must recover actual text bounds when media retains the sentinel")
+
+expect(history/history_inner_widget.cpp
+    "forward && state.canForwardCount == state.count[^}]*_widget->forwardSelected[(][)]"
+    "Vim forwarding must require permission for every selected message")
+expect(history/history_inner_widget.cpp
+    "remove && state.canDeleteCount == state.count[^}]*_widget->confirmDeleteSelected[(][)]"
+    "Vim deletion must check the full selection and open confirmation")
+expect(history/view/history_view_list_widget.cpp
+    "if [(]forward[)] [^{]*[{][^}]*ConfirmForwardSelectedItems[(]this[)];[^}]*} else if [(]remove[)] [^{]*[{][^}]*ConfirmDeleteSelectedItems[(]this[)]"
+    "Vim topic selection must use the guarded Telegram group actions")
+
 get_property(count GLOBAL PROPERTY vim_wiring_count)
 message(STATUS "${count} Vim application wiring checks passed (source-level).")

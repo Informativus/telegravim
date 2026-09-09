@@ -1,0 +1,97 @@
+name: Windows release package
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Source commit or ref (empty uses the workflow ref)
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 360
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          submodules: recursive
+          path: TBuild/tdesktop
+          ref: ${{ inputs.source_ref || github.ref }}
+      - name: Initialize x64 compiler
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          arch: x64
+          vsversion: 2022
+          sdk: 10.0.26100.0
+          toolset: 14.44
+      - name: Configure dependency build tools
+        run: |
+          git config --global user.email "build@example.invalid"
+          git config --global user.name "Release build"
+          $sources = nuget sources List
+          if (-not ($sources -match 'https://api.nuget.org/v3/index.json')) {
+            nuget sources Add -Name nuget.org -Source https://api.nuget.org/v3/index.json
+            if ($LASTEXITCODE -ne 0) { throw 'NuGet configuration failed' }
+          }
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        id: dependencies
+        with:
+          path: |
+            TBuild/Libraries
+            TBuild/ThirdParty
+          key: windows-x64-release-${{ hashFiles('TBuild/tdesktop/Telegram/build/prepare/**', 'TBuild/tdesktop/Telegram/build/qt_version.py') }}
+      - name: Build dependencies
+        run: |
+          & TBuild\tdesktop\Telegram\build\prepare\win.bat silent qt6
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency build failed' }
+      - name: Save prepared dependencies
+        if: steps.dependencies.outputs.cache-hit != 'true'
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        with:
+          path: |
+            TBuild/Libraries
+            TBuild/ThirdParty
+          key: windows-x64-release-${{ hashFiles('TBuild/tdesktop/Telegram/build/prepare/**', 'TBuild/tdesktop/Telegram/build/qt_version.py') }}
+      - name: Build Release and native tests
+        run: |
+          cd TBuild\tdesktop\Telegram
+          & .\configure.bat -G "Ninja Multi-Config" qt6 `
+            -D CMAKE_CONFIGURATION_TYPES=Release `
+            -D TDESKTOP_API_TEST=ON `
+            -D DESKTOP_APP_TEST_APPS=ON `
+            -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON `
+            -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
+          if ($LASTEXITCODE -ne 0) { throw 'Configure failed' }
+          cmake --build ..\out --config Release --target Telegram --parallel 3
+          if ($LASTEXITCODE -ne 0) { throw 'Application build failed' }
+      - name: Test and package
+        shell: pwsh
+        working-directory: TBuild/tdesktop
+        run: |
+          & out/Release/test_vim_keymap.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Native tests failed' }
+          New-Item -ItemType Directory -Path artifact/Telegravim | Out-Null
+          Copy-Item out/Release/Telegram.exe artifact/Telegravim/
+          Copy-Item LICENSE,Telegram/Resources/dictionaries/LICENSE_*.txt artifact/Telegravim/
+          python Telegram/build/package_info.py artifact/Telegravim windows-x64
+          if ($LASTEXITCODE -ne 0) { throw 'Package metadata failed' }
+          dumpbin /headers artifact/Telegravim/Telegram.exe | Select-String 'machine \(x64\)'
+          Compress-Archive -Path artifact/Telegravim -DestinationPath artifact/Telegravim-windows-x64.zip
+          $hash = (Get-FileHash artifact/Telegravim-windows-x64.zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  Telegravim-windows-x64.zip" | Set-Content artifact/SHA256-windows-x64.txt -Encoding ascii
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Telegravim-windows-x64
+          path: |
+            TBuild/tdesktop/artifact/Telegravim-windows-x64.zip
+            TBuild/tdesktop/artifact/SHA256-windows-x64.txt
+          retention-days: 14
+          if-no-files-found: error

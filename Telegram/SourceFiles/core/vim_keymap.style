@@ -8,10 +8,15 @@ using "ui/basic.style";
 using "ui/widgets/widgets.style";
 
 vimHintMargin: 4px;
+vimHintMinVisibleHeight: 24px;
 vimHintGap: 3px;
 vimHintPadding: size(7px, 3px);
 vimHintTargetInset: 8px;
 vimHintScanStep: size(24px, 18px);
+
+vimHelpWidth: 560px;
+vimHelpMaxHeight: 640px;
+vimHelpTabGap: 10px;
 
 vimFocusWidth: 2px;
 vimFocusInset: 3px;

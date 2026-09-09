@@ -57,7 +57,9 @@ enum class StickerGridAction {
 [[nodiscard]] std::optional<TextMotion> TextMotionKey(
 	not_null<QKeyEvent*> e,
 	bool &pendingStart);
-[[nodiscard]] bool IsMessageShare(not_null<QKeyEvent*> e);
+[[nodiscard]] bool IsMessageSelection(not_null<QKeyEvent*> e);
+[[nodiscard]] bool IsMessageReaction(not_null<QKeyEvent*> e);
+[[nodiscard]] bool IsSelectionForward(not_null<QKeyEvent*> e);
 [[nodiscard]] std::optional<float64> MediaPlaybackSpeed(
 	not_null<QKeyEvent*> e,
 	float64 current);

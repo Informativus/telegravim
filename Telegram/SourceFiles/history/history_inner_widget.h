@@ -487,6 +487,10 @@ private:
 	[[nodiscard]] bool vimKeymapBeginTextSelection(not_null<Element*> view);
 	[[nodiscard]] bool vimKeymapHandleTextSelectionKey(
 		not_null<QKeyEvent*> e);
+	[[nodiscard]] bool vimKeymapBeginMessageSelection(not_null<Element*> view);
+	[[nodiscard]] bool vimKeymapHandleMessageSelectionKey(
+		not_null<QKeyEvent*> e);
+	void vimKeymapMoveMessageSelection(int direction);
 	[[nodiscard]] TextSelection getSelectedTextRange(
 		not_null<HistoryItem*> item) const;
 	[[nodiscard]] MessageSelection getSelectedTextSelection(
@@ -595,9 +599,11 @@ private:
 		CopyMessage,
 		ShareMessage,
 		ReplyToMessage,
+		ReactToMessage,
 		EditMessage,
 		DeleteMessage,
 		SelectMessageText,
+		SelectMessages,
 		PickMessageLinks,
 		ActivateLink,
 	};
@@ -626,6 +632,7 @@ private:
 	void vimKeymapPaintHints(Painter &p) const;
 	[[nodiscard]] bool vimKeymapCopyItem(not_null<HistoryItem*> item);
 	[[nodiscard]] bool vimKeymapReplyToItem(not_null<HistoryItem*> item);
+	[[nodiscard]] bool vimKeymapReactToItem(not_null<HistoryItem*> item);
 	[[nodiscard]] bool vimKeymapEditItem(not_null<HistoryItem*> item);
 	[[nodiscard]] bool vimKeymapDeleteItem(not_null<HistoryItem*> item);
 
