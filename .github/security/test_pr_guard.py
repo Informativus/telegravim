@@ -349,6 +349,28 @@ class ReviewedTestFindingTests(unittest.TestCase):
             target.write_text("int example() {}\n")
             self.assertFalse(guard.reviewed_finding({}, result, root, reviews))
 
+    def test_config_test_reviews_require_exact_rule_and_source(self):
+        for rule in ["cpp/constant-comparison", "cpp/poorly-documented-function"]:
+            with self.subTest(rule=rule), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                source, result, reviews = self.fixture(root)
+                path = "Telegram/SourceFiles/tests/vim_config_tests.h"
+                target = root / path
+                source.rename(target)
+                result["ruleId"] = rule
+                result["level"] = "warning"
+                result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"] = path
+                reviews[0]["path"] = path
+                reviews[0]["findings"][0].update(rule=rule, level="warning")
+                self.assertTrue(guard.reviewed_finding({}, result, root, reviews))
+                self.assertFalse(guard.reviewed_finding({}, result, root, []))
+                changed = result | {"ruleId": "cpp/unused-static-variable"}
+                changed_reviews = copy.deepcopy(reviews)
+                changed_reviews[0]["findings"][0]["rule"] = changed["ruleId"]
+                self.assertFalse(guard.reviewed_finding({}, changed, root, changed_reviews))
+                target.write_text("int different_source() { return 2; }\n")
+                self.assertFalse(guard.reviewed_finding({}, result, root, reviews))
+
     def test_production_paths_traversal_and_symlinks_cannot_be_reviewed(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
