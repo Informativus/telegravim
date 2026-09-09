@@ -2356,7 +2356,7 @@ void TestMessageCaptionCursorGeometry() {
 						&& state.symbol >= from && state.symbol < till)) {
 						std::cerr << "Caption cursor: width=" << width
 							<< " symbol=" << symbol
-							<< " codepoint=" << caption[symbol].unicode()
+							<< " codepoint=" << int(caption[symbol].unicode())
 							<< " hit=" << state.symbol
 							<< " upon=" << state.uponSymbol
 							<< " after=" << state.afterSymbol << '\n';
