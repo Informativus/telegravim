@@ -29,6 +29,13 @@ jobs:
           submodules: recursive
           path: TBuild/tdesktop
           ref: ${{ inputs.source_ref || github.ref }}
+      - name: Validate package metadata
+        working-directory: TBuild/tdesktop
+        run: |
+          $destination = Join-Path $env:RUNNER_TEMP 'package-preflight'
+          New-Item -ItemType Directory -Path $destination | Out-Null
+          python Telegram/build/package_info.py $destination windows-x64
+          if ($LASTEXITCODE -ne 0) { throw 'Package metadata preflight failed' }
       - name: Initialize x64 compiler
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
         with:

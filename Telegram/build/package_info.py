@@ -13,7 +13,7 @@ launch = {
     "windows-x64": "Extract the entire folder and run Telegram.exe.",
     "linux-x86_64": "Extract the archive and run Telegravim/Telegram.",
 }[platform]
-source = (root / "Telegram/SourceFiles/core/vim_keymap.cpp").read_text()
+source = (root / "Telegram/SourceFiles/core/vim_keymap.cpp").read_text(encoding="utf-8")
 version = re.search(r'kTelegraVimBuild = "([0-9.\-a-z]+)"', source).group(1)
 commit = subprocess.check_output(
     ["git", "rev-parse", "HEAD"], cwd=root, text=True
