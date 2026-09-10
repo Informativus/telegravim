@@ -101,6 +101,7 @@ jobs:
           cd TBuild\tdesktop\Telegram
           & .\configure.bat -G "Ninja Multi-Config" qt6 `
             -D CMAKE_CONFIGURATION_TYPES=Release `
+            -D CMAKE_MSVC_DEBUG_INFORMATION_FORMAT= `
             -D TDESKTOP_API_TEST=ON `
             -D DESKTOP_APP_TEST_APPS=ON `
             -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON `
