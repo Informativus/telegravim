@@ -97,7 +97,7 @@ public:
 	void focusTarget(not_null<QWidget*> target);
 	void activateHint(not_null<QWidget*> target);
 	void restoreFocus();
-	bool scroll(int delta, bool autoRepeat, int duration);
+	bool scroll(int delta, bool autoRepeat, int duration, bool byPage = false);
 	void showHints(
 		Fn<QString(int, int)> label,
 		QFont font,

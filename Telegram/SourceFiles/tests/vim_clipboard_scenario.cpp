@@ -28,6 +28,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "test/test_log.h"
 #include "test/test_runner.h"
 #include "test/test_widgets.h"
+#include "ui/widgets/elastic_scroll.h"
 #include "ui/abstract_button.h"
 #include "window/main_window.h"
 #include "window/window_controller.h"
@@ -188,6 +189,9 @@ void SetupScenario(not_null<Runner*> runner) {
 			const auto before = calls;
 			Check(!press(Qt::Key_V, Qt::ControlModifier | Qt::ShiftModifier, u"V"_q)
 				&& calls == before, u"pane text input retains its own shortcuts"_q);
+			Check(!press(Qt::Key_D, Qt::ShiftModifier, u"D"_q)
+				&& !press(Qt::Key_U, Qt::ShiftModifier, u"U"_q),
+				u"pane inputs retain Shift U and Shift D"_q);
 			input.setText(u"Pane input clipboard fixture"_q);
 			input.selectAll();
 			PressKey(&input, Qt::Key_C, Qt::ControlModifier);
@@ -359,6 +363,69 @@ void SetupScenario(not_null<Runner*> runner) {
 			}
 		},
 		[=](QWidget*) { return !(*item)->history()->hasPendingResizedItems(); });
+	runner->add({
+		.name = u"fill the disposable chat for page scrolling"_q,
+		.run = [=] {
+			const auto history = (*item)->history();
+			auto &session = history->session();
+			for (auto i = 2; i != 82; ++i) {
+				const auto message = history->addNewLocalMessage({
+					.id = session.data().nextLocalMessageId(),
+					.flags = MessageFlag::Local | MessageFlag::Outgoing | MessageFlag::BeingSent,
+					.from = session.user()->id,
+					.date = base::unixtime::now(),
+				}, { u"Page scroll fixture %1"_q.arg(i) }, MTP_messageMediaEmpty());
+				message->setRealId(i);
+			}
+		},
+	});
+	const auto resolveScroll = [=]() -> QWidget* {
+		const auto inner = resolve();
+		for (auto parent = inner; parent; parent = parent->parentWidget()) {
+			if (dynamic_cast<Ui::ElasticScroll*>(parent)) {
+				return parent;
+			}
+		}
+		return nullptr;
+	};
+	auto expected = std::make_shared<int>(0);
+	auto settleAt = std::make_shared<crl::time>(0);
+	for (const auto direction : { 1, -1 }) {
+		runner->actOnWidget(u"page scroll in the real chat"_q,
+			resolveScroll,
+			[=](QWidget *widget) {
+				using namespace Core::VimKeymap;
+				const auto area = static_cast<Ui::ElasticScroll*>(widget);
+				const auto inner = static_cast<HistoryInner*>(resolve());
+				inner->clearSelected();
+				SetNormalMode(true);
+				inner->setFocus();
+				area->scrollToY(area->height());
+				*expected = (1 + direction) * area->height();
+				auto event = QKeyEvent(QEvent::KeyPress,
+					direction > 0 ? Qt::Key_D : Qt::Key_U,
+					Qt::ShiftModifier, direction > 0 ? u"D"_q : u"U"_q);
+				Check(!ActionKey(&event), u"Shift U/D never invokes a message action"_q);
+				Settle([&] { QApplication::sendEvent(inner, &event); });
+				*settleAt = crl::now() + 2 * SingleScrollDurationMs();
+			},
+			[=](QWidget *widget) {
+				return !(*item)->history()->hasPendingResizedItems()
+					&& static_cast<Ui::ElasticScroll*>(widget)->scrollTopMax()
+						> 3 * widget->height();
+			});
+		runner->add({
+			.name = u"verify one full viewport of chat scrolling"_q,
+			.until = [=] { return crl::now() >= *settleAt; },
+			.then = [=] {
+				const auto area = static_cast<Ui::ElasticScroll*>(resolveScroll());
+				Check(area && area->scrollTop() == *expected,
+					u"Shift U/D scrolls the real chat by exactly one viewport"_q,
+					u"direction=%1 actual=%2 expected=%3"_q.arg(direction)
+						.arg(area ? area->scrollTop() : -1).arg(*expected));
+			},
+		});
+	}
 }
 
 } // namespace Test

@@ -4154,6 +4154,13 @@ void ListWidget::keyPressEvent(QKeyEvent *e) {
 				e->ignore();
 				return;
 		}
+	} else if (const auto page = Core::VimKeymap::NormalMode()
+		? Core::VimKeymap::Bindings::PageNavigationDelta(e)
+		: 0) {
+		vimKeymapStopScroll();
+		vimKeymapScrollBy(page, _visibleBottom - _visibleTop, !e->isAutoRepeat());
+		e->accept();
+		return;
 	} else if (const auto vimNavigation = Core::VimKeymap::NavigationKey(e)) {
 		const auto direction = (*vimNavigation == Qt::Key_Down) ? 1 : -1;
 		if (e->isAutoRepeat()) {

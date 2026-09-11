@@ -55,7 +55,7 @@ namespace {
 constexpr auto kHoldScrollTickMs = 16;
 constexpr auto kHoldScrollStartDelayMs = 90;
 constexpr auto kSingleScrollDurationMs = 190;
-constexpr auto kTelegraVimBuild = "2026.09.11-104-beta.2";
+constexpr auto kTelegraVimBuild = "2026.09.11-104-beta.3";
 
 bool NormalModeEnabled = false;
 bool LegacyDefaultsMigrated = false;
@@ -429,10 +429,11 @@ void CleanupScrollAnimations() {
 		not_null<QObject*> object,
 		not_null<QKeyEvent*> e) {
 	const auto navigation = NavigationKey(e);
-	if (!navigation) {
+	const auto page = NormalMode() ? Bindings::PageNavigationDelta(e) : 0;
+	if (!navigation && !page) {
 		return false;
 	}
-	const auto direction = (*navigation == Qt::Key_Down) ? 1 : -1;
+	const auto direction = page ? page : (*navigation == Qt::Key_Down) ? 1 : -1;
 	const auto delta = ScrollStep();
 	const auto objectWidget = WidgetFromObject(object.get());
 	const auto focus = QApplication::focusWidget();
@@ -444,7 +445,10 @@ void CleanupScrollAnimations() {
 	};
 	for (const auto candidate : candidates) {
 		if (const auto area = NearestScrollArea(candidate)) {
-			if (SmoothScrollBy(area, direction * delta, e->isAutoRepeat())) {
+			if (SmoothScrollBy(
+					area,
+					direction * (page ? area->height() : delta),
+					e->isAutoRepeat())) {
 				return true;
 			}
 		}
@@ -453,7 +457,10 @@ void CleanupScrollAnimations() {
 		if (candidate == active) {
 			continue;
 		} else if (const auto area = ContainedScrollArea(candidate)) {
-			if (SmoothScrollBy(area, direction * delta, e->isAutoRepeat())) {
+			if (SmoothScrollBy(
+					area,
+					direction * (page ? area->height() : delta),
+					e->isAutoRepeat())) {
 				return true;
 			}
 		}
@@ -462,7 +469,7 @@ void CleanupScrollAnimations() {
 		if (const auto area = NearestQtScrollArea(candidate)) {
 			if (SmoothScrollBy(
 					area->verticalScrollBar(),
-					direction * delta,
+					direction * (page ? area->viewport()->height() : delta),
 					e->isAutoRepeat())) {
 				return true;
 			}
@@ -1199,6 +1206,7 @@ void ShowHelpBox() {
 			result += u"Режим навигации:\n"_q;
 			result += scrollDown + u" - скролл вниз\n"_q;
 			result += scrollUp + u" - скролл вверх\n"_q;
+			result += u"Shift+U / Shift+D - на экран вверх / вниз\n"_q;
 			result += jumpBottom + u" - перейти вниз\n"_q;
 			result += copy + u" - копирование; в альбоме своя буква у каждого фото\n"_q;
 			result += selectMessageText
@@ -1278,6 +1286,7 @@ void ShowHelpBox() {
 			result += u"Navigation mode:\n"_q;
 			result += scrollDown + u" - scroll down\n"_q;
 			result += scrollUp + u" - scroll up\n"_q;
+			result += u"Shift+U / Shift+D - one screen up / down\n"_q;
 			result += jumpBottom + u" - jump to bottom\n"_q;
 			result += copy + u" - copy hints; each album photo has its own letter\n"_q;
 			result += selectMessageText
@@ -1726,6 +1735,15 @@ bool HandleApplicationKeyPress(
 					u"Focus controls"_q,
 					u"right pane: choose a control by its hint"_q);
 			}
+		} else if (const auto page = Bindings::PageNavigationDelta(e)) {
+			KeyboardNavigation::Get(pane)->scroll(
+				page,
+				e->isAutoRepeat(),
+				SingleScrollDurationMs(),
+				true);
+			KeyLog.recordCommand(u"Page scroll"_q, page > 0
+				? u"right pane: one screen down"_q
+				: u"right pane: one screen up"_q);
 		} else if (const auto direction = ScrollNavigationKey(e)) {
 			const auto down = *direction == Qt::Key_Down;
 			KeyboardNavigation::Get(pane)->scroll(
@@ -1814,6 +1832,15 @@ bool HandleApplicationKeyPress(
 			return true;
 		}
 		if (!QApplication::activePopupWidget()) {
+			if (const auto page = Bindings::PageNavigationDelta(e)) {
+				KeyboardNavigation::Get(scope)->scroll(
+					page,
+					e->isAutoRepeat(),
+					SingleScrollDurationMs(),
+					true);
+				e->accept();
+				return true;
+			}
 			if (const auto navigation = ScrollNavigationKey(e)) {
 				const auto down = *navigation == Qt::Key_Down;
 				const auto handled = KeyboardNavigation::Get(scope)->scroll(
@@ -2168,7 +2195,7 @@ bool SelectMessageTextKey(not_null<QKeyEvent*> e) {
 }
 
 std::optional<Action> ActionKey(not_null<QKeyEvent*> e) {
-	if (!NormalMode()) {
+	if (!NormalMode() || Bindings::PageNavigationDelta(e)) {
 		return std::nullopt;
 	} else if (Bindings::IsMessageReaction(e)) {
 		return e->isAutoRepeat()

@@ -2154,6 +2154,26 @@ void TestGlobalPlayerFocusHints() {
 	Check(GlobalFocusRoots(&window).size() == 1, "destroyed player roots are removed safely");
 }
 
+void TestPageNavigation() {
+	using namespace Core::VimKeymap;
+	for (const auto &[key, text, expected] : {
+		std::tuple{ Qt::Key_U, u"U"_q, -1 },
+		std::tuple{ Qt::Key_D, u"D"_q, 1 },
+		std::tuple{ Qt::Key_unknown, u"Г"_q, -1 },
+		std::tuple{ Qt::Key_unknown, u"В"_q, 1 } }) {
+		for (const auto modifiers : std::array<Qt::KeyboardModifiers, 5>{
+			Qt::NoModifier, Qt::ShiftModifier,
+			Qt::ControlModifier | Qt::ShiftModifier,
+			Qt::MetaModifier | Qt::ShiftModifier,
+			Qt::AltModifier | Qt::ShiftModifier }) {
+			auto event = QKeyEvent(QEvent::KeyPress, key, modifiers, text);
+			Check(Bindings::PageNavigationDelta(&event)
+				== (modifiers == Qt::ShiftModifier ? expected : 0),
+				"page scrolling uses Shift U/D in both layouts without stealing modified keys");
+		}
+	}
+}
+
 void TestInterfaceActionHints() {
 	using namespace Core::VimKeymap;
 	for (const auto &[key, text] : {
@@ -2740,6 +2760,26 @@ void TestKeyboardFocusScrollingAndPainting() {
 	navigation->scroll(10000, false, 0);
 	Check(scroll.verticalScrollBar()->value() == scroll.verticalScrollBar()->maximum(),
 		"scoped scrolling clamps at the end without moving a background");
+	for (const auto height : { 180, 260 }) {
+		scroll.resize(scroll.width(), height);
+		QApplication::processEvents();
+		const auto page = scroll.viewport()->height();
+		scroll.verticalScrollBar()->setValue(page);
+		navigation->scroll(1, false, 0, true);
+		Check(scroll.verticalScrollBar()->value() == page * 2,
+			"page down moves exactly one viewport after resizing");
+		navigation->scroll(-1, false, 0, true);
+		Check(scroll.verticalScrollBar()->value() == page,
+			"page up moves exactly one viewport");
+		scroll.verticalScrollBar()->setValue(0);
+		navigation->scroll(-1, false, 0, true);
+		Check(scroll.verticalScrollBar()->value() == 0,
+			"page up stays at the beginning");
+		scroll.verticalScrollBar()->setValue(scroll.verticalScrollBar()->maximum());
+		navigation->scroll(1, false, 0, true);
+		Check(scroll.verticalScrollBar()->value() == scroll.verticalScrollBar()->maximum(),
+			"page down stays at the end");
+	}
 }
 
 void TestCustomKeyboardFocusFrame() {
@@ -3258,6 +3298,7 @@ int main(int argc, char *argv[]) {
 	TestProfileKeyboardNavigation();
 	TestProfileKeyboardNavigation(true);
 	TestGlobalPlayerFocusHints();
+	TestPageNavigation();
 	TestInterfaceActionHints();
 	TestShareKeyboardFocusCycle();
 	TestKeyboardStickerFramePainting();

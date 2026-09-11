@@ -87,6 +87,7 @@ enum class PaneNavigationAction {
 	const QString &bindings,
 	not_null<QKeyEvent*> e,
 	MatchOptions options = {});
+[[nodiscard]] int PageNavigationDelta(not_null<QKeyEvent*> e);
 [[nodiscard]] int TabNavigationDelta(not_null<QKeyEvent*> e);
 [[nodiscard]] int PickerNavigationDelta(not_null<QKeyEvent*> e);
 [[nodiscard]] int MediaNavigationDelta(not_null<QKeyEvent*> e);
