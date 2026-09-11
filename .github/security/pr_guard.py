@@ -816,6 +816,9 @@ def reviewed_finding(run: dict, result: dict, source: Path, reviews: list) -> bo
         "Telegram/SourceFiles/chat_helpers/field_autocomplete.cpp": {
             "cpp/poorly-documented-function",
         },
+        "Telegram/SourceFiles/core/vim_keymap_widgets.cpp": {
+            "cpp/use-in-own-initializer",
+        },
         "Telegram/SourceFiles/data/data_document.h": {
             "cpp/member-const-no-effect",
         },

@@ -349,13 +349,17 @@ class ReviewedTestFindingTests(unittest.TestCase):
             target.write_text("int example() {}\n")
             self.assertFalse(guard.reviewed_finding({}, result, root, reviews))
 
-    def test_config_test_reviews_require_exact_rule_and_source(self):
-        for rule in ["cpp/constant-comparison", "cpp/poorly-documented-function"]:
-            with self.subTest(rule=rule), tempfile.TemporaryDirectory() as directory:
+    def test_widget_and_config_reviews_require_exact_rule_and_source(self):
+        for path, rule in [
+            ("Telegram/SourceFiles/tests/vim_config_tests.h", "cpp/constant-comparison"),
+            ("Telegram/SourceFiles/tests/vim_config_tests.h", "cpp/poorly-documented-function"),
+            ("Telegram/SourceFiles/core/vim_keymap_widgets.cpp", "cpp/use-in-own-initializer"),
+        ]:
+            with self.subTest(path=path, rule=rule), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 source, result, reviews = self.fixture(root)
-                path = "Telegram/SourceFiles/tests/vim_config_tests.h"
                 target = root / path
+                target.parent.mkdir(parents=True, exist_ok=True)
                 source.rename(target)
                 result["ruleId"] = rule
                 result["level"] = "warning"
