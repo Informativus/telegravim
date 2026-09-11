@@ -55,7 +55,7 @@ namespace {
 constexpr auto kHoldScrollTickMs = 16;
 constexpr auto kHoldScrollStartDelayMs = 90;
 constexpr auto kSingleScrollDurationMs = 190;
-constexpr auto kTelegraVimBuild = "2026.09.11-104-beta.1";
+constexpr auto kTelegraVimBuild = "2026.09.11-104-beta.2";
 
 bool NormalModeEnabled = false;
 bool LegacyDefaultsMigrated = false;
@@ -731,9 +731,12 @@ void UpdateKeyboardScope(QWidget *scope) {
 	PanePrefixFocus = pending ? focus : nullptr;
 	if (action == Bindings::PaneNavigationAction::Left) {
 		FocusForCurrentMode();
+		KeyLog.recordCommand(u"Ctrl+A, h"_q, u"focus chat"_q);
 	} else if (action == Bindings::PaneNavigationAction::Right) {
+		auto found = false;
 		for (const auto &root : GlobalFocusRoots(window)) {
 			if (IsKeyboardPane(root)) {
+				found = true;
 				const auto navigation = QPointer<KeyboardNavigation>(
 					KeyboardNavigation::Get(root));
 				navigation->restoreFocus();
@@ -747,7 +750,51 @@ void UpdateKeyboardScope(QWidget *scope) {
 				break;
 			}
 		}
+		KeyLog.recordCommand(u"Ctrl+A, l"_q, found
+			? u"focus right pane"_q
+			: u"right pane is not open"_q);
+	} else {
+		KeyLog.recordCommand(u"Ctrl+A"_q, pending
+			? u"choose pane: h = chat, l = right pane"_q
+			: u"pane command cancelled"_q);
 	}
+	return true;
+}
+
+[[nodiscard]] bool HandleChatClipboardKey(
+		not_null<QKeyEvent*> e,
+		QWidget *pane) {
+	if (!NormalMode()) {
+		return false;
+	}
+	const auto select = SelectMessageTextKey(e);
+	const auto copy = pane
+		&& MatchesBindings(VimKeymapKeyCopyMessageOption, e, true);
+	if ((!select && !copy) || TextInputPassthroughRequested(e)) {
+		return false;
+	}
+	const auto navigation = pane ? KeyboardNavigation::Find(pane) : nullptr;
+	if (!select && navigation && navigation->hasHints()) {
+		return false;
+	} else if (e->type() == QEvent::ShortcutOverride || e->isAutoRepeat()) {
+		return true;
+	}
+	if (pane) {
+		if (navigation) {
+			navigation->clearHints();
+		}
+		FocusForCurrentMode();
+		if (HandlePreLayerKey(e)) {
+			return true;
+		}
+	}
+	const auto action = select ? Action::SelectMessageText : Action::CopyMessage;
+	const auto handled = HandleRegisteredAction(action);
+	KeyLog.recordCommand(
+		select ? u"Select message text"_q : u"Copy message"_q,
+		handled
+			? u"chat: choose a message by its hint"_q
+			: u"chat: no matching message visible"_q);
 	return true;
 }
 
@@ -1051,7 +1098,9 @@ private:
 			result += u"Последние "_q
 				+ QString::number(KeyEventLog::kLimit)
 				+ u" клавиш:\n"_q;
-			result += u"Самое свежее нажатие находится внизу.\n\n"_q;
+			result += u"Самое свежее нажатие находится внизу.\n"_q;
+			result += u"Вводимый текст скрыт; выполненные команды показаны по имени.\n"_q;
+			result += u"Cmd и Ctrl — физические клавиши. J/о — одна клавиша в двух раскладках.\n\n"_q;
 			if (const auto recent = RecentKeyLogText(); !recent.isEmpty()) {
 				result += recent;
 			} else {
@@ -1061,7 +1110,9 @@ private:
 			result += u"Last "_q
 				+ QString::number(KeyEventLog::kLimit)
 				+ u" keys:\n"_q;
-			result += u"The latest key is at the bottom.\n\n"_q;
+			result += u"The latest key is at the bottom.\n"_q;
+			result += u"Typed text is hidden; completed commands appear by name.\n"_q;
+			result += u"Cmd and Ctrl are physical keys. J/о shows the key and its layout character.\n\n"_q;
 			if (const auto recent = RecentKeyLogText(); !recent.isEmpty()) {
 				result += recent;
 			} else {
@@ -1338,6 +1389,13 @@ void TraceKey(not_null<QKeyEvent*> e, const QString &status) {
 	RecordKeyEvent(e, status, true);
 }
 
+void TraceCommand(const QString &command, const QString &status) {
+	const auto active = App().activeWindow();
+	if (Enabled() && !App().passcodeLocked() && (!active || !active->locked())) {
+		KeyLog.recordCommand(command, status);
+	}
+}
+
 QString RecentKeyLogText() {
 	return App().passcodeLocked() ? QString() : KeyLog.text();
 }
@@ -1516,9 +1574,15 @@ bool HandleApplicationShortcutOverride(not_null<QKeyEvent*> e) {
 	if (HandlePaneNavigationKey(e)) {
 		return true;
 	}
-	const auto root = GlobalFocusRoot(QApplication::focusWidget());
-	return !ActiveKeyboardScope()
-		&& HandlePreLayerKey(e, IsKeyboardPane(root) ? root : nullptr);
+	if (ActiveKeyboardScope()) {
+		return false;
+	}
+	const auto focus = QApplication::focusWidget();
+	const auto root = GlobalFocusRoot(focus);
+	const auto pane = IsKeyboardPane(root) ? root : nullptr;
+	return HandlePreLayerKey(e, pane)
+		|| (!(pane && KeyboardScopeHasTextInput(pane, focus))
+			&& HandleChatClipboardKey(e, pane));
 }
 
 bool HandleApplicationKeyPress(
@@ -1553,13 +1617,20 @@ bool HandleApplicationKeyPress(
 	const auto focus = QApplication::focusWidget();
 	const auto globalRoot = scope ? nullptr : GlobalFocusRoot(focus);
 	const auto pane = IsKeyboardPane(globalRoot) ? globalRoot : nullptr;
+	const auto preLayerLogGeneration = KeyLog.generation();
 	if (!scope && HandlePreLayerKey(e, pane)) {
-		RecordKeyEvent(e, u"pre-layer handler"_q, true);
+		if (KeyLog.generation() == preLayerLogGeneration) {
+			RecordKeyEvent(e, u"active selection or hint"_q, true);
+		}
 		e->accept();
 		return true;
 	}
 	if (pane && KeyboardScopeHasTextInput(pane, object)) {
 		return false;
+	}
+	if (!scope && HandleChatClipboardKey(e, pane)) {
+		e->accept();
+		return true;
 	}
 	const auto hintScope = scope ? scope.data() : QApplication::activeWindow();
 	if (hintScope) {
@@ -1611,6 +1682,13 @@ bool HandleApplicationKeyPress(
 				return true;
 			} else if (const auto delta = Bindings::TabNavigationDelta(e)) {
 				KeyboardNavigation::Get(globalRoot)->focusNext(delta > 0);
+				if (pane) {
+					KeyLog.recordCommand(
+						delta > 0 ? u"Tab"_q : u"Shift+Tab"_q,
+						delta > 0
+							? u"right pane: focus next control"_q
+							: u"right pane: focus previous control"_q);
+				}
 				e->accept();
 				return true;
 			} else if (dynamic_cast<Ui::AbstractButton*>(focus)
@@ -1629,9 +1707,13 @@ bool HandleApplicationKeyPress(
 		return true;
 	}
 	if (pane && NormalMode()) {
+		if (HandleHelp(e)) {
+			return true;
+		}
 		if (Bindings::IsPlainEscape(e)) {
 			if (!e->isAutoRepeat()) {
 				FocusForCurrentMode();
+				KeyLog.recordCommand(u"Esc"_q, u"focus chat"_q);
 			}
 		} else if (FocusHintsKey(e)) {
 			if (!e->isAutoRepeat()) {
@@ -1640,6 +1722,9 @@ bool HandleApplicationKeyPress(
 					QFont(u"Menlo"_q, HintSize(), QFont::DemiBold),
 					st::vimHintPadding,
 					st::vimHintGap);
+				KeyLog.recordCommand(
+					u"Focus controls"_q,
+					u"right pane: choose a control by its hint"_q);
 			}
 		} else if (const auto direction = ScrollNavigationKey(e)) {
 			const auto down = *direction == Qt::Key_Down;
@@ -1647,6 +1732,9 @@ bool HandleApplicationKeyPress(
 				(down ? 1 : -1) * ScrollStep(),
 				e->isAutoRepeat(),
 				SingleScrollDurationMs());
+			KeyLog.recordCommand(u"Scroll"_q, down
+				? u"right pane: scroll down"_q
+				: u"right pane: scroll up"_q);
 		} else {
 			return false;
 		}
@@ -1765,11 +1853,21 @@ bool HandleApplicationKeyPress(
 	const auto forcedNormalMode = ForcedNormalMode();
 	if (const auto action = ActionKey(e)) {
 		if (HandleRegisteredAction(*action)) {
-			RecordKeyEvent(e, u"action handler"_q, true);
+			if (*action == Action::CopyMessage) {
+				KeyLog.recordCommand(
+					u"Copy message"_q,
+					u"chat: choose a message by its hint"_q);
+			} else {
+				RecordKeyEvent(e, u"action handler"_q, true);
+			}
 			e->accept();
 			return true;
 		}
-		RecordKeyEvent(e, u"action without target"_q, true);
+		if (*action == Action::CopyMessage) {
+			KeyLog.recordCommand(u"Copy message"_q, u"chat: no matching message visible"_q);
+		} else {
+			RecordKeyEvent(e, u"action without target"_q, true);
+		}
 		e->accept();
 		return true;
 	}

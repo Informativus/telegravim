@@ -199,7 +199,7 @@ expect(storage/file_download.cpp
     "_data.left[(]_loadSize[)]"
     "Image reads must be bounded by the available byte array")
 expect(core/vim_keymap.cpp
-    "if [(]!scope && HandlePreLayerKey[(]e, pane[)][)] [^{]*[{][^}]*}[\n\t ]*if [(]pane && KeyboardScopeHasTextInput[(]pane, object[)][)] [^{]*[{][^}]*}[\n\t ]*const auto hintScope"
+    "if [(]!scope && HandlePreLayerKey[(]e, pane[)][)] [^{]*[{][^}]*}[^}]*}[\n\t ]*if [(]pane && KeyboardScopeHasTextInput[(]pane, object[)][)] [^{]*[{][^}]*}[\n\t ]*if [(]!scope && HandleChatClipboardKey[(]e, pane[)][)] [^{]*[{][^}]*}[\n\t ]*const auto hintScope"
     "Active message text must receive keys in its pane before global focus and chat commands")
 expect(history/history_inner_widget.cpp
     "RegisterPreLayerKeyHandler[(]this,[^{]*[{][^}]*vimKeymapHandleMessageSelectionKey[(]e[)][^}]*}[^}]*_vimKeymapTextCursorItem[^}]*_vimKeymapTextVisualMode[^}]*_vimKeymapHintMode == VimKeymapHintMode::None[^}]*}[\n\t ]*return [(]e->type[(][)] == QEvent::ShortcutOverride[)][\n\t ]*\\|\\| vimKeymapHandleHintKey[(]e[)][\n\t ]*\\|\\| vimKeymapHandleTextSelectionKey"

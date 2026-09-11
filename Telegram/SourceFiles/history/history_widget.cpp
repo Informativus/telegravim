@@ -816,8 +816,10 @@ HistoryWidget::HistoryWidget(
 					&& window()->isActiveWindow()
 					&& chat
 					&& this->controller()->activeChatEntryCurrent().key == chat) {
-					Core::VimKeymap::InvokeAction(
+					const auto handled = Core::VimKeymap::InvokeAction(
 						Core::VimKeymap::Action::SelectMessageText);
+					Core::VimKeymap::TraceCommand(u"Select message text"_q,
+						handled ? u"chat: choose a message by its hint"_q : u"chat: no matching message visible"_q);
 				}
 			});
 		}
