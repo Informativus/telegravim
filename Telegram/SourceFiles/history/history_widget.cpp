@@ -151,6 +151,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "iv/iv_rich_page.h"
 #include "core/click_handler_types.h"
 #include "core/vim_keymap.h"
+#include "core/vim_keymap_widgets.h"
 #include "core/vim_keymap_geometry.h"
 #include "chat_helpers/field_autocomplete.h"
 #include "chat_helpers/tabbed_panel.h"
