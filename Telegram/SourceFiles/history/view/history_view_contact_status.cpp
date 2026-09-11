@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/history_view_contact_status.h"
 
+#include "core/vim_keymap_widgets.h"
+
 #include "lang/lang_keys.h"
 #include "ui/controls/userpic_button.h"
 #include "ui/widgets/menu/menu_add_action_callback_factory.h"
@@ -348,6 +350,7 @@ ContactStatus::Bar::Bar(
 	SetupSetBotPhotoButton(
 		object_ptr<BgButton>(this, st::historyContactStatusButton))) {
 	_close->setAccessibleName(tr::lng_cancel(tr::now));
+	Core::VimKeymap::SetKeyboardCloseTarget(_close);
 	_unarchiveIcon->setAccessibleName(tr::lng_new_contact_unarchive(tr::now));
 	_reportIcon->setAccessibleName(tr::lng_report_spam(tr::now));
 	_requestChatInfo->setAttribute(Qt::WA_TransparentForMouseEvents);

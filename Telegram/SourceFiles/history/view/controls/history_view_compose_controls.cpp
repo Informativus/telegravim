@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/controls/history_view_compose_controls.h"
 
+#include "core/vim_keymap_widgets.h"
+
 #include "base/call_delayed.h"
 #include "base/event_filter.h"
 #include "base/options.h"
@@ -363,6 +365,7 @@ FieldHeader::FieldHeader(
 	std::make_unique<ForwardPanel>([=] { customEmojiRepaint(); }))
 , _data(&_show->session().data())
 , _cancel(Ui::CreateChild<Ui::IconButton>(this, st::historyReplyCancel)) {
+	Core::VimKeymap::SetKeyboardCloseTarget(_cancel);
 	_cancel->setAccessibleName(tr::lng_cancel(tr::now));
 	_updateEditTimeLeftDisplay.setCallback([=] { update(); });
 	resize(QSize(parent->width(), st::historyReplyHeight));

@@ -23,6 +23,29 @@ class RpWidget;
 
 namespace Core::VimKeymap {
 
+enum class KeyboardHintMode {
+	Focus,
+	Close,
+	ShowMessage,
+};
+
+struct KeyboardHintActions {
+	Fn<void()> activate;
+	Fn<void()> close;
+	Fn<void()> showMessage;
+};
+
+void SetKeyboardHintActions(
+	not_null<QWidget*> widget,
+	KeyboardHintActions actions);
+void SetKeyboardCloseTarget(not_null<QWidget*> widget);
+[[nodiscard]] bool ActivateKeyboardHintTarget(
+	not_null<QWidget*> widget,
+	bool autoRepeat = false);
+[[nodiscard]] std::vector<QPointer<QWidget>> KeyboardHintTargets(
+	not_null<QWidget*> scope,
+	KeyboardHintMode mode);
+
 [[nodiscard]] bool KeyHandlerInScope(QObject *owner, QWidget *scope);
 [[nodiscard]] bool KeyboardInputActive(QObject *receiver);
 [[nodiscard]] QWidget *FindKeyboardScope(not_null<QWidget*> window);
@@ -64,13 +87,15 @@ public:
 		not_null<QKeyEvent*> e,
 		std::optional<Qt::Key> navigationKey = std::nullopt);
 	void focusTarget(not_null<QWidget*> target);
+	void activateHint(not_null<QWidget*> target);
 	void restoreFocus();
 	bool scroll(int delta, bool autoRepeat, int duration);
 	void showHints(
 		Fn<QString(int, int)> label,
 		QFont font,
 		QSize padding,
-		int gap);
+		int gap,
+		KeyboardHintMode mode = KeyboardHintMode::Focus);
 	[[nodiscard]] bool hasHints() const;
 	void clearHints();
 	void setHintPrefix(const QString &prefix);
@@ -101,6 +126,7 @@ private:
 	QFont _font;
 	QSize _padding;
 	int _gap = 0;
+	KeyboardHintMode _hintMode = KeyboardHintMode::Focus;
 	QPointer<QWidget> _scrollArea;
 	Ui::Animations::Simple _scrollAnimation;
 	int _scrollTarget = 0;
