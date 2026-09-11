@@ -74,7 +74,10 @@ namespace {
 }
 
 [[nodiscard]] QString KeyNameForLog(not_null<QKeyEvent*> e) {
-	auto key = MacPhysicalLatinKey(e);
+	auto key = SpecialKeyName(e);
+	if (key.isEmpty()) {
+		key = MacPhysicalLatinKey(e);
+	}
 	if (key.isEmpty()) {
 		if (e->key() >= Qt::Key_A && e->key() <= Qt::Key_Z) {
 			key = QString(QChar('A' + e->key() - Qt::Key_A));
@@ -101,10 +104,18 @@ namespace {
 	const auto modifiers = e->modifiers()
 		& ~(Qt::KeypadModifier | Qt::GroupSwitchModifier);
 	if (modifiers & Qt::ControlModifier) {
+#ifdef Q_OS_MAC
+		parts.push_back(u"Cmd"_q);
+#else // Q_OS_MAC
 		parts.push_back(u"Ctrl"_q);
+#endif // Q_OS_MAC
 	}
 	if (modifiers & Qt::MetaModifier) {
+#ifdef Q_OS_MAC
+		parts.push_back(u"Ctrl"_q);
+#else // Q_OS_MAC
 		parts.push_back(u"Cmd"_q);
+#endif // Q_OS_MAC
 	}
 	if (modifiers & Qt::AltModifier) {
 		parts.push_back(u"Alt"_q);
@@ -126,8 +137,16 @@ void KeyEventLog::record(not_null<QKeyEvent*> event, const QString &status) {
 	if (_suppressed || KeyboardInputActive(nullptr)) {
 		return;
 	}
+	append(KeyEventForLog(event) + u" -> "_q + status);
+}
+
+void KeyEventLog::recordCommand(const QString &command, const QString &status) {
+	append(command + u" -> "_q + status);
+}
+
+void KeyEventLog::append(const QString &entry) {
 	_entries.push_back(QString::number(++_sequence).rightJustified(2, '0')
-		+ u". "_q + KeyEventForLog(event) + u" -> "_q + status);
+		+ u". "_q + entry);
 	if (_entries.size() > kLimit) {
 		_entries.removeFirst();
 	}

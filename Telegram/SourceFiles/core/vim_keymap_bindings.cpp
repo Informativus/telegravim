@@ -18,6 +18,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace Core::VimKeymap::Bindings {
 
+int PageNavigationDelta(not_null<QKeyEvent*> e) {
+	if (CleanModifiers(e) != Qt::ShiftModifier) {
+		return 0;
+	} else if (KeyIs(e, Qt::Key_U, u"u"_q, u"г"_q)) {
+		return -1;
+	} else if (KeyIs(e, Qt::Key_D, u"d"_q, u"в"_q)) {
+		return 1;
+	}
+	return 0;
+}
+
 bool IsCloseHints(not_null<QKeyEvent*> e) {
 	return CleanModifiers(e) == Qt::NoModifier
 		&& KeyIs(e, Qt::Key_C, u"c"_q, u"\u0441"_q);
@@ -627,6 +638,32 @@ StickerGridAction StickerGridActionKey(not_null<QKeyEvent*> e) {
 		return StickerGridAction::Preview;
 	}
 	return StickerGridAction::None;
+}
+
+PaneNavigationAction PaneNavigationKey(
+		not_null<QKeyEvent*> e,
+		bool &pending) {
+	const auto modifiers = CleanModifiers(e);
+	if (modifiers == PhysicalControlModifier()
+		&& KeyIs(e, Qt::Key_A, u"a"_q, u"\u0444"_q)) {
+		if (!e->isAutoRepeat()) {
+			pending = true;
+		}
+		return PaneNavigationAction::Prefix;
+	} else if (!pending) {
+		return PaneNavigationAction::None;
+	} else if (e->isAutoRepeat()) {
+		return PaneNavigationAction::Cancel;
+	}
+	pending = false;
+	if (modifiers == Qt::NoModifier) {
+		if (KeyIs(e, Qt::Key_H, u"h"_q, u"\u0440"_q)) {
+			return PaneNavigationAction::Left;
+		} else if (KeyIs(e, Qt::Key_L, u"l"_q, u"\u0434"_q)) {
+			return PaneNavigationAction::Right;
+		}
+	}
+	return PaneNavigationAction::Cancel;
 }
 
 int InterfaceHistoryDelta(not_null<QKeyEvent*> e) {

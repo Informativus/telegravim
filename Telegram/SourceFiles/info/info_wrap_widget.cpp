@@ -137,6 +137,11 @@ WrapWidget::WrapWidget(
 , _controller(createController(window, memento->content()))
 , _topShadow(this)
 , _bottomShadow(this) {
+	if (wrap == Wrap::Side) {
+		Core::VimKeymap::RegisterGlobalFocusRoot(
+			this,
+			Core::VimKeymap::KeyboardFocusRootKind::Pane);
+	}
 	_topShadow->toggleOn(
 		topShadowToggledValue(
 		) | rpl::filter([](bool shown) {
@@ -149,6 +154,13 @@ WrapWidget::WrapWidget(
 
 	_wrap.changes(
 	) | rpl::on_next([this] {
+		if (this->wrap() == Wrap::Side || Core::VimKeymap::IsKeyboardPane(this)) {
+			Core::VimKeymap::RegisterGlobalFocusRoot(
+				this,
+				(this->wrap() == Wrap::Side)
+					? Core::VimKeymap::KeyboardFocusRootKind::Pane
+					: Core::VimKeymap::KeyboardFocusRootKind::Controls);
+		}
 		setupTop();
 		finishShowContent();
 	}, lifetime());
@@ -826,10 +838,12 @@ rpl::producer<SelectedItems> WrapWidget::selectedListValue() const {
 object_ptr<ContentWidget> WrapWidget::createContent(
 		not_null<ContentMemento*> memento,
 		not_null<Controller*> controller) {
-	return memento->createWidget(
+	auto result = memento->createWidget(
 		this,
 		controller,
 		contentGeometry());
+	Core::VimKeymap::SetKeyboardFocusTargetEnabled(result, false);
+	return result;
 }
 
 rpl::producer<Wrap> WrapWidget::wrapValue() const {

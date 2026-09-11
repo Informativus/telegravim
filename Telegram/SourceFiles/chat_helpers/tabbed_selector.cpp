@@ -1602,7 +1602,7 @@ void TabbedSelector::vimKeymapRefocusPanelLater(int attemptsLeft) {
 }
 
 bool TabbedSelector::vimKeymapHandleKey(not_null<QKeyEvent*> e) {
-	if (isHidden() || !_scroll) {
+	if (!isVisible() || !_scroll || !Ui::InFocusChain(this)) {
 		return false;
 	}
 	const auto modifiers = CommonModifiers(e);
@@ -1613,7 +1613,7 @@ bool TabbedSelector::vimKeymapHandleKey(not_null<QKeyEvent*> e) {
 		&& MatchesPanelLetter(e, QChar('f'), QChar(ushort(0x0444)))) {
 		const auto result = vimKeymapFocusSearch();
 		if (result) {
-			Core::VimKeymap::TraceKey(e, u"panel search"_q);
+			Core::VimKeymap::TraceKey(e, u"emoji/sticker panel: search"_q);
 		}
 		return result;
 	} else if (controlLike
@@ -1622,13 +1622,13 @@ bool TabbedSelector::vimKeymapHandleKey(not_null<QKeyEvent*> e) {
 			const auto result = vimKeymapFocusPanel();
 			if (result) {
 				Core::VimKeymap::SetNormalMode(true);
-				Core::VimKeymap::TraceKey(e, u"panel focus results"_q);
+				Core::VimKeymap::TraceKey(e, u"emoji/sticker panel: focus results"_q);
 			}
 			return result;
 		}
 		const auto result = vimKeymapScrollBy(1);
 		if (result) {
-			Core::VimKeymap::TraceKey(e, u"panel scroll down"_q);
+			Core::VimKeymap::TraceKey(e, u"emoji/sticker panel: scroll down"_q);
 		}
 		return result;
 	} else if (controlLike
@@ -1637,13 +1637,13 @@ bool TabbedSelector::vimKeymapHandleKey(not_null<QKeyEvent*> e) {
 			const auto result = vimKeymapFocusPanel();
 			if (result) {
 				Core::VimKeymap::SetNormalMode(true);
-				Core::VimKeymap::TraceKey(e, u"panel focus results"_q);
+				Core::VimKeymap::TraceKey(e, u"emoji/sticker panel: focus results"_q);
 			}
 			return result;
 		}
 		const auto result = vimKeymapScrollBy(-1);
 		if (result) {
-			Core::VimKeymap::TraceKey(e, u"panel scroll up"_q);
+			Core::VimKeymap::TraceKey(e, u"emoji/sticker panel: scroll up"_q);
 		}
 		return result;
 	}
@@ -1651,7 +1651,7 @@ bool TabbedSelector::vimKeymapHandleKey(not_null<QKeyEvent*> e) {
 	if (e->key() == Qt::Key_Backtab) {
 		const auto result = vimKeymapSwitchTab(-1);
 		if (result) {
-			Core::VimKeymap::TraceKey(e, u"panel previous tab"_q);
+			Core::VimKeymap::TraceKey(e, u"emoji/sticker panel: previous tab"_q);
 		}
 		return result;
 	} else if (e->key() == Qt::Key_Tab
@@ -1660,7 +1660,7 @@ bool TabbedSelector::vimKeymapHandleKey(not_null<QKeyEvent*> e) {
 		if (result) {
 			Core::VimKeymap::TraceKey(
 				e,
-				noModifiers ? u"panel next tab"_q : u"panel previous tab"_q);
+				noModifiers ? u"emoji/sticker panel: next tab"_q : u"emoji/sticker panel: previous tab"_q);
 		}
 		return result;
 	}
@@ -1671,7 +1671,7 @@ bool TabbedSelector::vimKeymapHandleKey(not_null<QKeyEvent*> e) {
 		|| e->key() == Qt::Key_Space) {
 		const auto result = currentTab()->widget()->vimKeymapActivateSelection();
 		if (result) {
-			Core::VimKeymap::TraceKey(e, u"panel activate selection"_q);
+			Core::VimKeymap::TraceKey(e, u"emoji/sticker panel: activate selection"_q);
 		}
 		return result;
 	} else if (!noModifiers) {
@@ -1679,25 +1679,25 @@ bool TabbedSelector::vimKeymapHandleKey(not_null<QKeyEvent*> e) {
 	} else if (MatchesPanelLetter(e, QChar('h'), QChar(ushort(0x0440)))) {
 		const auto result = currentTab()->widget()->vimKeymapMoveSelection(-1, 0);
 		if (result) {
-			Core::VimKeymap::TraceKey(e, u"panel move left"_q);
+			Core::VimKeymap::TraceKey(e, u"emoji/sticker panel: move left"_q);
 		}
 		return result;
 	} else if (MatchesPanelLetter(e, QChar('j'), QChar(ushort(0x043E)))) {
 		const auto result = currentTab()->widget()->vimKeymapMoveSelection(0, 1);
 		if (result) {
-			Core::VimKeymap::TraceKey(e, u"panel move down"_q);
+			Core::VimKeymap::TraceKey(e, u"emoji/sticker panel: move down"_q);
 		}
 		return result;
 	} else if (MatchesPanelLetter(e, QChar('k'), QChar(ushort(0x043B)))) {
 		const auto result = currentTab()->widget()->vimKeymapMoveSelection(0, -1);
 		if (result) {
-			Core::VimKeymap::TraceKey(e, u"panel move up"_q);
+			Core::VimKeymap::TraceKey(e, u"emoji/sticker panel: move up"_q);
 		}
 		return result;
 	} else if (MatchesPanelLetter(e, QChar('l'), QChar(ushort(0x0434)))) {
 		const auto result = currentTab()->widget()->vimKeymapMoveSelection(1, 0);
 		if (result) {
-			Core::VimKeymap::TraceKey(e, u"panel move right"_q);
+			Core::VimKeymap::TraceKey(e, u"emoji/sticker panel: move right"_q);
 		}
 		return result;
 	}

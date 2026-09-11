@@ -1899,16 +1899,69 @@ void TestShortestHintLabels() {
 		&& ShortestHintLabel(0, 1, {}).isEmpty(), "invalid hint requests return no label");
 }
 
-void TestProfileKeyboardNavigation() {
+void TestPaneNavigationPrefix() {
+	using namespace Core::VimKeymap::Bindings;
+#ifdef Q_OS_MAC
+	const auto control = Qt::MetaModifier;
+	const auto otherControl = Qt::ControlModifier;
+#else // Q_OS_MAC
+	const auto control = Qt::ControlModifier;
+	const auto otherControl = Qt::MetaModifier;
+#endif // Q_OS_MAC
+	auto pending = false;
+	const auto press = [&](int key, Qt::KeyboardModifiers modifiers,
+			const QString &text, bool repeat = false) {
+		auto event = QKeyEvent(QEvent::KeyPress, key, modifiers, text, repeat);
+		return PaneNavigationKey(&event, pending);
+	};
+	Check(press(Qt::Key_L, Qt::NoModifier, u"l"_q) == PaneNavigationAction::None,
+		"pane movement requires its prefix");
+	Check(press(Qt::Key_A, otherControl, u"a"_q) == PaneNavigationAction::None,
+		"pane prefix does not capture Command A on macOS or Meta A elsewhere");
+	Check(press(Qt::Key_A, control, u"a"_q) == PaneNavigationAction::Prefix && pending,
+		"physical Control A starts pane navigation");
+	Check(press(Qt::Key_L, Qt::NoModifier, u"l"_q) == PaneNavigationAction::Right && !pending,
+		"Control A then l moves right and completes the prefix");
+	Check(press(Qt::Key_unknown, control, u"\u0444"_q) == PaneNavigationAction::Prefix,
+		"Russian Control A starts the same prefix");
+	Check(press(Qt::Key_unknown, Qt::NoModifier, u"\u0440"_q) == PaneNavigationAction::Left,
+		"Russian h returns to the chat");
+	Check(press(Qt::Key_A, control, u"a"_q) == PaneNavigationAction::Prefix,
+		"pane navigation can start again");
+	Check(press(Qt::Key_Escape, Qt::NoModifier, {}) == PaneNavigationAction::Cancel && !pending,
+		"Escape cancels a pending pane command");
+	Check(press(Qt::Key_A, control, u"a"_q) == PaneNavigationAction::Prefix,
+		"pane prefix starts before invalid input");
+	Check(press(Qt::Key_D, Qt::NoModifier, u"d"_q) == PaneNavigationAction::Cancel && !pending,
+		"an unknown pane command is consumed instead of becoming a chat action");
+	Check(press(Qt::Key_A, control, u"a"_q, true) == PaneNavigationAction::Prefix && !pending,
+		"autorepeat cannot arm a new pane command");
+	Check(press(Qt::Key_A, control, u"a"_q) == PaneNavigationAction::Prefix,
+		"a fresh key press arms the prefix after autorepeat");
+	Check(press(Qt::Key_L, Qt::NoModifier, u"l"_q, true) == PaneNavigationAction::Cancel && pending,
+		"repeated direction keys do not move panes or consume a fresh prefix");
+	Check(press(Qt::Key_unknown, Qt::NoModifier, u"\u0434"_q) == PaneNavigationAction::Right && !pending,
+		"Russian l moves right once after a fresh prefix");
+}
+
+void TestProfileKeyboardNavigation(bool pane = false) {
 	using namespace Core::VimKeymap;
 	auto window = QWidget();
 	window.setAttribute(Qt::WA_DontShowOnScreen);
 	window.resize(500, 400);
-	auto profile = NavigationTestLayer(&window);
+	auto profileOwner = pane
+		? std::unique_ptr<QWidget>(new QWidget(&window))
+		: std::unique_ptr<QWidget>(new NavigationTestLayer(&window));
+	auto &profile = *profileOwner;
+	if (pane) {
+		RegisterGlobalFocusRoot(&profile, KeyboardFocusRootKind::Pane);
+	}
 	profile.setGeometry(20, 20, 380, 300);
 	auto scroll = QScrollArea(&profile);
 	scroll.setGeometry(0, 0, 360, 280);
 	const auto content = new QWidget();
+	content->setFocusPolicy(Qt::StrongFocus);
+	SetKeyboardFocusTargetEnabled(content, false);
 	content->resize(330, 800);
 	scroll.setWidget(content);
 	auto qr = Ui::AbstractButton(content);
@@ -1936,12 +1989,37 @@ void TestProfileKeyboardNavigation() {
 	window.show();
 	QApplication::setActiveWindow(&window);
 	DrainMainQueue();
+	if (pane) {
+		Check(IsKeyboardPane(&profile) && GlobalFocusRoot(photos.entity()) == &profile,
+			"docked profile actions join the global hints and retain their own pane");
+		Check(VisibleKeyboardHintTargets(&profile)
+			== std::vector<QPointer<QWidget>>{ &qr, photos.entity(), videos.entity() },
+			"docked profile hints include visible actions without a container or offscreen badge");
+	}
 	const auto expected = std::vector<QPointer<QWidget>>{
 		&qr, photos.entity(), videos.entity(), &last };
 	Check(KeyboardFocusTargets(&profile) == expected,
 		"profile cycle excludes scroll containers and fully clipped controls");
 	const auto navigation = KeyboardNavigation::Get(&profile);
 	navigation->focusTarget(&qr);
+	if (pane) {
+		auto image = QImage(navigation->size(), QImage::Format_ARGB32_Premultiplied);
+		image.fill(Qt::transparent);
+		{
+			auto painter = QPainter(&image);
+			navigation->render(&painter, {}, {}, QWidget::RenderFlags());
+		}
+		auto paintsOutsideButton = false;
+		const auto buttonRect = QRect(qr.mapTo(&profile, QPoint()), qr.size());
+		for (auto y = 0; y != image.height(); ++y) {
+			for (auto x = 0; x != image.width(); ++x) {
+				if (!buttonRect.contains(x, y) && image.pixelColor(x, y).alpha()) {
+					paintsOutsideButton = true;
+				}
+			}
+		}
+		Check(!paintsOutsideButton, "pane focus only outlines its selected control");
+	}
 	navigation->focusNext(true);
 	Check(photos.entity()->hasFocus(), "one Tab moves directly from QR to photos");
 	navigation->focusNext(true);
@@ -2074,6 +2152,26 @@ void TestGlobalPlayerFocusHints() {
 	RegisterGlobalFocusRoot(temporary);
 	delete temporary;
 	Check(GlobalFocusRoots(&window).size() == 1, "destroyed player roots are removed safely");
+}
+
+void TestPageNavigation() {
+	using namespace Core::VimKeymap;
+	for (const auto &[key, text, expected] : {
+		std::tuple{ Qt::Key_U, u"U"_q, -1 },
+		std::tuple{ Qt::Key_D, u"D"_q, 1 },
+		std::tuple{ Qt::Key_unknown, u"Г"_q, -1 },
+		std::tuple{ Qt::Key_unknown, u"В"_q, 1 } }) {
+		for (const auto modifiers : std::array<Qt::KeyboardModifiers, 5>{
+			Qt::NoModifier, Qt::ShiftModifier,
+			Qt::ControlModifier | Qt::ShiftModifier,
+			Qt::MetaModifier | Qt::ShiftModifier,
+			Qt::AltModifier | Qt::ShiftModifier }) {
+			auto event = QKeyEvent(QEvent::KeyPress, key, modifiers, text);
+			Check(Bindings::PageNavigationDelta(&event)
+				== (modifiers == Qt::ShiftModifier ? expected : 0),
+				"page scrolling uses Shift U/D in both layouts without stealing modified keys");
+		}
+	}
 }
 
 void TestInterfaceActionHints() {
@@ -2662,6 +2760,26 @@ void TestKeyboardFocusScrollingAndPainting() {
 	navigation->scroll(10000, false, 0);
 	Check(scroll.verticalScrollBar()->value() == scroll.verticalScrollBar()->maximum(),
 		"scoped scrolling clamps at the end without moving a background");
+	for (const auto height : { 180, 260 }) {
+		scroll.resize(scroll.width(), height);
+		QApplication::processEvents();
+		const auto page = scroll.viewport()->height();
+		scroll.verticalScrollBar()->setValue(page);
+		navigation->scroll(1, false, 0, true);
+		Check(scroll.verticalScrollBar()->value() == page * 2,
+			"page down moves exactly one viewport after resizing");
+		navigation->scroll(-1, false, 0, true);
+		Check(scroll.verticalScrollBar()->value() == page,
+			"page up moves exactly one viewport");
+		scroll.verticalScrollBar()->setValue(0);
+		navigation->scroll(-1, false, 0, true);
+		Check(scroll.verticalScrollBar()->value() == 0,
+			"page up stays at the beginning");
+		scroll.verticalScrollBar()->setValue(scroll.verticalScrollBar()->maximum());
+		navigation->scroll(1, false, 0, true);
+		Check(scroll.verticalScrollBar()->value() == scroll.verticalScrollBar()->maximum(),
+			"page down stays at the end");
+	}
 }
 
 void TestCustomKeyboardFocusFrame() {
@@ -3176,8 +3294,11 @@ int main(int argc, char *argv[]) {
 	TestKeyboardMenuNavigation();
 	TestMediaPlaybackAndShareBindings();
 	TestShortestHintLabels();
+	TestPaneNavigationPrefix();
 	TestProfileKeyboardNavigation();
+	TestProfileKeyboardNavigation(true);
 	TestGlobalPlayerFocusHints();
+	TestPageNavigation();
 	TestInterfaceActionHints();
 	TestShareKeyboardFocusCycle();
 	TestKeyboardStickerFramePainting();

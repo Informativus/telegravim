@@ -20,6 +20,7 @@ public:
 	static constexpr auto kLimit = 200;
 
 	void record(not_null<QKeyEvent*> event, const QString &status);
+	void recordCommand(const QString &command, const QString &status);
 	void clear();
 	[[nodiscard]] QString text() const;
 	[[nodiscard]] uint64 generation() const;
@@ -27,6 +28,8 @@ public:
 	void setSuppressed(bool suppressed);
 
 private:
+	void append(const QString &entry);
+
 	QStringList _entries;
 	uint64 _generation = 0;
 	uint64 _sequence = 0;

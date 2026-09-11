@@ -457,6 +457,11 @@ HistoryInner::HistoryInner(
 
 	setMouseTracking(true);
 	setAccessibleName(tr::lng_sr_message_list(tr::now));
+	QObject::connect(qApp, &QApplication::focusChanged, this, [=](QWidget*, QWidget *now) {
+		if (Core::VimKeymap::IsKeyboardPane(Core::VimKeymap::GlobalFocusRoot(now))) {
+			vimKeymapClearHints();
+		}
+	});
 	Core::VimKeymap::RegisterActionHandler(this, [=](
 			Core::VimKeymap::Action action) {
 		const auto widgetWindow = window();
@@ -481,10 +486,15 @@ HistoryInner::HistoryInner(
 		if (vimKeymapHandleMessageSelectionKey(e)) {
 			return true;
 		}
+		const auto copySelection = hasSelectedText()
+			&& (e->matches(QKeySequence::Copy)
+				|| Core::VimKeymap::ActionKey(e)
+					== Core::VimKeymap::Action::CopyMessage);
 		if (!isVisible()
 			|| !window()->isActiveWindow()
 			|| (!_vimKeymapTextCursorItem
 				&& !_vimKeymapTextVisualMode
+				&& !copySelection
 				&& _vimKeymapHintMode == VimKeymapHintMode::None)) {
 			return false;
 		}
@@ -4272,6 +4282,9 @@ bool HistoryInner::vimKeymapCopyItem(not_null<HistoryItem*> item) {
 			return false;
 		}
 		TextUtilities::SetClipboardText(text);
+		Core::VimKeymap::TraceCommand(
+			u"Copy message"_q,
+			u"album text copied to clipboard"_q);
 		return true;
 	}
 	const auto text = HistoryItemText(item);
@@ -4282,6 +4295,7 @@ bool HistoryInner::vimKeymapCopyItem(not_null<HistoryItem*> item) {
 		text,
 		HistoryItemRichBlocks(item),
 		&session());
+	Core::VimKeymap::TraceCommand(u"Copy message"_q, u"text copied to clipboard"_q);
 	return true;
 }
 
@@ -4358,13 +4372,13 @@ bool HistoryInner::vimKeymapHandleTextSelectionKey(
 				}
 				Core::VimKeymap::SetNormalMode(true);
 				_controller->showToast(tr::lng_text_copied(tr::now));
-				Core::VimKeymap::TraceKey(
-					e,
-					u"copy selected message text"_q);
+				Core::VimKeymap::TraceCommand(
+					u"Copy selection"_q,
+					u"text copied to clipboard"_q);
 			} else {
-				Core::VimKeymap::TraceKey(
-					e,
-					u"copy selected message text failed"_q);
+				Core::VimKeymap::TraceCommand(
+					u"Copy selection"_q,
+					u"copy failed or is restricted"_q);
 			}
 		} else {
 			Core::VimKeymap::TraceKey(e, u"message text cursor copy ignored"_q);
@@ -4566,7 +4580,7 @@ bool HistoryInner::vimKeymapBeginMessageSelection(not_null<Element*> view) {
 bool HistoryInner::vimKeymapHandleMessageSelectionKey(
 		not_null<QKeyEvent*> e) {
 	using namespace Core::VimKeymap;
-	if (!NormalMode()
+	if ((!NormalMode() && !e->matches(QKeySequence::Copy))
 		|| !isVisible()
 		|| !window()->isActiveWindow()
 		|| !hasSelectedItems()
@@ -4578,7 +4592,8 @@ bool HistoryInner::vimKeymapHandleMessageSelectionKey(
 	const auto cancel = Bindings::IsPlainEscape(e);
 	const auto forward = Bindings::IsSelectionForward(e);
 	const auto remove = (action == Action::DeleteMessage);
-	const auto copy = (action == Action::CopyMessage);
+	const auto copy = (action == Action::CopyMessage)
+		|| e->matches(QKeySequence::Copy);
 	if (!navigation && !cancel && !forward && !remove && !copy) {
 		return false;
 	} else if (e->type() == QEvent::ShortcutOverride) {
@@ -4595,6 +4610,7 @@ bool HistoryInner::vimKeymapHandleMessageSelectionKey(
 			_widget->confirmDeleteSelected();
 		} else if (copy && copySelectedText()) {
 			clearSelected();
+			TraceCommand(u"Copy selection"_q, u"messages copied to clipboard"_q);
 		}
 	}
 	return true;

@@ -3811,7 +3811,7 @@ bool ListWidget::vimKeymapBeginMessageSelection(not_null<Element*> view) {
 bool ListWidget::vimKeymapHandleMessageSelectionKey(
 		not_null<QKeyEvent*> e) {
 	using namespace Core::VimKeymap;
-	if (!NormalMode()
+	if ((!NormalMode() && !e->matches(QKeySequence::Copy))
 		|| !isVisible()
 		|| !window()->isActiveWindow()
 		|| !hasSelectedItems()) {
@@ -3822,7 +3822,8 @@ bool ListWidget::vimKeymapHandleMessageSelectionKey(
 	const auto cancel = Bindings::IsPlainEscape(e);
 	const auto forward = Bindings::IsSelectionForward(e);
 	const auto remove = (action == Action::DeleteMessage);
-	const auto copy = (action == Action::CopyMessage);
+	const auto copy = (action == Action::CopyMessage)
+		|| e->matches(QKeySequence::Copy);
 	if (!navigation && !cancel && !forward && !remove && !copy) {
 		return false;
 	} else if (e->type() == QEvent::ShortcutOverride) {
@@ -4153,6 +4154,13 @@ void ListWidget::keyPressEvent(QKeyEvent *e) {
 				e->ignore();
 				return;
 		}
+	} else if (const auto page = Core::VimKeymap::NormalMode()
+		? Core::VimKeymap::Bindings::PageNavigationDelta(e)
+		: 0) {
+		vimKeymapStopScroll();
+		vimKeymapScrollBy(page, _visibleBottom - _visibleTop, !e->isAutoRepeat());
+		e->accept();
+		return;
 	} else if (const auto vimNavigation = Core::VimKeymap::NavigationKey(e)) {
 		const auto direction = (*vimNavigation == Qt::Key_Down) ? 1 : -1;
 		if (e->isAutoRepeat()) {
