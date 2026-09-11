@@ -39,6 +39,18 @@ enum class StickerGridAction {
 	ClosePreview,
 };
 
+enum class PaneNavigationAction {
+	None,
+	Prefix,
+	Cancel,
+	Left,
+	Right,
+};
+
+[[nodiscard]] PaneNavigationAction PaneNavigationKey(
+	not_null<QKeyEvent*> e,
+	bool &pending);
+
 [[nodiscard]] Qt::KeyboardModifiers CleanModifiers(not_null<QKeyEvent*> e);
 [[nodiscard]] QString PlainText(not_null<QKeyEvent*> e);
 [[nodiscard]] QString HintCharacter(not_null<QKeyEvent*> e);

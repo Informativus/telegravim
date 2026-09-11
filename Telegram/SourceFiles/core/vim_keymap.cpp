@@ -55,10 +55,13 @@ namespace {
 constexpr auto kHoldScrollTickMs = 16;
 constexpr auto kHoldScrollStartDelayMs = 90;
 constexpr auto kSingleScrollDurationMs = 190;
-constexpr auto kTelegraVimBuild = "2026.09.11-103";
+constexpr auto kTelegraVimBuild = "2026.09.11-104-beta.1";
 
 bool NormalModeEnabled = false;
 bool LegacyDefaultsMigrated = false;
+
+QPointer<QWidget> PanePrefixWindow;
+QPointer<QWidget> PanePrefixFocus;
 
 KeyEventLog KeyLog;
 
@@ -696,6 +699,58 @@ void UpdateKeyboardScope(QWidget *scope) {
 	}
 }
 
+[[nodiscard]] bool HandlePaneNavigationKey(not_null<QKeyEvent*> e) {
+	if (!PanePrefixWindow) {
+		auto pending = false;
+		if (Bindings::PaneNavigationKey(e, pending) == Bindings::PaneNavigationAction::None) {
+			return false;
+		}
+	}
+	const auto window = QApplication::activeWindow();
+	const auto focus = QApplication::focusWidget();
+	const auto root = GlobalFocusRoot(focus);
+	if (!window || !NormalMode() || ActiveKeyboardScope()
+		|| (IsKeyboardPane(root) && KeyboardScopeHasTextInput(root, focus))
+		|| TextInputPassthroughRequested(e)) {
+		PanePrefixWindow = nullptr;
+		PanePrefixFocus = nullptr;
+		return false;
+	}
+	if (PanePrefixWindow != window || PanePrefixFocus != focus) {
+		PanePrefixWindow = nullptr;
+		PanePrefixFocus = nullptr;
+	}
+	auto pending = (PanePrefixWindow != nullptr);
+	const auto action = Bindings::PaneNavigationKey(e, pending);
+	if (action == Bindings::PaneNavigationAction::None) {
+		return false;
+	} else if (e->type() == QEvent::ShortcutOverride) {
+		return true;
+	}
+	PanePrefixWindow = pending ? window : nullptr;
+	PanePrefixFocus = pending ? focus : nullptr;
+	if (action == Bindings::PaneNavigationAction::Left) {
+		FocusForCurrentMode();
+	} else if (action == Bindings::PaneNavigationAction::Right) {
+		for (const auto &root : GlobalFocusRoots(window)) {
+			if (IsKeyboardPane(root)) {
+				const auto navigation = QPointer<KeyboardNavigation>(
+					KeyboardNavigation::Get(root));
+				navigation->restoreFocus();
+				if (navigation && root) {
+					const auto targets = KeyboardFocusTargets(root);
+					if (std::find(targets.begin(), targets.end(), QApplication::focusWidget())
+						== targets.end()) {
+						navigation->focusNext(true);
+					}
+				}
+				break;
+			}
+		}
+	}
+	return true;
+}
+
 void SetNormalModeValue(bool enabled) {
 	const auto was = NormalMode();
 	const auto value = enabled;
@@ -703,6 +758,8 @@ void SetNormalModeValue(bool enabled) {
 		return;
 	}
 	NormalModeEnabled = value;
+	PanePrefixWindow = nullptr;
+	PanePrefixFocus = nullptr;
 	if (was != NormalMode()) {
 		RefreshModeIndicator();
 	}
@@ -1115,6 +1172,8 @@ void ShowHelpBox() {
 			result += u"c/с - метки крестиков и кружков для закрытия\n"_q;
 			result += u"f/а и метка плавающего кружка - пауза/пуск; затем Space или Enter\n"_q;
 			result += u"Shift+F / Shift+А и метка кружка - перейти к сообщению\n"_q;
+			result += u"Ctrl+A, затем l/д - правая панель; h/р - обратно в чат\n"_q;
+			result += u"В правой панели: f - метки, j/k - прокрутка, Tab - кнопки, Esc - в чат\n"_q;
 			result += openChats + u" - подсказки для открытия чатов\n"_q;
 			result += preview
 				+ u" - буквы для предпросмотра чата без прочтения\n"_q;
@@ -1190,6 +1249,8 @@ void ShowHelpBox() {
 			result += u"c - show close-button and floating round-video hints\n"_q;
 			result += u"f and a floating round-video hint - pause/resume; then Space or Enter\n"_q;
 			result += u"Shift+F and a round-video hint - go to its message\n"_q;
+			result += u"Ctrl+A, then l - right pane; h - back to the chat\n"_q;
+			result += u"Right pane: f - hints, j/k - scroll, Tab - controls, Esc - back to chat\n"_q;
 			result += openChats + u" - show chat open hints\n"_q;
 			result += preview
 				+ u" - show chat preview hints without marking read\n"_q;
@@ -1447,11 +1508,17 @@ int SingleScrollDurationMs() {
 
 bool HandleApplicationShortcutOverride(not_null<QKeyEvent*> e) {
 	const auto active = App().activeWindow();
-	return Enabled()
-		&& !App().passcodeLocked()
-		&& (!active || !active->locked())
-		&& !ActiveKeyboardScope()
-		&& HandlePreLayerKey(e);
+	if (!Enabled() || App().passcodeLocked() || (active && active->locked())) {
+		PanePrefixWindow = nullptr;
+		PanePrefixFocus = nullptr;
+		return false;
+	}
+	if (HandlePaneNavigationKey(e)) {
+		return true;
+	}
+	const auto root = GlobalFocusRoot(QApplication::focusWidget());
+	return !ActiveKeyboardScope()
+		&& HandlePreLayerKey(e, IsKeyboardPane(root) ? root : nullptr);
 }
 
 bool HandleApplicationKeyPress(
@@ -1460,9 +1527,13 @@ bool HandleApplicationKeyPress(
 	const auto active = App().activeWindow();
 	if (App().passcodeLocked() || (active && active->locked())) {
 		KeyLog.clear();
+		PanePrefixWindow = nullptr;
+		PanePrefixFocus = nullptr;
 		return false;
 	}
 	if (!Enabled()) {
+		PanePrefixWindow = nullptr;
+		PanePrefixFocus = nullptr;
 		return false;
 	}
 	const auto wasSuppressed = KeyLog.suppressed();
@@ -1475,12 +1546,21 @@ bool HandleApplicationKeyPress(
 	}
 	const auto scope = QPointer<QWidget>(ActiveKeyboardScope());
 	UpdateKeyboardScope(scope);
-	if (!scope && HandlePreLayerKey(e)) {
-		RecordKeyEvent(e, u"pre-layer handler"_q, true);
+	if (HandlePaneNavigationKey(e)) {
 		e->accept();
 		return true;
 	}
 	const auto focus = QApplication::focusWidget();
+	const auto globalRoot = scope ? nullptr : GlobalFocusRoot(focus);
+	const auto pane = IsKeyboardPane(globalRoot) ? globalRoot : nullptr;
+	if (!scope && HandlePreLayerKey(e, pane)) {
+		RecordKeyEvent(e, u"pre-layer handler"_q, true);
+		e->accept();
+		return true;
+	}
+	if (pane && KeyboardScopeHasTextInput(pane, object)) {
+		return false;
+	}
 	const auto hintScope = scope ? scope.data() : QApplication::activeWindow();
 	if (hintScope) {
 		if (const auto navigation = KeyboardNavigation::Find(hintScope)) {
@@ -1515,9 +1595,12 @@ bool HandleApplicationKeyPress(
 		return true;
 	}
 
-	const auto globalRoot = scope ? nullptr : GlobalFocusRoot(focus);
 	if (globalRoot) {
 		const auto navigation = KeyboardNavigation::Find(globalRoot);
+		if (pane && navigation && navigation->handleHintKey(e, HintInput(e))) {
+			e->accept();
+			return true;
+		}
 		if (!navigation || !navigation->hasHints()) {
 			if (CleanModifiers(e) == Qt::NoModifier
 				&& (e->key() == Qt::Key_Return
@@ -1542,6 +1625,31 @@ bool HandleApplicationKeyPress(
 	const auto controlScope = scope ? scope.data()
 		: globalRoot ? globalRoot : QApplication::activeWindow();
 	if (!scope && controlScope && HandleKeyboardControlKey(controlScope, e)) {
+		e->accept();
+		return true;
+	}
+	if (pane && NormalMode()) {
+		if (Bindings::IsPlainEscape(e)) {
+			if (!e->isAutoRepeat()) {
+				FocusForCurrentMode();
+			}
+		} else if (FocusHintsKey(e)) {
+			if (!e->isAutoRepeat()) {
+				KeyboardNavigation::Get(pane)->showHints(
+					HintLabel,
+					QFont(u"Menlo"_q, HintSize(), QFont::DemiBold),
+					st::vimHintPadding,
+					st::vimHintGap);
+			}
+		} else if (const auto direction = ScrollNavigationKey(e)) {
+			const auto down = *direction == Qt::Key_Down;
+			KeyboardNavigation::Get(pane)->scroll(
+				(down ? 1 : -1) * ScrollStep(),
+				e->isAutoRepeat(),
+				SingleScrollDurationMs());
+		} else {
+			return false;
+		}
 		e->accept();
 		return true;
 	}

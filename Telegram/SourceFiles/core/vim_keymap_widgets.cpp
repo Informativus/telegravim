@@ -101,6 +101,7 @@ namespace {
 constexpr auto kExcludedFocusTarget = "vim-keymap-excluded-focus-target";
 constexpr auto kCircleFocusFrame = "vim-keymap-circle-focus-frame";
 constexpr auto kCloseHintTarget = "vim-keymap-close-hint-target";
+constexpr auto kKeyboardPane = "vim-keymap-keyboard-pane";
 
 std::vector<QPointer<QWidget>> GlobalHintRoots;
 
@@ -388,12 +389,19 @@ std::vector<QPointer<QWidget>> VisibleKeyboardHintTargets(
 	return targets;
 }
 
-void RegisterGlobalFocusRoot(not_null<QWidget*> root) {
+void RegisterGlobalFocusRoot(
+		not_null<QWidget*> root,
+		KeyboardFocusRootKind kind) {
+	root->setProperty(kKeyboardPane, kind == KeyboardFocusRootKind::Pane);
 	std::erase_if(GlobalHintRoots, [](const auto &entry) { return !entry; });
 	if (std::find(GlobalHintRoots.begin(), GlobalHintRoots.end(), root.get())
 		== GlobalHintRoots.end()) {
 		GlobalHintRoots.push_back(root.get());
 	}
+}
+
+bool IsKeyboardPane(QWidget *widget) {
+	return widget && widget->property(kKeyboardPane).toBool();
 }
 
 std::vector<QPointer<QWidget>> GlobalFocusRoots(not_null<QWidget*> window) {
@@ -695,7 +703,9 @@ bool KeyboardNavigation::handleMenuNavigation(
 void KeyboardNavigation::focusNext(bool next) {
 	clearHints();
 	_editingControl = nullptr;
-	const auto targets = (GlobalFocusRoot(_scope) == _scope)
+	const auto visibleOnly = (GlobalFocusRoot(_scope) == _scope)
+		&& !IsKeyboardPane(_scope);
+	const auto targets = visibleOnly
 		? VisibleKeyboardHintTargets(_scope)
 		: KeyboardFocusTargets(_scope);
 	if (targets.empty()) {

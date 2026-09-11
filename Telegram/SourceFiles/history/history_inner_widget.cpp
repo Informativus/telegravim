@@ -457,6 +457,11 @@ HistoryInner::HistoryInner(
 
 	setMouseTracking(true);
 	setAccessibleName(tr::lng_sr_message_list(tr::now));
+	QObject::connect(qApp, &QApplication::focusChanged, this, [=](QWidget*, QWidget *now) {
+		if (Core::VimKeymap::IsKeyboardPane(Core::VimKeymap::GlobalFocusRoot(now))) {
+			vimKeymapClearHints();
+		}
+	});
 	Core::VimKeymap::RegisterActionHandler(this, [=](
 			Core::VimKeymap::Action action) {
 		const auto widgetWindow = window();

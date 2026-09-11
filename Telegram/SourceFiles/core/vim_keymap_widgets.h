@@ -29,6 +29,11 @@ enum class KeyboardHintMode {
 	ShowMessage,
 };
 
+enum class KeyboardFocusRootKind {
+	Controls,
+	Pane,
+};
+
 struct KeyboardHintActions {
 	Fn<void()> activate;
 	Fn<void()> close;
@@ -57,7 +62,10 @@ void SetKeyboardCloseTarget(not_null<QWidget*> widget);
 	not_null<QWidget*> scope);
 [[nodiscard]] std::vector<QPointer<QWidget>> VisibleKeyboardHintTargets(
 	not_null<QWidget*> scope);
-void RegisterGlobalFocusRoot(not_null<QWidget*> root);
+void RegisterGlobalFocusRoot(
+	not_null<QWidget*> root,
+	KeyboardFocusRootKind kind = KeyboardFocusRootKind::Controls);
+[[nodiscard]] bool IsKeyboardPane(QWidget *widget);
 [[nodiscard]] std::vector<QPointer<QWidget>> GlobalFocusRoots(
 	not_null<QWidget*> window);
 [[nodiscard]] QWidget *GlobalFocusRoot(QWidget *widget);
