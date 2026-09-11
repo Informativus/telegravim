@@ -2106,6 +2106,11 @@ void TestInterfaceActionHints() {
 	SetKeyboardCloseTarget(&close);
 	auto ordinary = Ui::AbstractButton(&window);
 	ordinary.setGeometry(320, 0, 40, 40);
+	auto history = QWidget(&window);
+	history.setGeometry(0, 40, 280, 220);
+	history.setFocusPolicy(Qt::StrongFocus);
+	auto composer = QPlainTextEdit(&window);
+	composer.setGeometry(0, 270, 280, 50);
 	auto floating = QWidget(&window);
 	floating.setGeometry(300, 60, 120, 120);
 	auto paused = false;
@@ -2130,6 +2135,7 @@ void TestInterfaceActionHints() {
 		== std::vector<QPointer<QWidget>>{ &floating },
 		"message jumps only label registered floating videos");
 
+	composer.setFocus();
 	const auto navigation = KeyboardNavigation::Get(&window);
 	const auto show = [&](KeyboardHintMode mode) {
 		navigation->showHints([](int index, int) {
@@ -2141,9 +2147,41 @@ void TestInterfaceActionHints() {
 			Qt::NoModifier, letter);
 		return navigation->handleHintKey(&event, letter);
 	};
+	const auto hasFrame = [&](not_null<KeyboardNavigation*> overlay) {
+		auto image = QImage(overlay->size(), QImage::Format_ARGB32_Premultiplied);
+		image.fill(Qt::transparent);
+		{
+			auto painter = QPainter(&image);
+			overlay->render(&painter, {}, {}, QWidget::RenderFlags());
+		}
+		for (auto y = 0; y != image.height(); ++y) {
+			for (auto x = 0; x != image.width(); ++x) {
+				if (image.pixelColor(x, y).alpha()) {
+					return true;
+				}
+			}
+		}
+		return false;
+	};
+	for (const auto mode : { KeyboardHintMode::Close, KeyboardHintMode::ShowMessage }) {
+		show(mode);
+		auto escape = QKeyEvent(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+		Check(navigation->handleHintKey(&escape, {}) && !hasFrame(navigation),
+			"cancelling action hints leaves no composer or history frame");
+		history.setFocus();
+		Check(!hasFrame(navigation), "action hints do not start tracking the chat frame");
+		composer.setFocus();
+		Check(!hasFrame(navigation), "action hints do not start tracking the composer frame");
+		show(mode);
+		auto tab = QKeyEvent(QEvent::KeyPress, Qt::Key_Tab, Qt::NoModifier);
+		Check(!navigation->handleHintKey(&tab, {})
+			&& !navigation->hasHints() && composer.hasFocus(),
+			"Tab cancels action hints and delegates to normal navigation");
+	}
 	show(KeyboardHintMode::Close);
 	Check(choose(u"a"_q) && closed == 1 && !navigation->hasHints(),
 		"close selection executes the native click once without Enter");
+	Check(!hasFrame(navigation), "executing a close hint leaves no composer frame");
 	show(KeyboardHintMode::ShowMessage);
 	Check(choose(u"a"_q) && jumps == 1 && !paused,
 		"jump selection preserves playback state");
@@ -2153,6 +2191,8 @@ void TestInterfaceActionHints() {
 	auto event = QKeyEvent(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier, u"a"_q);
 	Check(playerNavigation->handleHintKey(&event, u"a"_q) && paused,
 		"selecting a floating focus hint pauses playback");
+	Check(hasFrame(playerNavigation) && !hasFrame(navigation),
+		"floating focus retains its own frame without a duplicate window frame");
 	Check(ActivateKeyboardHintTarget(&floating) && !paused,
 		"focused floating playback can resume without new hints");
 	Check(ActivateKeyboardHintTarget(&floating, true) && !paused,

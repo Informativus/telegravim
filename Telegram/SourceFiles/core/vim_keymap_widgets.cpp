@@ -517,7 +517,7 @@ void KeyboardNavigation::trackFocus(QWidget *widget) {
 		}
 	}
 	_watched.clear();
-	_focused = (_scope && widget
+	_focused = (_hintMode == KeyboardHintMode::Focus && _scope && widget
 		&& (widget != _scope || HintActions(widget).activate)
 		&& Available(widget, _scope) && Focusable(widget)) ? widget : nullptr;
 	if (_focused) {
@@ -539,6 +539,7 @@ void KeyboardNavigation::focusTarget(not_null<QWidget*> target) {
 		|| target->property(kExcludedFocusTarget).toBool()) {
 		return;
 	}
+	_hintMode = KeyboardHintMode::Focus;
 	if (!(target->focusPolicy() & Qt::TabFocus)) {
 		target->setFocusPolicy(Qt::StrongFocus);
 	}
@@ -720,6 +721,7 @@ void KeyboardNavigation::showHints(
 		KeyboardHintMode mode) {
 	clearHints();
 	_hintMode = mode;
+	trackFocus(QApplication::focusWidget());
 	_font = std::move(font);
 	_padding = padding;
 	_gap = gap;
@@ -766,7 +768,8 @@ bool KeyboardNavigation::handleHintKey(not_null<QKeyEvent*> e, const QString &in
 		clearHints();
 		return true;
 	} else if (Bindings::TabNavigationDelta(e)) {
-		if (dynamic_cast<Ui::PopupMenu*>(_scope.data())) {
+		if (_hintMode != KeyboardHintMode::Focus
+			|| dynamic_cast<Ui::PopupMenu*>(_scope.data())) {
 			clearHints();
 			return false;
 		}
@@ -938,7 +941,8 @@ void KeyboardNavigation::paintEvent(QPaintEvent *e) {
 		frame.adjust(inset, inset, -inset, -inset);
 		frame.translate(_focused->mapTo(_scope, QPoint()));
 		auto clip = rect();
-		for (auto parent = _focused->parentWidget(); parent && parent != _scope;
+		for (auto parent = (_focused == _scope) ? nullptr : _focused->parentWidget();
+			parent && parent != _scope;
 			parent = parent->parentWidget()) {
 			clip &= QRect(parent->mapTo(_scope, QPoint()), parent->size());
 		}
