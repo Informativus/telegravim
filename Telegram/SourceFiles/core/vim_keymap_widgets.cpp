@@ -24,6 +24,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/popup_menu.h"
 #include "ui/widgets/scroll_area.h"
 #include "styles/style_widgets.h"
+#include "styles/style_layers.h"
 #include "styles/style_vim_keymap.h"
 #include "styles/palette.h"
 
@@ -99,8 +100,43 @@ namespace {
 
 constexpr auto kExcludedFocusTarget = "vim-keymap-excluded-focus-target";
 constexpr auto kCircleFocusFrame = "vim-keymap-circle-focus-frame";
+constexpr auto kCloseHintTarget = "vim-keymap-close-hint-target";
 
 std::vector<QPointer<QWidget>> GlobalHintRoots;
+
+struct HintActionTarget {
+	QPointer<QWidget> widget;
+	KeyboardHintActions actions;
+};
+
+std::vector<HintActionTarget> HintActionTargets;
+
+[[nodiscard]] KeyboardHintActions HintActions(not_null<QWidget*> widget) {
+	std::erase_if(HintActionTargets, [](const auto &entry) {
+		return !entry.widget;
+	});
+	for (const auto &entry : HintActionTargets) {
+		if (entry.widget == widget) {
+			return entry.actions;
+		}
+	}
+	return {};
+}
+
+[[nodiscard]] bool CloseHintTarget(not_null<QWidget*> widget) {
+	if (const auto cross = dynamic_cast<Ui::CrossButton*>(widget.get())) {
+		return cross->toggled();
+	} else if (const auto button = dynamic_cast<Ui::IconButton*>(widget.get())) {
+		const auto style = &button->st();
+		if (style == &st::boxTitleClose
+			|| style == &st::separatePanelClose
+			|| style == &st::fullScreenPanelClose
+			|| style == &st::windowTitleButtonClose) {
+			return true;
+		}
+	}
+	return widget->property(kCloseHintTarget).toBool();
+}
 
 [[nodiscard]] QRect VisibleTargetRect(
 		not_null<QWidget*> target,
@@ -185,6 +221,8 @@ private:
 			&& !qobject_cast<QPlainTextEdit*>(widget.get()))
 		|| qobject_cast<QScrollBar*>(widget.get())) {
 		return false;
+	} else if (HintActions(widget).activate) {
+		return true;
 	} else if (dynamic_cast<Ui::AbstractButton*>(widget.get())) {
 		return true;
 	} else if (const auto label = dynamic_cast<Ui::FlatLabel*>(widget.get())) {
@@ -239,6 +277,10 @@ bool CloseKeyboardScope(not_null<QWidget*> scope) {
 std::vector<QPointer<QWidget>> KeyboardFocusTargets(not_null<QWidget*> scope) {
 	auto result = std::vector<QPointer<QWidget>>();
 	auto seen = std::unordered_set<QWidget*>();
+	if (HintActions(scope).activate && Available(scope, scope)) {
+		result.push_back(scope.get());
+		seen.emplace(scope.get());
+	}
 	const auto collect = [&](const auto &self, QWidget *parent) -> void {
 		for (const auto object : parent->children()) {
 			const auto widget = qobject_cast<QWidget*>(object);
@@ -278,6 +320,63 @@ void SetKeyboardFocusTargetEnabled(not_null<QWidget*> widget, bool enabled) {
 
 void SetKeyboardFocusCircle(not_null<QWidget*> widget) {
 	widget->setProperty(kCircleFocusFrame, true);
+}
+
+void SetKeyboardHintActions(
+		not_null<QWidget*> widget,
+		KeyboardHintActions actions) {
+	std::erase_if(HintActionTargets, [&](const auto &entry) {
+		return !entry.widget || entry.widget == widget;
+	});
+	if (actions.activate || actions.close || actions.showMessage) {
+		HintActionTargets.push_back({ widget.get(), std::move(actions) });
+	}
+}
+
+void SetKeyboardCloseTarget(not_null<QWidget*> widget) {
+	widget->setProperty(kCloseHintTarget, true);
+}
+
+bool ActivateKeyboardHintTarget(not_null<QWidget*> widget, bool autoRepeat) {
+	const auto callback = HintActions(widget).activate;
+	if (!callback || !Available(widget, widget->window())
+		|| VisibleTargetRect(widget, widget->window()).isEmpty()) {
+		return false;
+	}
+	if (!autoRepeat) {
+		callback();
+	}
+	return true;
+}
+
+std::vector<QPointer<QWidget>> KeyboardHintTargets(
+		not_null<QWidget*> scope,
+		KeyboardHintMode mode) {
+	if (mode == KeyboardHintMode::Focus) {
+		return VisibleKeyboardHintTargets(scope);
+	}
+	auto result = std::vector<QPointer<QWidget>>();
+	const auto collect = [&](const auto &self, QWidget *widget) -> void {
+		if (!Available(widget, scope)
+			|| VisibleTargetRect(widget, scope).isEmpty()) {
+			return;
+		}
+		const auto actions = HintActions(widget);
+		if ((mode == KeyboardHintMode::Close
+				&& (actions.close || CloseHintTarget(widget)))
+			|| (mode == KeyboardHintMode::ShowMessage && actions.showMessage)) {
+			result.push_back(widget);
+		}
+		for (const auto child : widget->children()) {
+			if (const auto nested = qobject_cast<QWidget*>(child)) {
+				if (!nested->isWindow()) {
+					self(self, nested);
+				}
+			}
+		}
+	};
+	collect(collect, scope);
+	return result;
 }
 
 std::vector<QPointer<QWidget>> VisibleKeyboardHintTargets(
@@ -418,7 +517,8 @@ void KeyboardNavigation::trackFocus(QWidget *widget) {
 		}
 	}
 	_watched.clear();
-	_focused = (_scope && widget && widget != _scope
+	_focused = (_hintMode == KeyboardHintMode::Focus && _scope && widget
+		&& (widget != _scope || HintActions(widget).activate)
 		&& Available(widget, _scope) && Focusable(widget)) ? widget : nullptr;
 	if (_focused) {
 		_lastFocused = _focused;
@@ -439,12 +539,14 @@ void KeyboardNavigation::focusTarget(not_null<QWidget*> target) {
 		|| target->property(kExcludedFocusTarget).toBool()) {
 		return;
 	}
+	_hintMode = KeyboardHintMode::Focus;
 	if (!(target->focusPolicy() & Qt::TabFocus)) {
 		target->setFocusPolicy(Qt::StrongFocus);
 	}
 	const auto weak = QPointer<KeyboardNavigation>(this);
 	const auto guardedTarget = QPointer<QWidget>(target);
-	for (auto parent = target->parentWidget(); parent && parent != _scope;
+	for (auto parent = (target == _scope) ? nullptr : target->parentWidget();
+		parent && parent != _scope;
 		parent = parent->parentWidget()) {
 		const auto guardedParent = QPointer<QWidget>(parent);
 		if (const auto elastic = dynamic_cast<Ui::ElasticScroll*>(parent)) {
@@ -474,6 +576,32 @@ void KeyboardNavigation::focusTarget(not_null<QWidget*> target) {
 void KeyboardNavigation::restoreFocus() {
 	if (_lastFocused && _scope && Available(_lastFocused, _scope)) {
 		focusTarget(_lastFocused);
+	}
+}
+
+void KeyboardNavigation::activateHint(not_null<QWidget*> target) {
+	if (!_scope || !Available(target, _scope)
+		|| targetRect(target).isEmpty()) {
+		return;
+	}
+	const auto actions = HintActions(target);
+	const auto callback = (_hintMode == KeyboardHintMode::Close)
+		? actions.close
+		: (_hintMode == KeyboardHintMode::ShowMessage)
+		? actions.showMessage
+		: actions.activate;
+	const auto guard = QPointer<QWidget>(target);
+	if (_hintMode == KeyboardHintMode::Focus) {
+		focusTarget(target);
+	} else if (!callback && _hintMode == KeyboardHintMode::Close
+		&& CloseHintTarget(target)) {
+		if (const auto button = dynamic_cast<Ui::AbstractButton*>(target.get())) {
+			button->clicked(Qt::NoModifier, Qt::LeftButton);
+		}
+		return;
+	}
+	if (guard && callback) {
+		callback();
 	}
 }
 
@@ -589,12 +717,15 @@ void KeyboardNavigation::showHints(
 		Fn<QString(int, int)> label,
 		QFont font,
 		QSize padding,
-		int gap) {
+		int gap,
+		KeyboardHintMode mode) {
 	clearHints();
+	_hintMode = mode;
+	trackFocus(QApplication::focusWidget());
 	_font = std::move(font);
 	_padding = padding;
 	_gap = gap;
-	const auto targets = VisibleKeyboardHintTargets(_scope);
+	const auto targets = KeyboardHintTargets(_scope, mode);
 	for (const auto target : targets) {
 		if (!targetRect(target).isEmpty()) {
 			_hints.push_back({ target, {} });
@@ -637,7 +768,8 @@ bool KeyboardNavigation::handleHintKey(not_null<QKeyEvent*> e, const QString &in
 		clearHints();
 		return true;
 	} else if (Bindings::TabNavigationDelta(e)) {
-		if (dynamic_cast<Ui::PopupMenu*>(_scope.data())) {
+		if (_hintMode != KeyboardHintMode::Focus
+			|| dynamic_cast<Ui::PopupMenu*>(_scope.data())) {
 			clearHints();
 			return false;
 		}
@@ -663,7 +795,7 @@ bool KeyboardNavigation::handleHintKey(not_null<QKeyEvent*> e, const QString &in
 		} else if (hint.label == prefix) {
 			const auto target = hint.widget;
 			clearHints();
-			focusTarget(target);
+			activateHint(target);
 			return true;
 		}
 		matches |= hint.label.startsWith(prefix);
@@ -809,7 +941,8 @@ void KeyboardNavigation::paintEvent(QPaintEvent *e) {
 		frame.adjust(inset, inset, -inset, -inset);
 		frame.translate(_focused->mapTo(_scope, QPoint()));
 		auto clip = rect();
-		for (auto parent = _focused->parentWidget(); parent && parent != _scope;
+		for (auto parent = (_focused == _scope) ? nullptr : _focused->parentWidget();
+			parent && parent != _scope;
 			parent = parent->parentWidget()) {
 			clip &= QRect(parent->mapTo(_scope, QPoint()), parent->size());
 		}
@@ -833,7 +966,10 @@ void KeyboardNavigation::paintEvent(QPaintEvent *e) {
 		if (hint.widget && Available(hint.widget, _scope)) {
 			const auto rect = targetRect(hint.widget);
 			if (!rect.isEmpty()) {
-				badges.push_back({ hint.label, rect.topLeft(), rect });
+				const auto anchor = hint.widget->property(kCircleFocusFrame).toBool()
+					? rect.center()
+					: rect.topLeft();
+				badges.push_back({ hint.label, anchor, rect });
 			}
 		}
 	}

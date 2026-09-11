@@ -89,6 +89,7 @@ Widget::Widget(
 
 	setAttribute(Qt::WA_OpaquePaintEvent);
 	Core::VimKeymap::RegisterGlobalFocusRoot(this);
+	Core::VimKeymap::SetKeyboardCloseTarget(_close);
 	setMouseTracking(true);
 	resize(width(), st::mediaPlayerHeight + st::lineWidth);
 

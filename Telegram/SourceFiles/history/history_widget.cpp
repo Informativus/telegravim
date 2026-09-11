@@ -151,6 +151,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "iv/iv_rich_page.h"
 #include "core/click_handler_types.h"
 #include "core/vim_keymap.h"
+#include "core/vim_keymap_widgets.h"
 #include "core/vim_keymap_geometry.h"
 #include "chat_helpers/field_autocomplete.h"
 #include "chat_helpers/tabbed_panel.h"
@@ -796,6 +797,7 @@ HistoryWidget::HistoryWidget(
 	});
 
 	_fieldBarCancel->addClickHandler([=] { cancelFieldAreaState(); });
+	Core::VimKeymap::SetKeyboardCloseTarget(_fieldBarCancel);
 	Core::VimKeymap::RegisterModeIndicatorWidget(this);
 	Core::VimKeymap::RegisterPreLayerKeyHandler(this, [=](
 			not_null<QKeyEvent*> e) {
@@ -11682,6 +11684,9 @@ void HistoryWidget::refreshPinnedBarButton(bool many, HistoryItem *item) {
 	auto button = object_ptr<Ui::IconButton>(
 		this,
 		close ? st::historyReplyCancel : st::historyPinnedShowAll);
+	if (close) {
+		Core::VimKeymap::SetKeyboardCloseTarget(button);
+	}
 	button->setAccessibleName(close
 		? tr::lng_pinned_unpin(tr::now)
 		: tr::lng_settings_events_pinned(tr::now));

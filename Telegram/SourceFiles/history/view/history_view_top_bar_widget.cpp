@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/history_view_top_bar_widget.h"
 
+#include "core/vim_keymap_widgets.h"
+
 #include "history/history.h"
 #include "history/view/history_view_send_action.h"
 #include "boxes/add_contact_box.h"
@@ -131,6 +133,8 @@ TopBarWidget::TopBarWidget(
 , _titlePeerText(st::windowMinWidth / 3)
 , _onlineUpdater([=] { updateOnlineDisplay(); }) {
 	setAttribute(Qt::WA_OpaquePaintEvent);
+	Core::VimKeymap::RegisterGlobalFocusRoot(this);
+	Core::VimKeymap::SetKeyboardCloseTarget(_cancelChoose);
 
 	_clear->setTextTransform(Ui::RoundButtonTextTransform::ToUpper);
 	_forward->setTextTransform(Ui::RoundButtonTextTransform::ToUpper);

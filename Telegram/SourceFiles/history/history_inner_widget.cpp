@@ -5221,7 +5221,7 @@ void HistoryInner::vimKeymapTriggerHint(VimKeymapHint hint) {
 			const auto root = Core::VimKeymap::GlobalFocusRoot(target);
 			vimKeymapClearHints();
 			if (root && target) {
-				Core::VimKeymap::KeyboardNavigation::Get(root)->focusTarget(target);
+				Core::VimKeymap::KeyboardNavigation::Get(root)->activateHint(target);
 			}
 			return;
 		} else if (hint.photo) {
