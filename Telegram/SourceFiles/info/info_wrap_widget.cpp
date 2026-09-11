@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "core/vim_keymap.h"
 #include "core/vim_keymap_bindings.h"
+#include "core/vim_keymap_widgets.h"
 #include "info/info_navigation_history.h"
 #include "info/profile/info_profile_widget.h"
 #include "info/profile/info_profile_values.h"
@@ -419,6 +420,7 @@ void WrapWidget::createTopBar() {
 			base::make_unique_q<Ui::IconButton>(
 				_topBar,
 				st::infoTopBarClose));
+		Core::VimKeymap::SetKeyboardCloseTarget(close);
 		close->setAccessibleName(tr::lng_sr_close_panel(tr::now));
 		close->addClickHandler([this] {
 			_controller->parentController()->closeThirdSection();
@@ -434,6 +436,7 @@ void WrapWidget::createTopBar() {
 			base::make_unique_q<Ui::IconButton>(
 				_topBar,
 				st::infoLayerTopBarClose));
+		Core::VimKeymap::SetKeyboardCloseTarget(close);
 		close->setAccessibleName(tr::lng_sr_close_panel(tr::now));
 		close->addClickHandler([this] {
 			checkBeforeClose([=] {

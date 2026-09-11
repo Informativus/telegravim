@@ -1112,6 +1112,9 @@ void ShowHelpBox() {
 			result += u"Больше реакций: стрелка раскрытия рядом с эмодзи, если она доступна.\n"_q;
 			result += focus
 				+ u" - подсказки для медиа, ссылок, голосований, ответов и пересланных авторов\n"_q;
+			result += u"c/с - метки крестиков и кружков для закрытия\n"_q;
+			result += u"f/а и метка плавающего кружка - пауза/пуск; затем Space или Enter\n"_q;
+			result += u"Shift+F / Shift+А и метка кружка - перейти к сообщению\n"_q;
 			result += openChats + u" - подсказки для открытия чатов\n"_q;
 			result += preview
 				+ u" - буквы для предпросмотра чата без прочтения\n"_q;
@@ -1184,6 +1187,9 @@ void ShowHelpBox() {
 			result += u"More reactions: click the expand arrow beside the emoji, when available.\n"_q;
 			result += focus
 				+ u" - show media, link, poll, reply and forwarded-source hints\n"_q;
+			result += u"c - show close-button and floating round-video hints\n"_q;
+			result += u"f and a floating round-video hint - pause/resume; then Space or Enter\n"_q;
+			result += u"Shift+F and a round-video hint - go to its message\n"_q;
 			result += openChats + u" - show chat open hints\n"_q;
 			result += preview
 				+ u" - show chat preview hints without marking read\n"_q;
@@ -1474,13 +1480,53 @@ bool HandleApplicationKeyPress(
 		e->accept();
 		return true;
 	}
-
 	const auto focus = QApplication::focusWidget();
+	const auto hintScope = scope ? scope.data() : QApplication::activeWindow();
+	if (hintScope) {
+		if (const auto navigation = KeyboardNavigation::Find(hintScope)) {
+			if (navigation->handleHintKey(e, HintInput(e))) {
+				e->accept();
+				return true;
+			}
+		}
+	}
+	const auto interfaceHints = [&] {
+		if (!hintScope
+			|| (!scope && (!NormalMode() || TextInputPassthroughRequested(e)))
+			|| (scope && KeyboardScopeHasTextInput(scope, object))) {
+			return false;
+		}
+		const auto close = Bindings::IsCloseHints(e);
+		if (!close && !Bindings::IsShowMessageHints(e)) {
+			return false;
+		}
+		if (!e->isAutoRepeat()) {
+			KeyboardNavigation::Get(hintScope)->showHints(
+				HintLabel,
+				QFont(u"Menlo"_q, HintSize(), QFont::DemiBold),
+				st::vimHintPadding,
+				st::vimHintGap,
+				close ? KeyboardHintMode::Close : KeyboardHintMode::ShowMessage);
+		}
+		e->accept();
+		return true;
+	};
+	if (!scope && interfaceHints()) {
+		return true;
+	}
+
 	const auto globalRoot = scope ? nullptr : GlobalFocusRoot(focus);
 	if (globalRoot) {
 		const auto navigation = KeyboardNavigation::Find(globalRoot);
 		if (!navigation || !navigation->hasHints()) {
-			if (const auto delta = Bindings::TabNavigationDelta(e)) {
+			if (CleanModifiers(e) == Qt::NoModifier
+				&& (e->key() == Qt::Key_Return
+					|| e->key() == Qt::Key_Enter
+					|| e->key() == Qt::Key_Space)
+				&& ActivateKeyboardHintTarget(focus, e->isAutoRepeat())) {
+				e->accept();
+				return true;
+			} else if (const auto delta = Bindings::TabNavigationDelta(e)) {
 				KeyboardNavigation::Get(globalRoot)->focusNext(delta > 0);
 				e->accept();
 				return true;
@@ -1544,6 +1590,9 @@ bool HandleApplicationKeyPress(
 		}
 		if (input) {
 			return false;
+		}
+		if (interfaceHints()) {
+			return true;
 		}
 		const auto focus = QApplication::focusWidget();
 		if (KeyHandlerInScope(focus, scope)

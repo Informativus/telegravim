@@ -2076,6 +2076,109 @@ void TestGlobalPlayerFocusHints() {
 	Check(GlobalFocusRoots(&window).size() == 1, "destroyed player roots are removed safely");
 }
 
+void TestInterfaceActionHints() {
+	using namespace Core::VimKeymap;
+	for (const auto &[key, text] : {
+		std::pair{ Qt::Key_C, u"c"_q },
+		std::pair{ Qt::Key_unknown, u"с"_q } }) {
+		auto event = QKeyEvent(QEvent::KeyPress, key, Qt::NoModifier, text);
+		Check(Bindings::IsCloseHints(&event), "close hints accept both layouts");
+		auto modified = QKeyEvent(QEvent::KeyPress, key, Qt::ControlModifier, text);
+		Check(!Bindings::IsCloseHints(&modified), "copy does not open close hints");
+	}
+	for (const auto &[key, text] : {
+		std::pair{ Qt::Key_F, u"F"_q },
+		std::pair{ Qt::Key_unknown, u"А"_q } }) {
+		auto event = QKeyEvent(QEvent::KeyPress, key, Qt::ShiftModifier, text);
+		Check(Bindings::IsShowMessageHints(&event), "round-video jumps accept both layouts");
+		auto plain = QKeyEvent(QEvent::KeyPress, key, Qt::NoModifier, text);
+		Check(!Bindings::IsShowMessageHints(&plain), "plain f retains playback hints");
+		auto search = QKeyEvent(QEvent::KeyPress, key,
+			Qt::ControlModifier | Qt::ShiftModifier, text);
+		Check(!Bindings::IsShowMessageHints(&search), "global search retains its shortcut");
+	}
+
+	auto window = QWidget();
+	window.setAttribute(Qt::WA_DontShowOnScreen);
+	window.resize(480, 320);
+	auto close = Ui::AbstractButton(&window);
+	close.setGeometry(400, 0, 40, 40);
+	SetKeyboardCloseTarget(&close);
+	auto ordinary = Ui::AbstractButton(&window);
+	ordinary.setGeometry(320, 0, 40, 40);
+	auto floating = QWidget(&window);
+	floating.setGeometry(300, 60, 120, 120);
+	auto paused = false;
+	auto jumps = 0;
+	auto closed = 0;
+	close.setClickedCallback([&] { ++closed; });
+	SetKeyboardHintActions(&floating, {
+		.activate = [&] { paused = !paused; },
+		.close = [&] { ++closed; },
+		.showMessage = [&] { ++jumps; },
+	});
+	RegisterGlobalFocusRoot(&floating);
+	window.show();
+	QApplication::setActiveWindow(&window);
+	Check(VisibleKeyboardHintTargets(&floating)
+		== std::vector<QPointer<QWidget>>{ &floating },
+		"floating root contributes one focus hint without a child button");
+	Check(KeyboardHintTargets(&window, KeyboardHintMode::Close)
+		== std::vector<QPointer<QWidget>>{ &close, &floating },
+		"close hints include close buttons and circles but exclude ordinary actions");
+	Check(KeyboardHintTargets(&window, KeyboardHintMode::ShowMessage)
+		== std::vector<QPointer<QWidget>>{ &floating },
+		"message jumps only label registered floating videos");
+
+	const auto navigation = KeyboardNavigation::Get(&window);
+	const auto show = [&](KeyboardHintMode mode) {
+		navigation->showHints([](int index, int) {
+			return QString(QChar('a' + index));
+		}, QFont(u"Menlo"_q, 13), { 7, 3 }, 3, mode);
+	};
+	const auto choose = [&](const QString &letter) {
+		auto event = QKeyEvent(QEvent::KeyPress, Qt::Key_unknown,
+			Qt::NoModifier, letter);
+		return navigation->handleHintKey(&event, letter);
+	};
+	show(KeyboardHintMode::Close);
+	Check(choose(u"a"_q) && closed == 1 && !navigation->hasHints(),
+		"close selection executes the native click once without Enter");
+	show(KeyboardHintMode::ShowMessage);
+	Check(choose(u"a"_q) && jumps == 1 && !paused,
+		"jump selection preserves playback state");
+	const auto playerNavigation = KeyboardNavigation::Get(&floating);
+	playerNavigation->showHints([](int, int) { return u"a"_q; },
+		QFont(u"Menlo"_q, 13), { 7, 3 }, 3);
+	auto event = QKeyEvent(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier, u"a"_q);
+	Check(playerNavigation->handleHintKey(&event, u"a"_q) && paused,
+		"selecting a floating focus hint pauses playback");
+	Check(ActivateKeyboardHintTarget(&floating) && !paused,
+		"focused floating playback can resume without new hints");
+	Check(ActivateKeyboardHintTarget(&floating, true) && !paused,
+		"holding the playback key consumes repeats without toggling again");
+
+	show(KeyboardHintMode::Close);
+	close.setDisabled(true);
+	Check(choose(u"a"_q) && closed == 1,
+		"a disabled target cannot execute an old hint");
+	Check(choose(u"b"_q) && closed == 2,
+		"other close targets retain their labels after a target is disabled");
+	floating.hide();
+	Check(KeyboardHintTargets(&window, KeyboardHintMode::Close).empty()
+		&& !ActivateKeyboardHintTarget(&floating),
+		"hidden players cannot be hinted or activated");
+	floating.show();
+	show(KeyboardHintMode::ShowMessage);
+	SetKeyboardHintActions(&floating, {});
+	Check(choose(u"a"_q) && jumps == 1,
+		"detaching a player invalidates its pending jump action");
+	auto other = QWidget();
+	other.show();
+	Check(KeyboardHintTargets(&other, KeyboardHintMode::ShowMessage).empty(),
+		"floating actions stay inside their own window");
+}
+
 void TestMediaPlaybackAndShareBindings() {
 	using namespace Core::VimKeymap::Bindings;
 	const auto speed = [&](int key, const QString &text, float64 current,
@@ -3035,6 +3138,7 @@ int main(int argc, char *argv[]) {
 	TestShortestHintLabels();
 	TestProfileKeyboardNavigation();
 	TestGlobalPlayerFocusHints();
+	TestInterfaceActionHints();
 	TestShareKeyboardFocusCycle();
 	TestKeyboardStickerFramePainting();
 	TestMessageCursorPainting();

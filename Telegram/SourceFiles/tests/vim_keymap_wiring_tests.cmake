@@ -115,8 +115,8 @@ expect(history/history_inner_widget.cpp
     "navigation->setHintPrefix\\(_vimKeymapHintPrefix\\)"
     "Partial multi-letter input must filter player and message badges together")
 expect(history/history_inner_widget.cpp
-    "KeyboardNavigation::Get\\(root\\)->focusTarget\\(target\\)"
-    "Choosing a player hint must focus its actual control")
+    "KeyboardNavigation::Get\\(root\\)->activateHint\\(target\\)"
+    "Choosing a player hint must use its keyboard action or focus its control")
 expect(core/vim_keymap.cpp
     "if \\(globalRoot\\)[^{]*\\{[^;]*KeyboardNavigation::Find\\(globalRoot\\)"
     "Native player control keys must be routed before chat handlers")

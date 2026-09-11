@@ -21,6 +21,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/section_widget.h"
 #include "core/application.h"
 #include "core/core_settings.h"
+#include "core/vim_keymap_widgets.h"
 #include "main/main_session.h"
 #include "main/main_account.h"
 #include "ui/painter.h"
@@ -129,6 +130,21 @@ Float::Float(
 	}, lifetime());
 
 	setCursor(style::cur_pointer);
+	Core::VimKeymap::RegisterGlobalFocusRoot(this);
+	Core::VimKeymap::SetKeyboardFocusCircle(this);
+	Core::VimKeymap::SetKeyboardHintActions(this, {
+		.activate = [=] { pauseResume(); },
+		.close = [=] {
+			if (_item) {
+				finishDrag(true);
+			}
+		},
+		.showMessage = [=] {
+			if (_item && _doubleClickedCallback) {
+				_doubleClickedCallback(_item);
+			}
+		},
+	});
 }
 
 void Float::mousePressEvent(QMouseEvent *e) {
@@ -202,6 +218,7 @@ void Float::pauseResume() {
 
 void Float::detach() {
 	if (_item) {
+		Core::VimKeymap::SetKeyboardHintActions(this, {});
 		_item = nullptr;
 		_roundPainter = nullptr;
 		if (_toggleCallback) {

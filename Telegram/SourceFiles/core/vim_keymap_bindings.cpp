@@ -18,6 +18,16 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace Core::VimKeymap::Bindings {
 
+bool IsCloseHints(not_null<QKeyEvent*> e) {
+	return CleanModifiers(e) == Qt::NoModifier
+		&& KeyIs(e, Qt::Key_C, u"c"_q, u"\u0441"_q);
+}
+
+bool IsShowMessageHints(not_null<QKeyEvent*> e) {
+	return CleanModifiers(e) == Qt::ShiftModifier
+		&& KeyIs(e, Qt::Key_F, u"f"_q, u"\u0430"_q);
+}
+
 QString ShortestHintLabel(int index, int total, const QString &alphabet) {
 	const auto base = int(alphabet.size());
 	if (base < 2 || index < 0 || index >= total) {
