@@ -57,7 +57,9 @@ def main():
             'TEST_RESULT: PASS: pending album cannot overwrite clipboard after new clipboard',
             'TEST_RESULT: PASS: system paste opens the native multi-photo send preview',
         }
-        if not required.issubset(result.splitlines()) or 'TEST_RESULT: FAIL:' in result:
+        found = all(any(line == check or line.startswith(check + ' - ')
+                        for line in result.splitlines()) for check in required)
+        if not found or 'TEST_RESULT: FAIL:' in result:
             raise SystemExit('Album regression failed; see the evidence directory.')
         directories = [line.removeprefix('ALBUM_EXPORT_DIRECTORY: ')
                        for line in result.splitlines()
