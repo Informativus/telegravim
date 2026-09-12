@@ -348,7 +348,6 @@ public:
 protected:
 	void resizeEvent(QResizeEvent *e) override;
 	void keyPressEvent(QKeyEvent *e) override;
-	void keyReleaseEvent(QKeyEvent *e) override;
 	void mousePressEvent(QMouseEvent *e) override;
 	void paintEvent(QPaintEvent *e) override;
 	void leaveEventHook(QEvent *e) override;
@@ -728,7 +727,6 @@ private:
 	void migrateSupportFieldToRichEditor();
 	void offerRichPaste(not_null<const QMimeData*> data);
 	void showRichEditorWithPaste(std::shared_ptr<QMimeData> data);
-	void vimKeymapStartScroll(int direction);
 	void vimKeymapStopScroll();
 	void vimKeymapScrollTick();
 	bool vimKeymapHandleEscapeFieldState(not_null<QKeyEvent*> e);
@@ -908,6 +906,8 @@ private:
 	Ui::Animations::Simple _scrollToAnimation;
 	base::Timer _vimKeymapScrollTimer;
 	int _vimKeymapScrollDirection = 0;
+	int _vimKeymapScrollKey = 0;
+	quint32 _vimKeymapScrollNativeKey = 0;
 	bool _vimKeymapScrollRepeating = false;
 
 	HistoryView::CornerButtons _cornerButtons;
