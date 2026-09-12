@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and run the account-free macOS Vim album-copy regression."""
+"""Build and run the account-free macOS Vim album copy and deletion regression."""
 
 import os
 from pathlib import Path
@@ -38,13 +38,17 @@ def main():
                 cwd=root, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
         with (work / 'app.log').open('wb') as log:
             subprocess.run(
-                [str(root / 'out/Debug/Telegram.app/Contents/MacOS/Telegram'),
+                ['/usr/bin/sandbox-exec', '-p', '(version 1)(allow default)(deny network-outbound (remote ip "*:*"))',
+                 str(root / 'out/Debug/Telegram.app/Contents/MacOS/Telegram'),
                  '-testagent', '-noupdate', '-many', '-workdir', str(profile)],
                 cwd=root, env=env, stdout=log, stderr=subprocess.STDOUT,
                 timeout=90, check=True)
         result = (evidence / 'test_log.txt').read_text()
         required = {
             'TEST_COMPLETE',
+            'TEST_RESULT: PASS: fixture revokes delete permission',
+            'TEST_RESULT: PASS: changed album cannot open deletion confirmation: revoked',
+            'TEST_RESULT: PASS: deletion fixture includes clipped photos',
             'SCENARIO_RESULT: PASS (failures: 0)',
             'TEST_RESULT: PASS: one protected photo blocks the entire album',
             'TEST_RESULT: PASS: pending album cannot overwrite clipboard after revoked',
@@ -54,13 +58,13 @@ def main():
             'TEST_RESULT: PASS: system paste opens the native multi-photo send preview',
         }
         if not required.issubset(result.splitlines()) or 'TEST_RESULT: FAIL:' in result:
-            raise SystemExit('Album-copy regression failed; see the evidence directory.')
+            raise SystemExit('Album regression failed; see the evidence directory.')
         directories = [line.removeprefix('ALBUM_EXPORT_DIRECTORY: ')
                        for line in result.splitlines()
                        if line.startswith('ALBUM_EXPORT_DIRECTORY: ')]
         if not directories or any(Path(path).exists() for path in directories):
             raise SystemExit('Export directories survived session cleanup.')
-        print(f"Passed {result.count('TEST_RESULT: PASS:')} album-copy checks; exports cleaned up.")
+        print(f"Passed {result.count('TEST_RESULT: PASS:')} album copy and deletion checks; exports cleaned up.")
     finally:
         if slot.read_bytes() == overlay:
             slot.write_bytes(original)

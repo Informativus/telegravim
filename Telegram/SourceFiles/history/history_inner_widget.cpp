@@ -4430,6 +4430,46 @@ bool HistoryInner::vimKeymapEditItem(not_null<HistoryItem*> item) {
 	return true;
 }
 
+void HistoryInner::vimKeymapDeleteAlbum(const VimKeymapHint &hint) {
+	const auto item = session().data().message(hint.itemId);
+	const auto group = item ? session().data().groups().find(item) : nullptr;
+	if (!group || hint.album.size() < 2 || Core::App().passcodeLocked()) {
+		return;
+	}
+	auto items = HistoryItemsList();
+	for (const auto member : group->items) {
+		const auto media = member->media();
+		const auto photo = media ? media->photo() : nullptr;
+		if (!photo || photo->hasVideo()) {
+			continue;
+		}
+		const auto index = items.size();
+		if (index == hint.album.size()
+			|| hint.album[index].itemId != member->fullId()
+			|| hint.album[index].photo != photo
+			|| !member->canDelete()
+			|| member->isUploading()) {
+			return;
+		}
+		items.push_back(member);
+	}
+	if (items.size() != hint.album.size()) {
+		return;
+	}
+	Core::VimKeymap::SetNormalMode(true);
+	if (CanCreateModerateMessagesBox(items)) {
+		_controller->show(Box(
+			CreateModerateMessagesBox,
+			ModerateMessagesBoxEntry{ .items = std::move(items) },
+			nullptr,
+			ModerateMessagesBoxOptions{}));
+	} else {
+		_controller->show(Box<DeleteMessagesBox>(
+			&session(),
+			session().data().itemsToIds(items)));
+	}
+}
+
 bool HistoryInner::vimKeymapDeleteItem(not_null<HistoryItem*> item) {
 	if (!item->canDelete()) {
 		return false;
@@ -4797,7 +4837,8 @@ void HistoryInner::vimKeymapBuildMessageHints(VimKeymapHintMode mode) {
 			continue;
 		}
 		if (mode == VimKeymapHintMode::DeleteMessage
-			&& !item->canDelete()) {
+			&& !item->canDelete()
+			&& !dynamic_cast<HistoryView::GroupedMedia*>(view->media())) {
 			continue;
 		}
 		const auto top = itemTop(view);
@@ -4815,7 +4856,8 @@ void HistoryInner::vimKeymapBuildMessageHints(VimKeymapHintMode mode) {
 		width(),
 		_visibleAreaBottom - _visibleAreaTop);
 	for (const auto view : views) {
-		if (mode == VimKeymapHintMode::CopyMessage) {
+		if (mode == VimKeymapHintMode::CopyMessage
+			|| mode == VimKeymapHintMode::DeleteMessage) {
 			const auto grouped
 				= dynamic_cast<HistoryView::GroupedMedia*>(view->media());
 			auto addedPhotos = false;
@@ -4840,6 +4882,9 @@ void HistoryInner::vimKeymapBuildMessageHints(VimKeymapHintMode mode) {
 					continue;
 				}
 				addedPhotos = true;
+				if (mode == VimKeymapHintMode::DeleteMessage && !item->canDelete()) {
+					continue;
+				}
 				const auto target = Core::VimKeymap::GroupedMediaHintRect(
 					rect,
 					view->innerGeometry().topLeft(),
@@ -4860,16 +4905,20 @@ void HistoryInner::vimKeymapBuildMessageHints(VimKeymapHintMode mode) {
 			}
 			if (addedPhotos) {
 				auto album = std::vector<VimKeymapAlbumPhoto>();
+				auto canDeleteAlbum = true;
 				if (const auto group = session().data().groups().find(view->data())) {
 					for (const auto item : group->items) {
 						const auto media = item->media();
 						const auto photo = media ? media->photo() : nullptr;
 						if (photo && !photo->hasVideo()) {
 							album.push_back({ item->fullId(), photo });
+							canDeleteAlbum = canDeleteAlbum
+								&& item->canDelete() && !item->isUploading();
 						}
 					}
 				}
-				if (album.size() > 1) {
+				if (album.size() > 1
+					&& (mode != VimKeymapHintMode::DeleteMessage || canDeleteAlbum)) {
 					_vimKeymapHints.push_back({
 						.itemId = view->data()->fullId(),
 						.album = std::move(album),
@@ -5341,11 +5390,25 @@ bool HistoryInner::vimKeymapBeginHints(Core::VimKeymap::Action action) {
 void HistoryInner::vimKeymapTriggerHint(VimKeymapHint hint) {
 	const auto item = hint.itemId ? session().data().message(hint.itemId) : nullptr;
 	if (Core::App().passcodeLocked()
-		|| (hint.itemId && (!item || !viewByItem(item)))) {
+		|| (hint.itemId && !item)) {
 		vimKeymapClearHints();
 		return;
 	}
 	const auto mode = _vimKeymapHintMode;
+	if (mode == VimKeymapHintMode::DeleteMessage && !hint.album.empty()) {
+		vimKeymapClearHints();
+		vimKeymapDeleteAlbum(hint);
+		return;
+	}
+	if (mode == VimKeymapHintMode::DeleteMessage && hint.photo) {
+		vimKeymapClearHints();
+		const auto media = item ? item->media() : nullptr;
+		if (media && media->photo() == hint.photo && item->canDelete()) {
+			Core::VimKeymap::SetNormalMode(true);
+			deleteItem(item);
+		}
+		return;
+	}
 	if (mode == VimKeymapHintMode::CopyMessage && !hint.album.empty()) {
 		vimKeymapClearHints();
 		vimKeymapCopyAlbum(hint);
@@ -5356,6 +5419,10 @@ void HistoryInner::vimKeymapTriggerHint(VimKeymapHint hint) {
 		if (media && media->photo() == hint.photo) {
 			vimKeymapCopyItem(item);
 		}
+		vimKeymapClearHints();
+		return;
+	}
+	if (item && !viewByItem(item)) {
 		vimKeymapClearHints();
 		return;
 	}

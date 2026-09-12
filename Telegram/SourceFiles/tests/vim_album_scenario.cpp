@@ -9,6 +9,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "base/unixtime.h"
 #include "boxes/send_files_box.h"
+#include "boxes/delete_messages_box.h"
+#include "data/data_channel.h"
+#include "data/data_document.h"
 #include "core/application.h"
 #include "core/mime_type.h"
 #include "core/vim_keymap.h"
@@ -37,6 +40,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_controller.h"
 #include "window/window_session_controller.h"
 #include "styles/style_boxes.h"
+#include "styles/style_vim_keymap.h"
 
 #include <QtCore/QFileInfo>
 #include <QtCore/QMimeData>
@@ -156,6 +160,198 @@ void CheckAlbumClipboard(const std::shared_ptr<AlbumFixture> &fixture) {
 		&& list.files.size() == fixture->photos.size(),
 		u"native paste prepares every photo as a separate attachment"_q);
 	fixture->urls = urls;
+}
+
+void AddDeletionScenarios(not_null<Runner*> runner) {
+	using namespace Core::VimKeymap;
+	const auto cases = QStringList{
+		u"first"_q, u"last"_q, u"all"_q, u"cancel"_q,
+		u"removed"_q, u"replaced"_q, u"added"_q, u"revoked"_q,
+		u"mixed"_q, u"clipped"_q,
+	};
+	for (auto test = 0; test != cases.size(); ++test) {
+		const auto name = cases[test];
+		const auto count = name == u"clipped"_q ? 10 : 3;
+		const auto fixture = std::make_shared<AlbumFixture>();
+		const auto ids = std::make_shared<MessageIdsList>();
+		runner->add({
+			.name = u"build deletion album: "_q + name,
+			.run = [=] {
+				auto &session = Core::App().domain().active().session();
+				auto peer = static_cast<PeerData*>(session.data().processUser(
+					FixtureUser(100 + test, false)).get());
+				if (name == u"revoked"_q) {
+					const auto channel = session.data().channel(ChannelId(100 + test));
+					channel->setName(u"Deletion fixture"_q, QString());
+					channel->setFlags(ChannelDataFlag::Megagroup | ChannelDataFlag::Creator);
+					peer = channel;
+				}
+				const auto history = session.data().history(peer);
+				history->clearFolder();
+				for (auto i = 0; i != count; ++i) {
+					const auto photo = session.data().processPhoto(MTP_photo(
+						MTP_flags(0),
+						MTP_long(5000 + 100 * test + i),
+						MTP_long(1),
+						MTP_bytes(QByteArray()),
+						MTP_int(base::unixtime::now()),
+						MTP_vector<MTPPhotoSize>({ MTP_photoSize(
+							MTP_string("x"),
+							MTP_int(480),
+							MTP_int(320),
+							MTP_int(1000)) }),
+						MTPVector<MTPVideoSize>(),
+						MTP_int(2)));
+					const auto media = photo->createMediaView();
+					media->set(
+						Data::PhotoSize::Small,
+						Data::PhotoSize::Small,
+						PhotoImage(i),
+						{});
+					LoadPhoto(media, i);
+					const auto item = history->addNewLocalMessage({
+						.id = session.data().nextLocalMessageId(),
+						.flags = MessageFlag::Local | MessageFlag::BeingSent
+							| (name == u"revoked"_q ? MessageFlags() : MessageFlag::Outgoing),
+						.from = session.user()->id,
+						.date = base::unixtime::now(),
+						.groupedId = uint64(500 + test),
+					}, photo, { u"Deletion fixture"_q });
+					item->setRealId(2000 + 100 * test + i);
+					fixture->items.push_back(item);
+					fixture->photos.push_back(media);
+					ids->push_back(item->fullId());
+				}
+				if (name == u"mixed"_q) {
+					const auto document = session.data().processDocument(MTP_document(
+						MTP_flags(0), MTP_long(9999), MTP_long(1), MTP_bytes(QByteArray()),
+						MTP_int(base::unixtime::now()), MTP_string("video/mp4"), MTP_long(1000),
+						MTPVector<MTPPhotoSize>(), MTPVector<MTPVideoSize>(), MTP_int(2),
+						MTP_vector<MTPDocumentAttribute>({ MTP_documentAttributeVideo(
+							MTP_flags(0), MTP_double(1.), MTP_int(480), MTP_int(320),
+							MTPint(), MTPdouble(), MTPstring()) })));
+					const auto item = history->addNewLocalMessage({
+						.id = session.data().nextLocalMessageId(),
+						.flags = MessageFlag::Local | MessageFlag::BeingSent | MessageFlag::Outgoing,
+						.from = session.user()->id,
+						.date = base::unixtime::now(),
+						.groupedId = uint64(500 + test),
+					}, document, {});
+					item->setRealId(2000 + 100 * test + count);
+					ids->push_back(item->fullId());
+				}
+				const auto active = Core::App().activePrimaryWindow();
+				active->widget()->resize(1100, name == u"clipped"_q ? 550 : 850);
+				active->sessionController()->showPeerHistory(history,
+					Window::SectionShow::Way::ClearStack, ShowAtTheEndMsgId);
+			},
+		});
+		runner->actOnWidget(u"choose deletion hint: "_q + name,
+			[=]() -> QWidget* {
+				const auto active = Core::App().activePrimaryWindow();
+				for (const auto inner : FindVisible<HistoryInner>(active->widget())) {
+					if (inner->viewByItem(fixture->items.front())) {
+						fixture->inner = inner;
+						return inner;
+					}
+				}
+				return nullptr;
+			}, [=](QWidget*) {
+				const auto inner = fixture->inner.data();
+				ForceWindowActive(inner->window());
+				inner->setFocus();
+				SetNormalMode(true);
+				PressKey(inner, Qt::Key_D);
+				if (name == u"all"_q) {
+					CaptureWidget(inner->window(), u"album-delete-hints"_q);
+				}
+				auto &session = Core::App().domain().active().session();
+				if (name == u"removed"_q) {
+					fixture->items.back()->destroy();
+				} else if (name == u"replaced"_q) {
+					const auto empty = MTPMessageMedia(MTP_messageMediaEmpty());
+					fixture->items.back()->updateSentContent({}, &empty, nullptr);
+				} else if (name == u"added"_q) {
+					const auto history = fixture->items.front()->history();
+					const auto item = history->addNewLocalMessage({
+						.id = session.data().nextLocalMessageId(),
+						.flags = MessageFlag::Local | MessageFlag::BeingSent | MessageFlag::Outgoing,
+						.from = session.user()->id,
+						.date = base::unixtime::now(),
+						.groupedId = uint64(500 + test),
+					}, fixture->photos.front()->owner(), {});
+					item->setRealId(2000 + 100 * test + count);
+					ids->push_back(item->fullId());
+				} else if (name == u"revoked"_q) {
+					fixture->items.front()->history()->peer->asChannel()->removeFlags(
+						ChannelDataFlag::Creator);
+					Check(!fixture->items.front()->canDelete(), u"fixture revokes delete permission"_q);
+				}
+				auto visiblePhotos = count;
+				if (name == u"clipped"_q) {
+					const auto view = inner->viewByItem(fixture->items.front());
+					const auto grouped = dynamic_cast<HistoryView::GroupedMedia*>(view->media());
+					visiblePhotos = 0;
+					for (auto i = 0; i != count; ++i) {
+						const auto rect = grouped->groupItemRect(i).translated(view->innerGeometry().topLeft());
+						const auto global = QRect(inner->mapToGlobal(
+							rect.topLeft() + QPoint(0, inner->itemTop(view))), rect.size());
+						const auto viewport = inner->parentWidget();
+						const auto clipped = global.intersected(QRect(
+							viewport->mapToGlobal(QPoint()), viewport->size()));
+						if (clipped.width() >= st::vimHintMinVisibleHeight
+							&& clipped.height() >= st::vimHintMinVisibleHeight) {
+							++visiblePhotos;
+						}
+					}
+					Check(visiblePhotos < count, u"deletion fixture includes clipped photos"_q);
+				}
+				const auto index = name == u"first"_q ? 0
+					: name == u"last"_q ? count - 1 : visiblePhotos;
+				const auto label = HintLabel(index, visiblePhotos + 1);
+				for (const auto character : label) {
+					PressKey(inner, character.toUpper().unicode());
+				}
+			}, [=](QWidget*) { return !fixture->items.front()->history()->hasPendingResizedItems(); });
+		const auto invalid = name == u"removed"_q || name == u"replaced"_q
+			|| name == u"added"_q || name == u"revoked"_q;
+		if (invalid) {
+			runner->add({
+				.name = u"reject changed deletion album: "_q + name,
+				.run = [=] {
+					const auto boxes = FindVisible<DeleteMessagesBox>(fixture->inner->window());
+					Check(boxes.empty(), u"changed album cannot open deletion confirmation: "_q + name);
+					for (const auto box : boxes) {
+						box->closeBox();
+					}
+					PressKey(fixture->inner, Qt::Key_Escape);
+				},
+			});
+		} else {
+			runner->actOnWidget(u"confirm deletion scope: "_q + name,
+				[=]() -> QWidget* {
+					const auto boxes = FindVisible<DeleteMessagesBox>(fixture->inner->window());
+					return boxes.empty() ? nullptr : boxes.front();
+				}, [=](QWidget *box) {
+					auto &data = Core::App().domain().active().session().data();
+					Check(ranges::all_of(*ids, [&](FullMsgId id) { return data.message(id); }),
+						u"hint waits for confirmation before deleting: "_q + name);
+					if (name == u"cancel"_q) {
+						static_cast<DeleteMessagesBox*>(box)->closeBox();
+					} else {
+						PressKey(box, Qt::Key_Return);
+					}
+					for (auto i = 0; i != ids->size(); ++i) {
+						const auto deleted = name == u"first"_q ? i == 0
+							: name == u"last"_q ? i == count - 1
+							: name != u"cancel"_q && i < count;
+						Check(bool(data.message((*ids)[i])) != deleted,
+							u"deletion preserves exactly the intended messages: "_q + name,
+							u"member=%1 expectedDeleted=%2"_q.arg(i).arg(deleted));
+					}
+				});
+		}
+	}
 }
 
 } // namespace
@@ -345,6 +541,7 @@ void SetupScenario(not_null<Runner*> runner) {
 				[](QWidget *widget) { return widget->isVisible(); });
 		}
 	}
+	AddDeletionScenarios(runner);
 	runner->add({
 		.name = u"record exports for cleanup verification"_q,
 		.run = [=] {

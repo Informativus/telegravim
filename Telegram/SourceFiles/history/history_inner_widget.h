@@ -637,6 +637,7 @@ private:
 	void vimKeymapPaintHints(Painter &p) const;
 	[[nodiscard]] bool vimKeymapCopyItem(not_null<HistoryItem*> item);
 	void vimKeymapCopyAlbum(const VimKeymapHint &hint);
+	void vimKeymapDeleteAlbum(const VimKeymapHint &hint);
 	[[nodiscard]] bool vimKeymapReplyToItem(not_null<HistoryItem*> item);
 	[[nodiscard]] bool vimKeymapReactToItem(not_null<HistoryItem*> item);
 	[[nodiscard]] bool vimKeymapEditItem(not_null<HistoryItem*> item);
