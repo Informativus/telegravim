@@ -745,11 +745,11 @@ void SetNormalModeValue(bool enabled) {
 }
 
 [[nodiscard]] QString EnglishHintAlphabet() {
-	return u"asdfghjklqwertyuiopzxcvbnm,."_q;
+	return u"asdfghjklqwertyuiopzxcvbnm"_q;
 }
 
 [[nodiscard]] QString RussianHintAlphabet() {
-	return u"фывапролдйцукенгшщзячсмитьбю"_q;
+	return u"фывапролдйцукенгшщзячсмить"_q;
 }
 
 [[nodiscard]] QString CurrentHintAlphabet() {
