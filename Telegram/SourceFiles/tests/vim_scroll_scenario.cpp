@@ -131,8 +131,15 @@ void SetupScenario(not_null<Runner*> runner) {
 	for (const auto key : { Qt::Key_J, Qt::Key_K }) {
 		for (const auto name : { u"tap"_q, u"held"_q, u"release elsewhere"_q,
 				u"modifier changed"_q, u"insert mode"_q, u"focus lost"_q,
-				u"window deactivated"_q, u"layout changed"_q, u"scan code"_q, u"auto repeat"_q }) {
+				u"window deactivated"_q, u"layout changed"_q,
+				u"scan code"_q, u"auto repeat"_q }) {
 			const auto label = QString(QChar(ushort(key))) + u": "_q + name;
+			const auto nativePress = name == u"layout changed"_q
+				? (key == Qt::Key_J ? 38 : 40)
+				: name == u"scan code"_q ? int(key) : 0;
+			const auto nativeRelease = name == u"scan code"_q
+				? 0x041e : nativePress;
+			const auto scanCode = name == u"scan code"_q ? 44 : 0;
 			runner->add({
 				.name = u"press "_q + label,
 				.run = [=] {
@@ -142,8 +149,7 @@ void SetupScenario(not_null<Runner*> runner) {
 					fixture->scroll->scrollToY(fixture->scroll->scrollTopMax() / 2);
 					fixture->before = fixture->scroll->scrollTop();
 					SendScrollKey(fixture->inner, QEvent::KeyPress, key, Qt::NoModifier, false,
-						name == u"layout changed"_q ? (key == Qt::Key_J ? 38 : 40) : name == u"scan code"_q ? key : 0,
-						name == u"scan code"_q ? 44 : 0);
+						nativePress, scanCode);
 					fixture->started = crl::now();
 					if (name == u"tap"_q) {
 						SendScrollKey(fixture->inner, QEvent::KeyRelease, key);
@@ -152,7 +158,8 @@ void SetupScenario(not_null<Runner*> runner) {
 				.until = [=] { return crl::now() - fixture->started > 350; },
 				.then = [=] {
 					const auto delta = fixture->scroll->scrollTop() - fixture->before;
-					Check(key == Qt::Key_J ? delta > 0 : delta < 0,
+					Check((key == Qt::Key_J ? delta > 0 : delta < 0)
+						&& (name == u"tap"_q || std::abs(delta) > ScrollStep()),
 						u"key scrolls in the expected direction: "_q + label);
 					if (name == u"focus lost"_q || name == u"window deactivated"_q) {
 						auto event = QEvent(name == u"focus lost"_q
@@ -170,8 +177,7 @@ void SetupScenario(not_null<Runner*> runner) {
 							? qApp : static_cast<QObject*>(fixture->inner.data()),
 							QEvent::KeyRelease, name == u"layout changed"_q ? 0x041e : key,
 							name == u"modifier changed"_q ? Qt::ShiftModifier : Qt::NoModifier,
-							false, name == u"layout changed"_q ? (key == Qt::Key_J ? 38 : 40) : name == u"scan code"_q ? 0x041e : 0,
-							name == u"scan code"_q ? 44 : 0);
+							false, nativeRelease, scanCode);
 					}
 					fixture->started = crl::now();
 				},
