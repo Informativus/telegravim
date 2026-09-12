@@ -607,6 +607,10 @@ private:
 		PickMessageLinks,
 		ActivateLink,
 	};
+	struct VimKeymapAlbumPhoto {
+		FullMsgId itemId;
+		PhotoData *photo = nullptr;
+	};
 	struct VimKeymapHint {
 		QString label;
 		FullMsgId itemId;
@@ -618,6 +622,7 @@ private:
 		QPoint clickPoint;
 		bool useClickPoint = false;
 		QPointer<QWidget> widget;
+		std::vector<VimKeymapAlbumPhoto> album;
 	};
 	void vimKeymapClearHints();
 	void vimKeymapBuildMessageHints(VimKeymapHintMode mode);
@@ -631,6 +636,8 @@ private:
 	void vimKeymapTriggerHint(VimKeymapHint hint);
 	void vimKeymapPaintHints(Painter &p) const;
 	[[nodiscard]] bool vimKeymapCopyItem(not_null<HistoryItem*> item);
+	void vimKeymapCopyAlbum(const VimKeymapHint &hint);
+	void vimKeymapDeleteAlbum(const VimKeymapHint &hint);
 	[[nodiscard]] bool vimKeymapReplyToItem(not_null<HistoryItem*> item);
 	[[nodiscard]] bool vimKeymapReactToItem(not_null<HistoryItem*> item);
 	[[nodiscard]] bool vimKeymapEditItem(not_null<HistoryItem*> item);
