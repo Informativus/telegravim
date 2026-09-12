@@ -2263,7 +2263,8 @@ void SendFilesBox::setupEmojiPanel() {
 
 bool SendFilesBox::vimKeymapHandleEmojiKey(not_null<QKeyEvent*> event) {
 	using namespace Core::VimKeymap;
-	if (!Enabled() || !isVisible() || !window()->isActiveWindow()
+	if (!Enabled() || !isVisible() || _caption->isHidden()
+		|| !window()->isActiveWindow()
 		|| Core::App().passcodeLocked()
 		|| QApplication::activePopupWidget() || QApplication::activeModalWidget()) {
 		return false;

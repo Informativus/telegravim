@@ -19,6 +19,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_account.h"
 #include "main/main_domain.h"
 #include "main/main_session.h"
+#include "main/main_session_settings.h"
 #include "menu/menu_send.h"
 #include "mtproto/facade.h"
 #include "storage/storage_media_prepare.h"
@@ -38,8 +39,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QTemporaryDir>
 #include <QtGui/QKeyEvent>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QLineEdit>
-#include <QtWidgets/QMenu>
 
 namespace Test {
 namespace {
@@ -167,6 +166,9 @@ void SetupScenario(not_null<Runner*> runner) {
 			}, f->box->lifetime());
 		},
 	});
+	runner->captureWidget(u"attachment-emoji-keyboard-focus"_q, [=]() -> QWidget* {
+		return f->selector ? f->box->window() : nullptr;
+	});
 	runner->add({
 		.name = u"select and move without sending attachments"_q,
 		.run = [=] {
@@ -178,7 +180,7 @@ void SetupScenario(not_null<Runner*> runner) {
 			for (const auto key : { Qt::Key_Return, Qt::Key_L, Qt::Key_H,
 					Qt::Key_J, Qt::Key_K }) {
 				if (key != Qt::Key_Return) {
-					Key(key, Qt::NoModifier, QString(QChar(key).toLower()));
+					Key(key, Qt::NoModifier, QString(QChar(int(key)).toLower()));
 				}
 				Key(Qt::Key_Return);
 				const auto current = f->caption->getLastText();
@@ -200,8 +202,8 @@ void SetupScenario(not_null<Runner*> runner) {
 			Check(f->selector->vimKeymapSearchHasFocus(), u"Ctrl F focuses picker search"_q);
 			Key(Qt::Key_J, Qt::NoModifier, u"j"_q);
 			Key(Qt::Key_K, Qt::NoModifier, u"k"_q);
-			const auto search = dynamic_cast<QLineEdit*>(QApplication::focusWidget());
-			Check(search && search->text() == u"jk"_q,
+			const auto search = FindFirst<Ui::InputField>(f->selector);
+			Check(search && search->getLastText() == u"jk"_q,
 				u"j k are inserted into picker search"_q);
 			f->started = crl::now();
 		},
@@ -237,6 +239,8 @@ void SetupScenario(not_null<Runner*> runner) {
 			Check(f->caption->getLastText() == before + u"jk"_q,
 				u"caption remains editable after closing picker"_q);
 			Key(Qt::Key_L, Qt::ControlModifier, u"l"_q);
+			Key(Qt::Key_Return);
+			Check(f->sends == 0, u"Enter during picker opening cannot send photos"_q);
 			f->started = crl::now();
 		},
 	});
