@@ -789,8 +789,8 @@ struct HelpEntry {
 		result.back().aliases = aliases;
 	};
 	binding(0, VimKeymapKeyToggleModeOption,
-		u"Ввод ↔ навигация"_q,
-		u"Typing ↔ navigation"_q,
+		u"Ввод / навигация"_q,
+		u"Typing / navigation"_q,
 		u"Если открыто окно, меню или фото, Esc сначала закрывает его."_q,
 		u"Esc closes an open dialog, menu or photo first."_q);
 	binding(0, VimKeymapKeyScrollDownOption,
@@ -1277,14 +1277,14 @@ private:
 
 	[[nodiscard]] QString sectionNote() const {
 		const auto ru = std::array{
-			u"Esc переключает ввод и навигацию. Команды ниже работают в режиме навигации."_q,
+			u"Выбор сообщений, прокрутка и элементы интерфейса в режиме навигации."_q,
 			u"Переключение чатов, папок и поиск доступны и во время ввода текста."_q,
 			u"Нажмите команду, затем букву нужного сообщения или фотографии."_q,
 			u"Команды редактора работают в режиме навигации внутри поля сообщения."_q,
 			u"Управление панелью эмодзи, стикеров и GIF, в том числе над фотографиями."_q,
 			u"История команд для диагностики. Вводимый текст скрыт."_q };
 		const auto en = std::array{
-			u"Esc switches between typing and navigation. These commands work in navigation mode."_q,
+			u"Navigate messages, scroll the chat and choose controls in navigation mode."_q,
 			u"Switch chats, folders and search even while typing a message."_q,
 			u"Press a command, then the hint letter on a message or photo."_q,
 			u"Editor commands work in navigation mode inside the message field."_q,
@@ -1317,7 +1317,7 @@ private:
 		};
 		if (_activeTab == kLogTab) {
 			auto lines = keyLogText().split(QChar('\n'));
-			std::erase_if(lines, [&](const auto &line) { return !matches(line); });
+			lines.removeIf([&](const auto &line) { return !matches(line); });
 			_content->add(object_ptr<Ui::FlatLabel>(
 				_content, lines.join(QChar('\n')), st::vimHelpRowDetail))->setSelectable(true);
 		} else {

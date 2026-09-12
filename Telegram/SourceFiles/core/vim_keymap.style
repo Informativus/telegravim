@@ -27,12 +27,14 @@ vimHelpKeyRadius: 5px;
 vimHelpKeyFont: font(12px semibold);
 vimHelpNotePadding: margins(0px, 14px, 0px, 14px);
 vimHelpRowTitle: FlatLabel(defaultFlatLabel) {
+	minWidth: 120px;
 	style: TextStyle(defaultTextStyle) {
 		font: font(14px);
 		lineHeight: 20px;
 	}
 }
 vimHelpRowDetail: FlatLabel(defaultSubTextLabel) {
+	minWidth: 120px;
 	style: TextStyle(defaultTextStyle) {
 		font: font(12px);
 		lineHeight: 18px;
