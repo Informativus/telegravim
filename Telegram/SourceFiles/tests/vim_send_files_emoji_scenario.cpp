@@ -84,12 +84,16 @@ struct EmojiFixture {
 
 void Key(int key, Qt::KeyboardModifiers modifiers = Qt::NoModifier,
 		QString text = {}, bool repeat = false) {
-	const auto target = QApplication::focusWidget();
+	ForceWindowActive(Core::App().activePrimaryWindow()->widget());
+	const auto target = QPointer<QWidget>(QApplication::focusWidget());
 	Check(target != nullptr, u"keyboard event has a focused receiver"_q);
 	if (!target) {
 		return;
 	}
 	for (const auto type : { QEvent::KeyPress, QEvent::KeyRelease }) {
+		if (!target) {
+			break;
+		}
 		auto event = QKeyEvent(type, key, modifiers, text, repeat);
 		Settle([&] { QApplication::sendEvent(target, &event); });
 	}

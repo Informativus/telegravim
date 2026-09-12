@@ -78,6 +78,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/application.h"
 #include "core/core_settings.h"
 #include "styles/style_boxes.h"
+
+#include <QtWidgets/QApplication>
 #include "styles/style_chat.h"
 #include "styles/style_chat_helpers.h"
 #include "styles/style_layers.h"
@@ -2304,6 +2306,8 @@ bool SendFilesBox::vimKeymapHandleEmojiKey(not_null<QKeyEvent*> event) {
 	}
 	if (open) {
 		_emojiPanel->showAnimated();
+		_emojiPanel->setFocusPolicy(Qt::StrongFocus);
+		_emojiPanel->setFocus(Qt::ShortcutFocusReason);
 		selector->vimKeymapFocusPanel();
 		SetNormalMode(true);
 	} else if (close || (escape && !selector->vimKeymapSearchHasFocus())) {
