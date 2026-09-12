@@ -36,6 +36,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "test/test_runner.h"
 #include "test/test_widgets.h"
 #include "ui/chat/attach/attach_prepare.h"
+#include "ui/widgets/elastic_scroll.h"
 #include "window/main_window.h"
 #include "window/window_controller.h"
 #include "window/window_session_controller.h"
@@ -261,6 +262,15 @@ void AddDeletionScenarios(not_null<Runner*> runner) {
 				ForceWindowActive(inner->window());
 				inner->setFocus();
 				SetNormalMode(true);
+				if (name == u"clipped"_q) {
+					for (auto parent = inner->parentWidget(); parent; parent = parent->parentWidget()) {
+						if (const auto scroll = dynamic_cast<Ui::ElasticScroll*>(parent)) {
+							scroll->resize(scroll->width(), scroll->height() / 2);
+							SettlePostponedCalls();
+							break;
+						}
+					}
+				}
 				PressKey(inner, Qt::Key_D);
 				if (name == u"all"_q) {
 					CaptureWidget(inner->window(), u"album-delete-hints"_q);
@@ -296,7 +306,10 @@ void AddDeletionScenarios(not_null<Runner*> runner) {
 						const auto rect = grouped->groupItemRect(i).translated(view->innerGeometry().topLeft());
 						const auto global = QRect(inner->mapToGlobal(
 							rect.topLeft() + QPoint(0, inner->itemTop(view))), rect.size());
-						const auto viewport = inner->parentWidget();
+						auto viewport = inner->parentWidget();
+						while (viewport->parentWidget() && !dynamic_cast<Ui::ElasticScroll*>(viewport)) {
+							viewport = viewport->parentWidget();
+						}
 						const auto clipped = global.intersected(QRect(
 							viewport->mapToGlobal(QPoint()), viewport->size()));
 						if (clipped.width() >= st::vimHintMinVisibleHeight
@@ -304,13 +317,17 @@ void AddDeletionScenarios(not_null<Runner*> runner) {
 							++visiblePhotos;
 						}
 					}
-					Check(visiblePhotos < count, u"deletion fixture includes clipped photos"_q);
+					Check(visiblePhotos > 0 && visiblePhotos < count,
+						u"deletion fixture includes clipped photos"_q,
+						u"visible=%1 count=%2"_q.arg(visiblePhotos).arg(count));
 				}
 				const auto index = name == u"first"_q ? 0
 					: name == u"last"_q ? count - 1 : visiblePhotos;
 				const auto label = HintLabel(index, visiblePhotos + 1);
 				for (const auto character : label) {
-					PressKey(inner, character.toUpper().unicode());
+					auto event = QKeyEvent(QEvent::KeyPress,
+						character.toUpper().unicode(), Qt::NoModifier, QString(character));
+					Settle([&] { QApplication::sendEvent(inner, &event); });
 				}
 			}, [=](QWidget*) { return !fixture->items.front()->history()->hasPendingResizedItems(); });
 		const auto invalid = name == u"removed"_q || name == u"replaced"_q
@@ -371,7 +388,7 @@ void SetupScenario(not_null<Runner*> runner) {
 			MTP::details::pause();
 			account.createSession(FixtureUser(1, true));
 			VimKeymapOption.set(true);
-			VimKeymapHintAlphabetOption.set(u"abcdefghijklmnopqrst"_q);
+			VimKeymapHintAlphabetOption.set(u"en"_q);
 			const auto saved = std::make_shared<QMimeData>();
 			const auto original = QApplication::clipboard()->mimeData();
 			for (const auto &format : original->formats()) {
