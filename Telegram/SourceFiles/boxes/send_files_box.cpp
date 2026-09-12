@@ -32,7 +32,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/controls/history_view_compose_ai_button.h"
 #include "history/view/history_view_schedule_box.h"
 #include "core/mime_type.h"
-#include "core/application.h"
 #include "core/vim_keymap.h"
 #include "core/vim_keymap_bindings.h"
 #include "core/vim_keymap_widgets.h"
@@ -78,8 +77,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/application.h"
 #include "core/core_settings.h"
 #include "styles/style_boxes.h"
-
-#include <QtWidgets/QApplication>
 #include "styles/style_chat.h"
 #include "styles/style_chat_helpers.h"
 #include "styles/style_layers.h"
@@ -88,6 +85,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_menu_icons.h"
 
 #include <QtCore/QMimeData>
+#include <QtWidgets/QApplication>
 
 namespace {
 
