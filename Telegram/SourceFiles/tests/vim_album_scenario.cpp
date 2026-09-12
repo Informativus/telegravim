@@ -266,14 +266,15 @@ void AddDeletionScenarios(not_null<Runner*> runner) {
 					for (auto parent = inner->parentWidget(); parent; parent = parent->parentWidget()) {
 						if (const auto scroll = dynamic_cast<Ui::ElasticScroll*>(parent)) {
 							scroll->resize(scroll->width(), scroll->height() / 2);
+							scroll->scrollToY(scroll->scrollTop() + 1);
 							SettlePostponedCalls();
 							break;
 						}
 					}
 				}
 				PressKey(inner, Qt::Key_D);
-				if (name == u"all"_q) {
-					CaptureWidget(inner->window(), u"album-delete-hints"_q);
+				if (name == u"all"_q || name == u"clipped"_q) {
+					CaptureWidget(inner->window(), u"album-delete-hints-"_q + name);
 				}
 				auto &session = Core::App().domain().active().session();
 				if (name == u"removed"_q) {
