@@ -72,8 +72,8 @@ struct ScrollFixture {
 
 void SendScrollKey(QObject *target, QEvent::Type type, int key,
 		Qt::KeyboardModifiers modifiers = Qt::NoModifier, bool repeat = false,
-		quint32 nativeKey = 0) {
-	auto event = QKeyEvent(type, key, modifiers, 0, nativeKey, 0, QString(), repeat);
+		quint32 nativeKey = 0, quint32 scanCode = 0) {
+	auto event = QKeyEvent(type, key, modifiers, scanCode, nativeKey, 0, QString(), repeat);
 	Settle([&] { QApplication::sendEvent(target, &event); });
 }
 
@@ -131,7 +131,7 @@ void SetupScenario(not_null<Runner*> runner) {
 	for (const auto key : { Qt::Key_J, Qt::Key_K }) {
 		for (const auto name : { u"tap"_q, u"held"_q, u"release elsewhere"_q,
 				u"modifier changed"_q, u"insert mode"_q, u"focus lost"_q,
-				u"window deactivated"_q, u"layout changed"_q, u"auto repeat"_q }) {
+				u"window deactivated"_q, u"layout changed"_q, u"scan code"_q, u"auto repeat"_q }) {
 			const auto label = QString(QChar(ushort(key))) + u": "_q + name;
 			runner->add({
 				.name = u"press "_q + label,
@@ -142,7 +142,8 @@ void SetupScenario(not_null<Runner*> runner) {
 					fixture->scroll->scrollToY(fixture->scroll->scrollTopMax() / 2);
 					fixture->before = fixture->scroll->scrollTop();
 					SendScrollKey(fixture->inner, QEvent::KeyPress, key, Qt::NoModifier, false,
-						name == u"layout changed"_q ? (key == Qt::Key_J ? 38 : 40) : 0);
+						name == u"layout changed"_q ? (key == Qt::Key_J ? 38 : 40) : name == u"scan code"_q ? key : 0,
+						name == u"scan code"_q ? 44 : 0);
 					fixture->started = crl::now();
 					if (name == u"tap"_q) {
 						SendScrollKey(fixture->inner, QEvent::KeyRelease, key);
@@ -169,7 +170,8 @@ void SetupScenario(not_null<Runner*> runner) {
 							? qApp : static_cast<QObject*>(fixture->inner.data()),
 							QEvent::KeyRelease, name == u"layout changed"_q ? 0x041e : key,
 							name == u"modifier changed"_q ? Qt::ShiftModifier : Qt::NoModifier,
-							false, name == u"layout changed"_q ? (key == Qt::Key_J ? 38 : 40) : 0);
+							false, name == u"layout changed"_q ? (key == Qt::Key_J ? 38 : 40) : name == u"scan code"_q ? 0x041e : 0,
+							name == u"scan code"_q ? 44 : 0);
 					}
 					fixture->started = crl::now();
 				},

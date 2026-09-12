@@ -745,8 +745,11 @@ HistoryWidget::HistoryWidget(
 		const auto type = event->type();
 		if (type == QEvent::KeyRelease || type == QEvent::KeyPress) {
 			const auto key = static_cast<QKeyEvent*>(event.get());
-			const auto matches = _vimKeymapScrollNativeKey && key->nativeVirtualKey()
-				? _vimKeymapScrollNativeKey == key->nativeVirtualKey()
+			const auto nativeKey = key->nativeScanCode()
+				? key->nativeScanCode()
+				: key->nativeVirtualKey();
+			const auto matches = _vimKeymapScrollNativeKey && nativeKey
+				? _vimKeymapScrollNativeKey == nativeKey
 				: _vimKeymapScrollKey == key->key();
 			if (!key->isAutoRepeat()
 				&& (type == QEvent::KeyRelease ? matches : !matches)) {
@@ -9875,7 +9878,9 @@ bool HistoryWidget::vimKeymapHandleScrollKey(not_null<QKeyEvent*> e) {
 		_vimKeymapScrollRepeating = false;
 		_vimKeymapScrollDirection = direction;
 		_vimKeymapScrollKey = e->key();
-		_vimKeymapScrollNativeKey = e->nativeVirtualKey();
+		_vimKeymapScrollNativeKey = e->nativeScanCode()
+			? e->nativeScanCode()
+			: e->nativeVirtualKey();
 		vimKeymapScrollBy(
 			direction,
 			Core::VimKeymap::ScrollStep(),
