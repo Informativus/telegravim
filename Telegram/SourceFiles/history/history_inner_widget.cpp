@@ -4927,6 +4927,9 @@ void HistoryInner::vimKeymapBuildMessageHints(VimKeymapHintMode mode) {
 				continue;
 			}
 		}
+		if (mode == VimKeymapHintMode::DeleteMessage && !view->data()->canDelete()) {
+			continue;
+		}
 		_vimKeymapHints.push_back({
 			.itemId = view->data()->fullId(),
 		});
@@ -5409,6 +5412,10 @@ void HistoryInner::vimKeymapTriggerHint(VimKeymapHint hint) {
 		}
 		return;
 	}
+	if (item && !viewByItem(item)) {
+		vimKeymapClearHints();
+		return;
+	}
 	if (mode == VimKeymapHintMode::CopyMessage && !hint.album.empty()) {
 		vimKeymapClearHints();
 		vimKeymapCopyAlbum(hint);
@@ -5419,10 +5426,6 @@ void HistoryInner::vimKeymapTriggerHint(VimKeymapHint hint) {
 		if (media && media->photo() == hint.photo) {
 			vimKeymapCopyItem(item);
 		}
-		vimKeymapClearHints();
-		return;
-	}
-	if (item && !viewByItem(item)) {
 		vimKeymapClearHints();
 		return;
 	}
@@ -5607,7 +5610,8 @@ void HistoryInner::vimKeymapPaintHints(Painter &p) const {
 			continue;
 		}
 		if (_vimKeymapHintMode == VimKeymapHintMode::ActivateLink
-			|| (_vimKeymapHintMode == VimKeymapHintMode::CopyMessage
+			|| ((_vimKeymapHintMode == VimKeymapHintMode::CopyMessage
+				|| _vimKeymapHintMode == VimKeymapHintMode::DeleteMessage)
 				&& hint.photo)) {
 			badges.push_back({ hint.label, hint.badge.topLeft(), hint.target });
 			continue;
