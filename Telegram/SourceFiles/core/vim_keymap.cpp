@@ -1451,6 +1451,7 @@ bool HandleApplicationShortcutOverride(not_null<QKeyEvent*> e) {
 		&& !App().passcodeLocked()
 		&& (!active || !active->locked())
 		&& !ActiveKeyboardScope()
+		&& (Bindings::IsPlainEscape(e) || !TextInputPassthroughRequested(e))
 		&& HandlePreLayerKey(e);
 }
 
@@ -1475,6 +1476,11 @@ bool HandleApplicationKeyPress(
 	}
 	const auto scope = QPointer<QWidget>(ActiveKeyboardScope());
 	UpdateKeyboardScope(scope);
+	if (!scope
+		&& !Bindings::IsPlainEscape(e)
+		&& TextInputPassthroughRequested(e)) {
+		return false;
+	}
 	if (!scope && HandlePreLayerKey(e)) {
 		RecordKeyEvent(e, u"pre-layer handler"_q, true);
 		e->accept();
