@@ -78,6 +78,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_peer_menu.h"
 #include "window/notifications_manager.h"
 #include "info/info_memento.h"
+#include "info/info_wrap_widget.h"
 #include "info/statistics/info_statistics_widget.h"
 #include "boxes/about_sponsored_box.h"
 #include "boxes/delete_messages_box.h"
@@ -5119,6 +5120,10 @@ void HistoryInner::vimKeymapAddLinkHints(not_null<Element*> view) {
 
 void HistoryInner::vimKeymapAddWidgetHints() {
 	_vimKeymapWidgetHintRoots = Core::VimKeymap::GlobalFocusRoots(window());
+	std::erase_if(_vimKeymapWidgetHintRoots, [](const auto &root) {
+		const auto info = dynamic_cast<Info::WrapWidget*>(root.data());
+		return info && info->wrap() == Info::Wrap::Side;
+	});
 	for (const auto root : _vimKeymapWidgetHintRoots) {
 		for (const auto target : Core::VimKeymap::VisibleKeyboardHintTargets(root)) {
 			_vimKeymapHints.push_back({ .widget = target });
