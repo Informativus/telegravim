@@ -150,6 +150,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtWidgets/QApplication>
 #include <QtCore/QCoreApplication>
 #include <QtCore/QMimeData>
+#include <QtCore/QTemporaryDir>
+
+#include <kurlmimedata.h>
 
 namespace {
 
@@ -4285,6 +4288,126 @@ bool HistoryInner::vimKeymapCopyItem(not_null<HistoryItem*> item) {
 	return true;
 }
 
+void HistoryInner::vimKeymapCopyAlbum(const VimKeymapHint &hint) {
+	_vimKeymapPhotoCopyLifetime.destroy();
+	const auto album = hint.album;
+	const auto item = session().data().message(hint.itemId);
+	if (!item || album.size() < 2 || Core::App().passcodeLocked()) {
+		return;
+	}
+	const auto groupId = item->groupId();
+	const auto valid = [=] {
+		const auto current = session().data().message(hint.itemId);
+		const auto group = current
+			? session().data().groups().find(current)
+			: nullptr;
+		if (!groupId || !group || Core::App().passcodeLocked()) {
+			return false;
+		}
+		auto index = 0;
+		for (const auto member : group->items) {
+			const auto media = member->media();
+			const auto photo = media ? media->photo() : nullptr;
+			if (photo && !photo->hasVideo()) {
+				if (index == album.size()
+					|| album[index].itemId != member->fullId()
+					|| album[index].photo != photo) {
+					return false;
+				}
+				++index;
+			}
+		}
+		if (index != album.size()) {
+			return false;
+		}
+		for (const auto &entry : album) {
+			const auto current = session().data().message(entry.itemId);
+			const auto media = current ? current->media() : nullptr;
+			if (!media
+				|| current->groupId() != groupId
+				|| media->photo() != entry.photo
+				|| entry.photo->hasVideo()
+				|| showCopyMediaRestriction(current)) {
+				return false;
+			}
+		}
+		return true;
+	};
+	if (!valid()) {
+		return;
+	}
+	auto photos = std::vector<std::shared_ptr<Data::PhotoMedia>>();
+	for (const auto &entry : album) {
+		photos.push_back(entry.photo->createMediaView());
+	}
+	const auto ready = [=] {
+		return ranges::all_of(photos, [](const auto &photo) {
+			return photo->loaded();
+		});
+	};
+	const auto failed = [=] {
+		return ranges::any_of(photos, [](const auto &photo) {
+			return !photo->loaded()
+				&& photo->owner()->failed(Data::PhotoSize::Large);
+		});
+	};
+	const auto copy = [=] {
+		if (!valid()) {
+			return;
+		}
+		const auto error = [=] {
+			_controller->showToast(tr::lng_vim_copy_album_failed(tr::now));
+		};
+		if (!ready()) {
+			error();
+			return;
+		}
+		auto directory = std::make_shared<QTemporaryDir>();
+		if (!directory->isValid()) {
+			error();
+			return;
+		}
+		auto urls = QList<QUrl>();
+		for (auto i = 0; i != photos.size(); ++i) {
+			const auto path = directory->filePath(
+				u"photo-%1.jpg"_q.arg(i + 1, 2, 10, QChar('0')));
+			if (!photos[i]->saveToFile(path)) {
+				error();
+				return;
+			}
+			urls.push_back(QUrl::fromLocalFile(path));
+		}
+		auto mime = std::make_unique<QMimeData>();
+		mime->setUrls(urls);
+		KUrlMimeData::exportUrlsToPortal(mime.get());
+		session().lifetime().add([directory] { directory->remove(); });
+		QGuiApplication::clipboard()->setMimeData(mime.release());
+		_controller->showToast(tr::lng_vim_copy_album_done(tr::now));
+	};
+	if (ready()) {
+		copy();
+		return;
+	}
+	const auto changed = QObject::connect(
+		QGuiApplication::clipboard(),
+		&QClipboard::dataChanged,
+		this,
+		[=] { _vimKeymapPhotoCopyLifetime.destroy(); });
+	_vimKeymapPhotoCopyLifetime.add([=] { QObject::disconnect(changed); });
+	session().downloaderTaskFinished(
+	) | rpl::filter([=] {
+		return ready() || failed();
+	}) | rpl::take(1) | rpl::on_next([=] {
+		const auto finish = copy;
+		_vimKeymapPhotoCopyLifetime.destroy();
+		finish();
+	}, _vimKeymapPhotoCopyLifetime);
+	_controller->showToast(tr::lng_vim_copy_album_loading(tr::now));
+	for (auto i = 0; i != photos.size(); ++i) {
+		photos[i]->wanted(Data::PhotoSize::Large, album[i].itemId);
+	}
+}
+
 bool HistoryInner::vimKeymapReplyToItem(not_null<HistoryItem*> item) {
 	if ((!item->isRegular() && !CanReplyToEphemeral(item))
 		|| IsAnchoredEphemeral(item)
@@ -4736,6 +4859,22 @@ void HistoryInner::vimKeymapBuildMessageHints(VimKeymapHintMode mode) {
 				});
 			}
 			if (addedPhotos) {
+				auto album = std::vector<VimKeymapAlbumPhoto>();
+				if (const auto group = session().data().groups().find(view->data())) {
+					for (const auto item : group->items) {
+						const auto media = item->media();
+						const auto photo = media ? media->photo() : nullptr;
+						if (photo && !photo->hasVideo()) {
+							album.push_back({ item->fullId(), photo });
+						}
+					}
+				}
+				if (album.size() > 1) {
+					_vimKeymapHints.push_back({
+						.itemId = view->data()->fullId(),
+						.album = std::move(album),
+					});
+				}
 				continue;
 			}
 		}
@@ -5207,6 +5346,11 @@ void HistoryInner::vimKeymapTriggerHint(VimKeymapHint hint) {
 		return;
 	}
 	const auto mode = _vimKeymapHintMode;
+	if (mode == VimKeymapHintMode::CopyMessage && !hint.album.empty()) {
+		vimKeymapClearHints();
+		vimKeymapCopyAlbum(hint);
+		return;
+	}
 	if (mode == VimKeymapHintMode::CopyMessage && hint.photo) {
 		const auto media = item ? item->media() : nullptr;
 		if (media && media->photo() == hint.photo) {
@@ -5412,8 +5556,12 @@ void HistoryInner::vimKeymapPaintHints(Painter &p) const {
 			continue;
 		}
 		const auto remaining = hint.label.mid(_vimKeymapHintPrefix.size());
+		const auto suffix = hint.album.empty()
+			? QString()
+			: u" · "_q + tr::lng_vim_copy_album(tr::now);
 		const auto size = QSize(
-			metrics.horizontalAdvance(remaining.isEmpty() ? hint.label : remaining)
+			metrics.horizontalAdvance(
+				(remaining.isEmpty() ? hint.label : remaining) + suffix)
 				+ 2 * padding.width(),
 			metrics.height() + 2 * padding.height());
 		const auto left = view->hasOutLayout()
@@ -5426,6 +5574,7 @@ void HistoryInner::vimKeymapPaintHints(Painter &p) const {
 			hint.label,
 			anchor,
 			QRect(bounds.left(), visible.top(), bounds.width(), visible.height()),
+			suffix,
 		});
 	}
 	Core::VimKeymap::PaintHintBadges(

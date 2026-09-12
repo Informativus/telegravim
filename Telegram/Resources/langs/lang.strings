@@ -6231,6 +6231,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_formatting_code_auto" = "Auto-Detect";
 
 "lng_text_copied" = "Text copied to clipboard.";
+"lng_vim_copy_album" = "All photos";
+"lng_vim_copy_album_loading" = "Loading photos…";
+"lng_vim_copy_album_done" = "Photos copied to clipboard.";
+"lng_vim_copy_album_failed" = "Could not copy all photos. Please try again.";
 "lng_code_copied" = "Code copied to clipboard.";
 "lng_date_copied" = "Date copied to clipboard.";
 

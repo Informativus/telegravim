@@ -167,7 +167,8 @@ void PaintHintBadges(
 			continue;
 		}
 		const auto remaining = hint.label.mid(prefix.size());
-		labels.push_back(remaining.isEmpty() ? hint.label : remaining);
+		labels.push_back((remaining.isEmpty() ? hint.label : remaining)
+			+ hint.suffix);
 		targets.push_back(hint.target);
 		desired.emplace_back(hint.anchor, QSize(
 			metrics.horizontalAdvance(labels.back()) + 2 * padding.width(),

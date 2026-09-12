@@ -25,6 +25,7 @@ struct HintBadge {
 	QString label;
 	QPoint anchor;
 	QRect target;
+	QString suffix;
 };
 
 [[nodiscard]] QRect LinkHintTargetRect(
