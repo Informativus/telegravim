@@ -48,6 +48,9 @@ void SetKeyboardCloseTarget(not_null<QWidget*> widget);
 
 [[nodiscard]] bool KeyHandlerInScope(QObject *owner, QWidget *scope);
 [[nodiscard]] bool KeyboardInputActive(QObject *receiver);
+void SetKeyboardScopeProxy(
+	not_null<QWidget*> owner,
+	not_null<QWidget*> proxy);
 [[nodiscard]] QWidget *FindKeyboardScope(not_null<QWidget*> window);
 [[nodiscard]] bool KeyboardScopeHasTextInput(
 	not_null<QWidget*> scope,
