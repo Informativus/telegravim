@@ -104,6 +104,13 @@ constexpr auto kCloseHintTarget = "vim-keymap-close-hint-target";
 
 std::vector<QPointer<QWidget>> GlobalHintRoots;
 
+struct KeyboardScopeProxy {
+	QPointer<QWidget> owner;
+	QPointer<QWidget> proxy;
+};
+
+std::vector<KeyboardScopeProxy> KeyboardScopeProxies;
+
 struct HintActionTarget {
 	QPointer<QWidget> widget;
 	KeyboardHintActions actions;
@@ -239,6 +246,15 @@ private:
 
 } // namespace
 
+void SetKeyboardScopeProxy(
+		not_null<QWidget*> owner,
+		not_null<QWidget*> proxy) {
+	std::erase_if(KeyboardScopeProxies, [&](const auto &entry) {
+		return !entry.owner || !entry.proxy || entry.owner == owner.get();
+	});
+	KeyboardScopeProxies.push_back({ owner.get(), proxy.get() });
+}
+
 QWidget *FindKeyboardScope(not_null<QWidget*> window) {
 	const auto find = [&](const auto &self, QWidget *root) -> QWidget* {
 		if (const auto stack = dynamic_cast<Ui::LayerStackWidget*>(root)) {
@@ -257,7 +273,19 @@ QWidget *FindKeyboardScope(not_null<QWidget*> window) {
 		}
 		return dynamic_cast<Ui::LayerWidget*>(root);
 	};
-	return find(find, window);
+	const auto layer = find(find, window);
+	for (auto i = KeyboardScopeProxies.rbegin(); i != KeyboardScopeProxies.rend(); ++i) {
+		const auto proxy = i->proxy.data();
+		const auto focus = QApplication::focusWidget();
+		if (layer && i->owner && proxy
+			&& KeyHandlerInScope(i->owner, layer)
+			&& proxy->window() == window
+			&& proxy->isVisibleTo(window)
+			&& focus && (focus == proxy || proxy->isAncestorOf(focus))) {
+			return proxy;
+		}
+	}
+	return layer;
 }
 
 bool CloseKeyboardScope(not_null<QWidget*> scope) {

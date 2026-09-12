@@ -242,6 +242,7 @@ private:
 	void updateSendWayControls();
 	void updateEmojiPanelGeometry();
 	void emojiFilterForGeometry(not_null<QEvent*> event);
+	[[nodiscard]] bool vimKeymapHandleEmojiKey(not_null<QKeyEvent*> event);
 
 	void preparePreview();
 	void generatePreviewFrom(int fromBlock);
