@@ -738,6 +738,30 @@ HistoryWidget::HistoryWidget(
 , _topShadow(this) {
 	setAcceptDrops(true);
 	setVisualTabOrder(true);
+	base::install_event_filter(this, qApp, [=](not_null<QEvent*> event) {
+		if (!_vimKeymapScrollDirection) {
+			return base::EventFilterResult::Continue;
+		}
+		const auto type = event->type();
+		if (type == QEvent::KeyRelease || type == QEvent::KeyPress) {
+			const auto key = static_cast<QKeyEvent*>(event.get());
+			const auto nativeKey = key->nativeScanCode()
+				? key->nativeScanCode()
+				: key->nativeVirtualKey();
+			const auto matches = _vimKeymapScrollNativeKey && nativeKey
+				? _vimKeymapScrollNativeKey == nativeKey
+				: _vimKeymapScrollKey == key->key();
+			if (!key->isAutoRepeat()
+				&& (type == QEvent::KeyRelease ? matches : !matches)) {
+				vimKeymapStopScroll();
+			}
+		} else if (type == QEvent::FocusOut
+			|| type == QEvent::WindowDeactivate
+			|| type == QEvent::ApplicationDeactivate) {
+			vimKeymapStopScroll();
+		}
+		return base::EventFilterResult::Continue;
+	});
 
 	// The controls inside these are created in an order of their own - the
 	// top bar's selection buttons start with the one placed last, the bars
@@ -7139,13 +7163,7 @@ void HistoryWidget::insertTextAtCursor(const QString &text) {
 }
 
 bool HistoryWidget::eventFilter(QObject *obj, QEvent *e) {
-	if (e->type() == QEvent::KeyRelease) {
-		const auto k = static_cast<QKeyEvent*>(e);
-		if (!k->isAutoRepeat() && Core::VimKeymap::NavigationKey(k)) {
-			vimKeymapStopScroll();
-			return true;
-		}
-	} else if (e->type() == QEvent::KeyPress) {
+	if (e->type() == QEvent::KeyPress) {
 		const auto k = static_cast<QKeyEvent*>(e);
 		const auto selector = controller()->tabbedSelector();
 		const auto selectorOpen = !selector->isHidden()
@@ -9766,28 +9784,11 @@ void HistoryWidget::keyPressEvent(QKeyEvent *e) {
 	}
 }
 
-void HistoryWidget::keyReleaseEvent(QKeyEvent *e) {
-	if (Core::VimKeymap::NavigationKey(e)) {
-		if (!e->isAutoRepeat()) {
-			vimKeymapStopScroll();
-		}
-		e->accept();
-	} else {
-		Window::AbstractSectionWidget::keyReleaseEvent(e);
-	}
-}
-
-void HistoryWidget::vimKeymapStartScroll(int direction) {
-	_vimKeymapScrollDirection = direction;
-	_vimKeymapScrollRepeating = false;
-	_vimKeymapScrollTimer.callOnce(
-		Core::VimKeymap::HoldScrollStartDelayMs(),
-		Qt::PreciseTimer);
-}
-
 void HistoryWidget::vimKeymapStopScroll() {
 	_vimKeymapScrollTimer.cancel();
 	_vimKeymapScrollDirection = 0;
+	_vimKeymapScrollKey = 0;
+	_vimKeymapScrollNativeKey = 0;
 	_vimKeymapScrollRepeating = false;
 }
 
@@ -9795,7 +9796,8 @@ void HistoryWidget::vimKeymapScrollTick() {
 	const auto direction = _vimKeymapScrollDirection;
 	if (!direction) {
 		return;
-	} else if (!vimKeymapScrollBy(
+	} else if (!Core::VimKeymap::NormalMode()
+		|| !vimKeymapScrollBy(
 			direction,
 			Core::VimKeymap::HoldScrollDelta(),
 			false)) {
@@ -9871,16 +9873,14 @@ bool HistoryWidget::vimKeymapHandleScrollKey(not_null<QKeyEvent*> e) {
 		return false;
 	}
 	const auto direction = (*navigation == Qt::Key_Down) ? 1 : -1;
-	if (e->isAutoRepeat()) {
-		if (!_vimKeymapScrollTimer.isActive()) {
-			vimKeymapStartScroll(direction);
-		} else {
-			_vimKeymapScrollDirection = direction;
-		}
-	} else {
+	if (!e->isAutoRepeat()) {
 		_vimKeymapScrollTimer.cancel();
 		_vimKeymapScrollRepeating = false;
 		_vimKeymapScrollDirection = direction;
+		_vimKeymapScrollKey = e->key();
+		_vimKeymapScrollNativeKey = e->nativeScanCode()
+			? e->nativeScanCode()
+			: e->nativeVirtualKey();
 		vimKeymapScrollBy(
 			direction,
 			Core::VimKeymap::ScrollStep(),
