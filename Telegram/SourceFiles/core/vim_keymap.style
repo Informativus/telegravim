@@ -14,9 +14,37 @@ vimHintPadding: size(7px, 3px);
 vimHintTargetInset: 8px;
 vimHintScanStep: size(24px, 18px);
 
-vimHelpWidth: 560px;
-vimHelpMaxHeight: 640px;
-vimHelpTabGap: 10px;
+vimHelpWidth: 720px;
+vimHelpMaxHeight: 700px;
+vimHelpKeyColumn: 184px;
+vimHelpColumnGap: 24px;
+vimHelpRowPadding: 12px;
+vimHelpDetailGap: 4px;
+vimHelpKeyPadding: 10px;
+vimHelpKeyHeight: 26px;
+vimHelpKeyGap: 5px;
+vimHelpKeyRadius: 5px;
+vimHelpKeyFont: font(12px semibold);
+vimHelpNotePadding: margins(0px, 14px, 0px, 14px);
+vimHelpRowTitle: FlatLabel(defaultFlatLabel) {
+	style: TextStyle(defaultTextStyle) {
+		font: font(14px);
+		lineHeight: 20px;
+	}
+}
+vimHelpRowDetail: FlatLabel(defaultSubTextLabel) {
+	style: TextStyle(defaultTextStyle) {
+		font: font(12px);
+		lineHeight: 18px;
+	}
+}
+vimHelpSectionTitle: FlatLabel(vimHelpRowTitle) {
+	textFg: windowActiveTextFg;
+	style: TextStyle(defaultTextStyle) {
+		font: font(14px semibold);
+		lineHeight: 22px;
+	}
+}
 
 vimFocusWidth: 2px;
 vimFocusInset: 3px;
