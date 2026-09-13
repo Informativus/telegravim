@@ -9815,17 +9815,18 @@ bool HistoryWidget::vimKeymapHandleEscapeFieldState(not_null<QKeyEvent*> e) {
 		|| VimKeymapCleanModifiers(e) != Qt::NoModifier) {
 		return false;
 	}
+	const auto editingOrReplying = _editMsgId || _replyTo;
 	if (e->isAutoRepeat()) {
-		return bool(_editMsgId);
+		return editingOrReplying;
 	}
-	if (_editMsgId && !Core::VimKeymap::NormalMode()) {
+	if (editingOrReplying && !Core::VimKeymap::NormalMode()) {
 		Core::VimKeymap::SetNormalMode(true);
 		_field->setFocusFast();
 		vimKeymapRefreshComposeCursor();
-		Core::VimKeymap::TraceKey(e, u"edit insert to view mode"_q);
+		Core::VimKeymap::TraceKey(e, u"composer insert to view mode"_q);
 		return true;
 	}
-	if (_editMsgId
+	if (editingOrReplying
 		&& (_vimKeymapComposeVisualMode
 			|| _vimKeymapComposeOperator
 			|| _vimKeymapComposePending)
