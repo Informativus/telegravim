@@ -734,6 +734,7 @@ private:
 	bool vimKeymapHandleEscapeFieldState(not_null<QKeyEvent*> e);
 	bool vimKeymapJumpToBottom();
 	bool vimKeymapHandleScrollKey(not_null<QKeyEvent*> e);
+	bool vimKeymapHandleBotKey(not_null<QKeyEvent*> e);
 	bool vimKeymapScrollBy(int direction, int delta, bool animated = false);
 	void vimKeymapRefreshComposeCursor();
 	bool vimKeymapPasteIntoComposer(not_null<QKeyEvent*> e);
@@ -949,6 +950,7 @@ private:
 		QString text;
 		bool small = false;
 	} _botMenu;
+	bool _vimKeymapBotMenuActive = false;
 	object_ptr<Ui::IconButton> _attachToggle;
 	object_ptr<Ui::IconButton> _replaceMedia = { nullptr };
 	object_ptr<Ui::SendAsButton> _sendAs = { nullptr };

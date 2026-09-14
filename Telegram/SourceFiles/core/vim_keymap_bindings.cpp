@@ -114,8 +114,8 @@ std::optional<TextMotion> TextMotionKey(
 	return std::nullopt;
 }
 
-bool IsMessageSelection(not_null<QKeyEvent*> e) {
-	return CleanModifiers(e) == Qt::NoModifier
+bool IsMessageSelection(not_null<QKeyEvent*> e, bool range) {
+	return CleanModifiers(e) == (range ? Qt::ShiftModifier : Qt::NoModifier)
 		&& !e->isAutoRepeat()
 		&& KeyIs(e, Qt::Key_S, u"s"_q, u"\u044B"_q);
 }

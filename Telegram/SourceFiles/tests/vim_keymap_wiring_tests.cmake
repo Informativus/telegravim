@@ -175,7 +175,7 @@ foreach(history IN ITEMS history/history_inner_widget.cpp history/view/history_v
         "A changed message must not copy its old photo after download")
 endforeach()
 expect(history/history_inner_widget.cpp
-    "void HistoryInner::viewRemoved[^{]*[{][^}]*}[^{]*[{][^}]*vimKeymapClearHints"
+    "void HistoryInner::viewRemoved[^{]*[{][^}]*}[^{]*[{][^}]*vimKeymapInvalidateHints"
     "Destroyed message views must invalidate captured hint actions")
 expect(core/external_control.cpp
     "App\\(\\).passcodeLocked\\(\\)[^{]*\\{[^}]*application is locked"

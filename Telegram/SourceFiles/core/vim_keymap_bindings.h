@@ -57,7 +57,9 @@ enum class StickerGridAction {
 [[nodiscard]] std::optional<TextMotion> TextMotionKey(
 	not_null<QKeyEvent*> e,
 	bool &pendingStart);
-[[nodiscard]] bool IsMessageSelection(not_null<QKeyEvent*> e);
+[[nodiscard]] bool IsMessageSelection(
+	not_null<QKeyEvent*> e,
+	bool range = false);
 [[nodiscard]] bool IsMessageReaction(not_null<QKeyEvent*> e);
 [[nodiscard]] bool IsCloseHints(not_null<QKeyEvent*> e);
 [[nodiscard]] bool IsShowMessageHints(not_null<QKeyEvent*> e);

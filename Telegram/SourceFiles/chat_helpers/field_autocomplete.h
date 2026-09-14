@@ -114,6 +114,7 @@ public:
 	};
 
 	bool chooseSelected(ChooseMethod method) const;
+	bool moveSelection(Qt::Key key);
 
 	[[nodiscard]] bool stickersShown() const {
 		return !_srows.empty();

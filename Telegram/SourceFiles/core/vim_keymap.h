@@ -74,6 +74,7 @@ enum class Action {
 	LinkHints,
 	ShareMessage,
 	SelectMessages,
+	SelectMessageRange,
 };
 
 [[nodiscard]] constexpr bool ActionUsesMessageHints(Action action) {
@@ -177,6 +178,7 @@ void TraceKey(not_null<QKeyEvent*> e, const QString &status);
 [[nodiscard]] bool TextVisualKey(not_null<QKeyEvent*> e);
 [[nodiscard]] bool IsJumpToBottomKey(not_null<QKeyEvent*> e);
 [[nodiscard]] QString HintLabel(int index, int total);
+[[nodiscard]] QString SelectionHintLabel(int index, int total);
 [[nodiscard]] QString HintInput(not_null<QKeyEvent*> e);
 
 void ShowHelp();

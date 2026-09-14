@@ -100,7 +100,7 @@ public:
 		not_null<StickerRows*> srows);
 
 	void clearSel(bool hidden = false);
-	bool moveSel(int key);
+	bool moveSel(int key, bool wrap = false);
 	bool chooseSelected(FieldAutocomplete::ChooseMethod method) const;
 	bool chooseAtIndex(
 		FieldAutocomplete::ChooseMethod method,
@@ -991,6 +991,10 @@ int32 FieldAutocomplete::innerBottom() {
 	return _scroll->scrollTop() + _scroll->height();
 }
 
+bool FieldAutocomplete::moveSelection(Qt::Key key) {
+	return !isHidden() && !_hiding && _inner->moveSel(key, true);
+}
+
 bool FieldAutocomplete::chooseSelected(ChooseMethod method) const {
 	return _inner->chooseSelected(method);
 }
@@ -1419,7 +1423,7 @@ void FieldAutocomplete::Inner::clearSel(bool hidden) {
 	}
 }
 
-bool FieldAutocomplete::Inner::moveSel(int key) {
+bool FieldAutocomplete::Inner::moveSel(int key, bool wrap) {
 	_mouseSelection = false;
 	_lastMousePosition = std::nullopt;
 
@@ -1450,7 +1454,10 @@ bool FieldAutocomplete::Inner::moveSel(int key) {
 		}
 		return (_sel >= 0 && _sel < maxSel);
 	}
-	setSel((_sel + direction >= maxSel || _sel + direction < 0) ? -1 : (_sel + direction), true);
+	const auto next = _sel + direction;
+	setSel((next >= maxSel || next < 0)
+		? (wrap ? (next < 0 ? maxSel - 1 : 0) : -1)
+		: next, true);
 	return true;
 }
 

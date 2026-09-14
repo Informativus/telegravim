@@ -828,7 +828,7 @@ HistoryWidget::HistoryWidget(
 		if (!window() || !window()->isActiveWindow()) {
 			return false;
 		}
-		if (vimKeymapPasteIntoComposer(e)) {
+		if (vimKeymapHandleBotKey(e) || vimKeymapPasteIntoComposer(e)) {
 			return true;
 		}
 		const auto selector = controller->tabbedSelector();
@@ -3385,6 +3385,7 @@ void HistoryWidget::fastShowAtEnd(not_null<History*> history) {
 
 	clearAllLoadRequests();
 	setMsgId(ShowAtUnreadMsgId);
+	_vimKeymapBotMenuActive = false;
 	_pinnedClickedId = FullMsgId();
 	_minPinnedId = std::nullopt;
 	if (_history->isReadyFor(_showAtMsgId)) {
@@ -6540,6 +6541,78 @@ void HistoryWidget::unblockUser() {
 	} else {
 		updateControlsVisibility();
 	}
+}
+
+bool HistoryWidget::vimKeymapHandleBotKey(not_null<QKeyEvent*> e) {
+	using namespace Core::VimKeymap;
+	const auto focus = QApplication::focusWidget();
+	const auto user = _peer ? _peer->asUser() : nullptr;
+	if (!isVisible()
+		|| !user
+		|| !user->isBot()
+		|| !focus
+		|| (focus != this && !isAncestorOf(focus))) {
+		return false;
+	}
+	const auto modifiers = VimKeymapCleanModifiers(e);
+	const auto enterKey = (e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter);
+	const auto enter = enterKey && modifiers == Qt::NoModifier;
+	if (enterKey
+		&& !_botStart->isHidden()
+		&& _botStart->isEnabled()
+		&& _canSendMessages) {
+		if (enter && !e->isAutoRepeat()) {
+			sendBotStartCommand();
+		}
+		return true;
+	}
+	if (!NormalMode()) {
+		_vimKeymapBotMenuActive = false;
+		return false;
+	} else if (!_autocomplete || _autocomplete->isHidden()) {
+		_vimKeymapBotMenuActive = false;
+	}
+	if (_vimKeymapBotMenuActive) {
+		const auto tab = Bindings::TabNavigationDelta(e);
+		if (tab || (modifiers == Qt::NoModifier
+			&& (e->key() == Qt::Key_Up || e->key() == Qt::Key_Down))) {
+			_autocomplete->moveSelection(tab
+				? (tab > 0 ? Qt::Key_Down : Qt::Key_Up)
+				: Qt::Key(e->key()));
+			return true;
+		} else if (enter) {
+			if (!e->isAutoRepeat()) {
+				if (_autocomplete->chooseSelected(
+						ChatHelpers::FieldAutocomplete::ChooseMethod::ByEnter)) {
+					_vimKeymapBotMenuActive = false;
+				}
+			}
+			return true;
+		} else if (Bindings::IsPlainEscape(e)) {
+			if (!e->isAutoRepeat()) {
+				_autocomplete->hideAnimated();
+				_vimKeymapBotMenuActive = false;
+			}
+			return true;
+		}
+	}
+	if (modifiers != Qt::NoModifier
+		|| !Bindings::KeyIs(e, Qt::Key_M, u"m"_q, u"ь"_q)
+		|| !_botMenu.button
+		|| _botMenu.button->isHidden()
+		|| !_botMenu.button->isEnabled()
+		|| (!_field->empty()
+			&& (focus == _field.data() || _field->isAncestorOf(focus)))) {
+		return false;
+	}
+	if (!e->isAutoRepeat()) {
+		const auto wasOpen = _autocomplete && !_autocomplete->isHidden();
+		_botMenu.button->clicked(Qt::NoModifier, Qt::LeftButton);
+		_vimKeymapBotMenuActive = !wasOpen
+			&& _autocomplete
+			&& !_autocomplete->isHidden();
+	}
+	return true;
 }
 
 void HistoryWidget::sendBotStartCommand() {

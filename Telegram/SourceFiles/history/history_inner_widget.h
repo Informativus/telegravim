@@ -488,6 +488,7 @@ private:
 	[[nodiscard]] bool vimKeymapHandleTextSelectionKey(
 		not_null<QKeyEvent*> e);
 	[[nodiscard]] bool vimKeymapBeginMessageSelection(not_null<Element*> view);
+	void vimKeymapToggleMessageSelection(not_null<Element*> view);
 	[[nodiscard]] bool vimKeymapHandleMessageSelectionKey(
 		not_null<QKeyEvent*> e);
 	void vimKeymapMoveMessageSelection(int direction);
@@ -604,6 +605,7 @@ private:
 		DeleteMessage,
 		SelectMessageText,
 		SelectMessages,
+		ToggleMessages,
 		PickMessageLinks,
 		ActivateLink,
 	};
@@ -620,6 +622,7 @@ private:
 		QPointer<QWidget> widget;
 	};
 	void vimKeymapClearHints();
+	void vimKeymapInvalidateHints();
 	void vimKeymapBuildMessageHints(VimKeymapHintMode mode);
 	void vimKeymapBuildLinkHints(not_null<Element*> view);
 	void vimKeymapBuildVisibleLinkHints();
@@ -790,6 +793,7 @@ private:
 	rpl::lifetime _vimKeymapPhotoCopyLifetime;
 	std::vector<VimKeymapHint> _vimKeymapHints;
 	QString _vimKeymapHintPrefix;
+	bool _vimKeymapIndividualSelection = false;
 	std::vector<QPointer<QWidget>> _vimKeymapWidgetHintRoots;
 	rpl::lifetime _vimKeymapWidgetHintsLifetime;
 
