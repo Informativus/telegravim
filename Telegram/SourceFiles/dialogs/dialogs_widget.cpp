@@ -905,8 +905,10 @@ Widget::Widget(
 		return true;
 	});
 	Core::VimKeymap::RegisterTextInputPassthroughHandler(this, [=](
-			not_null<QKeyEvent*>) {
-		return isActiveWindow() && vimKeymapSearchInputHasFocus();
+			not_null<QKeyEvent*> e) {
+		return isActiveWindow()
+			&& vimKeymapSearchInputHasFocus()
+			&& !SearchResultNavigationKey(e, false);
 	});
 	if (_stories) {
 		setupStories();
