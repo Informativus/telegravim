@@ -10103,7 +10103,9 @@ bool HistoryWidget::vimKeymapHandleComposeTextKey(not_null<QKeyEvent*> e) {
 #endif // !TDESKTOP_DISABLE_SPELLCHECK
 	if (!stateActive
 		&& Core::VimKeymap::NormalMode()
-		&& Core::VimKeymap::Bindings::IsMessageReaction(e)) {
+		&& (Core::VimKeymap::Bindings::IsMessageReaction(e)
+			|| Core::VimKeymap::Bindings::IsMessageSelection(e)
+			|| Core::VimKeymap::Bindings::IsMessageSelection(e, true))) {
 		return false;
 	}
 	const auto messageAction = Core::VimKeymap::ActionKey(e).has_value();

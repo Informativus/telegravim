@@ -17,6 +17,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "data/data_user.h"
 #include "history/history.h"
+#include "history/history_widget.h"
+#include "ui/widgets/fields/input_field.h"
 #include "history/view/history_view_element.h"
 #include "history/history_inner_widget.h"
 #include "history/history_item.h"
@@ -67,6 +69,7 @@ MTPUser FixtureUser(int id, bool self) {
 }
 
 struct Fixture {
+	QPointer<Ui::InputField> composer;
 	QPointer<HistoryInner> inner;
 	QPointer<Ui::ElasticScroll> scroll;
 	std::vector<HistoryItem*> items;
@@ -75,6 +78,7 @@ struct Fixture {
 	QStringList commands;
 	MessageIdsList selected;
 	int scrollTop = 0;
+	int rangeOrigin = 0;
 	crl::time deadline = 0;
 };
 
@@ -184,6 +188,76 @@ void SetupScenario(not_null<Runner*> runner) {
 		}
 		return nullptr;
 	};
+	runner->actOnWidget(u"select a range immediately without changing the draft"_q,
+		resolve, [=](QWidget *widget) {
+			const auto inner = fixture->inner.data();
+			ForceWindowActive(widget->window());
+			const auto histories = FindVisible<HistoryWidget>(widget->window());
+			Check(!histories.empty(), u"range fixture has a history"_q);
+			if (histories.empty()) {
+				return;
+			}
+			const auto inputs = FindVisible<Ui::InputField>(histories.front());
+			Check(!inputs.empty(), u"range fixture has a composer"_q);
+			if (inputs.empty()) {
+				return;
+			}
+			const auto input = inputs.back();
+			fixture->composer = input;
+			SetNormalMode(false);
+			input->setTextWithTags({ u"Keep this draft"_q });
+			SetNormalMode(true);
+			widget->setFocus();
+			const auto target = inner->vimKeymapTargetView();
+			Check(target != nullptr, u"range has a visible starting message"_q);
+			if (!target) {
+				return;
+			}
+			const auto origin = int(ranges::find(fixture->items, target->data().get())
+				- begin(fixture->items));
+			fixture->rangeOrigin = origin;
+			Key(inner, Qt::Key_S, Qt::ShiftModifier);
+			Selected(fixture, { origin }, u"Shift S immediately selects the starting message"_q);
+			Check(input->getTextWithTags().text == u"Keep this draft"_q,
+				u"Shift S leaves a nonempty draft unchanged"_q);
+#ifdef Q_OS_MAC
+			const auto control = Qt::MetaModifier;
+#else // Q_OS_MAC
+			const auto control = Qt::ControlModifier;
+#endif // Q_OS_MAC
+			const auto step = (origin < 4) ? 1 : -1;
+			const auto extend = (step > 0) ? Qt::Key_J : Qt::Key_K;
+			const auto shrink = (step > 0) ? Qt::Key_K : Qt::Key_J;
+			Key(inner, extend, control);
+			Selected(fixture, { origin, origin + step }, u"Ctrl J K extends the range instead of changing chats"_q);
+			Key(inner, extend, control, (step > 0) ? u"о"_q : u"л"_q);
+			Selected(fixture, { origin, origin + step, origin + 2 * step },
+				u"Russian Ctrl J K continues the range"_q);
+			Key(inner, shrink, control);
+			Selected(fixture, { origin, origin + step }, u"reverse movement shrinks the range"_q);
+			Key(inner, shrink, control);
+			Selected(fixture, { origin }, u"reverse movement returns to the starting message"_q);
+			Key(inner, Qt::Key_D);
+		});
+	runner->actOnWidget(u"d confirms deletion directly after Shift S"_q,
+		[]() -> QWidget* {
+			const auto boxes = FindVisible<DeleteMessagesBox>(Core::App().activePrimaryWindow()->widget());
+			return boxes.empty() ? nullptr : boxes.front();
+		}, [=](QWidget *box) {
+			Selected(fixture, { fixture->rangeOrigin }, u"delete confirmation retains the exact range"_q);
+			auto &data = Core::App().domain().active().session().data();
+			Check(ranges::all_of(fixture->ids, [&](FullMsgId id) { return data.message(id); }),
+				u"range deletion requires confirmation"_q);
+			Key(box, Qt::Key_Escape);
+			Key(fixture->inner, Qt::Key_Escape);
+			Selected(fixture, {}, u"Escape cancels the range"_q);
+			Check(fixture->composer
+				&& fixture->composer->getTextWithTags().text == u"Keep this draft"_q,
+				u"range navigation and deletion leave the draft unchanged"_q);
+			if (fixture->composer) {
+				fixture->composer->setTextWithTags({});
+			}
+		});
 	runner->actOnWidget(u"toggle nonadjacent messages and retain picking mode"_q,
 		resolve, [=](QWidget *widget) {
 			const auto inner = fixture->inner.data();
@@ -194,6 +268,9 @@ void SetupScenario(not_null<Runner*> runner) {
 			Selected(fixture, {}, u"s waits for a message hint"_q);
 			Hint(inner, 0, 6);
 			Selected(fixture, { 0 }, u"first hint selects exactly its message"_q);
+			if (inner->getSelectedItems().empty()) {
+				return;
+			}
 			Hint(inner, 4, 6);
 			Selected(fixture, { 0, 4 }, u"second hint adds a nonadjacent message"_q);
 			Hint(inner, 0, 6);
@@ -210,15 +287,6 @@ void SetupScenario(not_null<Runner*> runner) {
 			Hint(inner, 1, 6);
 			Key(inner, Qt::Key_Escape);
 			Selected(fixture, {}, u"Escape cancels selection while hints remain"_q);
-			Key(inner, Qt::Key_S, Qt::ShiftModifier);
-			Hint(inner, 1, 6, false);
-			Selected(fixture, { 1 }, u"Shift S chooses range origin"_q);
-			Key(inner, Qt::Key_J);
-			Key(inner, Qt::Key_J);
-			Selected(fixture, { 1, 2, 3 }, u"j extends the contiguous range"_q);
-			Key(inner, Qt::Key_K);
-			Selected(fixture, { 1, 2 }, u"k shrinks the contiguous range"_q);
-			Key(inner, Qt::Key_Escape);
 			Key(inner, Qt::Key_S);
 			Hint(inner, 0, 6);
 			Hint(inner, 4, 6);
@@ -227,7 +295,8 @@ void SetupScenario(not_null<Runner*> runner) {
 			Key(inner, Qt::Key_D);
 
 		}, [=](QWidget*) {
-			return !fixture->items.front()->history()->hasPendingResizedItems();
+			return !Core::App().activePrimaryWindow()->sessionController()->isLayerShown()
+				&& !fixture->items.front()->history()->hasPendingResizedItems();
 		});
 	runner->actOnWidget(u"delete only the selected nonadjacent messages"_q,
 		[=]() -> QWidget* {
@@ -494,12 +563,17 @@ void SetupScenario(not_null<Runner*> runner) {
 	runner->add({
 		.name = u"ordinary text input retains menu shortcut letters"_q,
 		.run = [=] {
-			const auto inputs = FindVisible<QTextEdit>(fixture->inner->window());
+			const auto histories = FindVisible<HistoryWidget>(fixture->inner->window());
+			Check(!histories.empty(), u"bot history is visible"_q);
+			if (histories.empty()) {
+				return;
+			}
+			const auto inputs = FindVisible<Ui::InputField>(histories.front());
 			Check(!inputs.empty(), u"bot composer is visible"_q);
 			if (inputs.empty()) {
 				return;
 			}
-			const auto input = inputs.back();
+			const auto input = inputs.back()->rawTextEdit();
 			input->setFocus();
 			SetNormalMode(false);
 			Key(input, Qt::Key_M, Qt::NoModifier, u"m"_q);

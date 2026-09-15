@@ -3672,9 +3672,23 @@ bool ListWidget::vimKeymapBeginSelectionHints(bool individual) {
 	}
 	vimKeymapStopScroll();
 	_scrollToAnimation.stop();
-	_vimKeymapSelectionHintMode = individual
-		? VimKeymapSelectionHintMode::Individual
-		: VimKeymapSelectionHintMode::Range;
+	if (!individual) {
+		if (const auto view = vimKeymapTargetView()) {
+			if (vimKeymapBeginMessageSelection(view)) {
+				return true;
+			}
+		}
+		for (const auto view : accessibleElements()) {
+			const auto top = itemTop(view);
+			if (top < _visibleBottom
+				&& top + view->height() > _visibleTop
+				&& vimKeymapBeginMessageSelection(view)) {
+				return true;
+			}
+		}
+		return false;
+	}
+	_vimKeymapSelectionHintMode = VimKeymapSelectionHintMode::Individual;
 	_vimKeymapIndividualSelection = individual;
 	vimKeymapRefreshSelectionHints();
 	return !_vimKeymapSelectionHints.empty();
@@ -3880,20 +3894,27 @@ bool ListWidget::vimKeymapHandleMessageSelectionKey(
 		return false;
 	}
 	const auto navigation = NavigationKey(e);
+	const auto rangeNavigation = !_vimKeymapIndividualSelection
+		? ChatNavigationKey(e)
+		: std::nullopt;
 	const auto action = ActionKey(e);
 	const auto cancel = Bindings::IsPlainEscape(e);
 	const auto forward = Bindings::IsSelectionForward(e);
 	const auto remove = (action == Action::DeleteMessage);
 	const auto copy = (action == Action::CopyMessage);
-	if (!navigation && !cancel && !forward && !remove && !copy) {
+	if (!navigation && !rangeNavigation
+		&& !cancel && !forward && !remove && !copy) {
 		return false;
 	} else if (e->type() == QEvent::ShortcutOverride) {
 		return true;
-	} else if (navigation) {
+	} else if (navigation || rangeNavigation) {
 		if (_vimKeymapIndividualSelection) {
 			return vimKeymapHandleScrollKey(e);
 		}
-		vimKeymapMoveMessageSelection((*navigation == Qt::Key_Down) ? 1 : -1);
+		const auto down = rangeNavigation
+			? (*rangeNavigation == ChatNavigation::Next)
+			: (*navigation == Qt::Key_Down);
+		vimKeymapMoveMessageSelection(down ? 1 : -1);
 	} else if (cancel) {
 		cancelSelection();
 	} else if (!e->isAutoRepeat()) {
