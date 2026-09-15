@@ -2256,6 +2256,15 @@ void TestMediaPlaybackAndShareBindings() {
 		std::pair(Qt::Key_unknown, u"\u044B"_q) }) {
 		auto share = QKeyEvent(QEvent::KeyPress, key, Qt::NoModifier, text);
 		Check(IsMessageSelection(&share), "s starts message selection in either layout");
+		auto range = QKeyEvent(QEvent::KeyPress, key, Qt::ShiftModifier, text);
+		Check(IsMessageSelection(&range, true), "Shift S starts range selection in either layout");
+		Check(!IsMessageSelection(&range), "Shift S does not start individual selection");
+		Check(!IsMessageSelection(&share, true), "plain s does not start range selection");
+		auto rangeRepeat = QKeyEvent(QEvent::KeyPress, key, Qt::ShiftModifier, text, true);
+		Check(!IsMessageSelection(&rangeRepeat, true), "holding Shift S cannot restart selection");
+		auto modifiedRange = QKeyEvent(QEvent::KeyPress, key,
+			Qt::ShiftModifier | Qt::ControlModifier, text);
+		Check(!IsMessageSelection(&modifiedRange, true), "range selection preserves modified shortcuts");
 		auto repeat = QKeyEvent(QEvent::KeyPress, key, Qt::NoModifier, text, true);
 		Check(!IsMessageSelection(&repeat), "holding s cannot restart message selection");
 		auto save = QKeyEvent(QEvent::KeyPress, key, Qt::ControlModifier, text);

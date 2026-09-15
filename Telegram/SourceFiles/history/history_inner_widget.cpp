@@ -561,7 +561,7 @@ HistoryInner::HistoryInner(
 	) | rpl::filter([=](not_null<const Element*> view) {
 		return (view == viewByItem(view->data()));
 	}) | rpl::on_next([=](not_null<const Element*> view) {
-		vimKeymapClearHints();
+		vimKeymapInvalidateHints();
 		markReadMetricsStale();
 		if (view->isUnderCursor()) {
 			mouseActionUpdate();
@@ -571,7 +571,7 @@ HistoryInner::HistoryInner(
 	session().data().itemDataChanges(
 	) | rpl::on_next([=](not_null<HistoryItem*> item) {
 		if (const auto view = viewByItem(item)) {
-			vimKeymapClearHints();
+			vimKeymapInvalidateHints();
 			view->itemDataChanged();
 		}
 	}, lifetime());
@@ -2649,7 +2649,7 @@ void HistoryInner::itemRemoved(not_null<const HistoryItem*> item) {
 	if (ranges::any_of(_vimKeymapHints, [&](const VimKeymapHint &hint) {
 		return hint.itemId == item->fullId();
 	})) {
-		vimKeymapClearHints();
+		vimKeymapInvalidateHints();
 	}
 	if (_pinnedItem == item) {
 		_pinnedItem = nullptr;
@@ -2714,7 +2714,7 @@ void HistoryInner::viewRemoved(not_null<const Element*> view) {
 	if (ranges::any_of(_vimKeymapHints, [&](const VimKeymapHint &hint) {
 		return hint.itemId == view->data()->fullId();
 	})) {
-		vimKeymapClearHints();
+		vimKeymapInvalidateHints();
 	}
 	if (_overlayHost) {
 		_overlayHost->viewGone(view);
@@ -4563,6 +4563,23 @@ bool HistoryInner::vimKeymapBeginMessageSelection(not_null<Element*> view) {
 	return true;
 }
 
+void HistoryInner::vimKeymapToggleMessageSelection(not_null<Element*> view) {
+	if (!view->data()->canBeSelected()) {
+		return;
+	}
+	const auto elements = accessibleElements();
+	const auto i = ranges::find(elements, view.get());
+	if (i == end(elements)) {
+		return;
+	}
+	const auto elementIndex = int(i - begin(elements));
+	const auto barIndex = accessibilityUnreadBarIndex();
+	const auto index = elementIndex
+		+ ((barIndex >= 0 && elementIndex >= barIndex) ? 1 : 0);
+	changeAccessibilitySelection(index, SelectAction::Invert);
+	_accessibilitySelectionAnchor = nullptr;
+}
+
 bool HistoryInner::vimKeymapHandleMessageSelectionKey(
 		not_null<QKeyEvent*> e) {
 	using namespace Core::VimKeymap;
@@ -4574,17 +4591,27 @@ bool HistoryInner::vimKeymapHandleMessageSelectionKey(
 		return false;
 	}
 	const auto navigation = NavigationKey(e);
+	const auto rangeNavigation = !_vimKeymapIndividualSelection
+		? ChatNavigationKey(e)
+		: std::nullopt;
 	const auto action = ActionKey(e);
 	const auto cancel = Bindings::IsPlainEscape(e);
 	const auto forward = Bindings::IsSelectionForward(e);
 	const auto remove = (action == Action::DeleteMessage);
 	const auto copy = (action == Action::CopyMessage);
-	if (!navigation && !cancel && !forward && !remove && !copy) {
+	if (!navigation && !rangeNavigation
+		&& !cancel && !forward && !remove && !copy) {
 		return false;
 	} else if (e->type() == QEvent::ShortcutOverride) {
 		return true;
-	} else if (navigation) {
-		vimKeymapMoveMessageSelection((*navigation == Qt::Key_Down) ? 1 : -1);
+	} else if (navigation || rangeNavigation) {
+		if (_vimKeymapIndividualSelection) {
+			return _widget->vimKeymapHandleScrollKey(e);
+		}
+		const auto down = rangeNavigation
+			? (*rangeNavigation == ChatNavigation::Next)
+			: (*navigation == Qt::Key_Down);
+		vimKeymapMoveMessageSelection(down ? 1 : -1);
 	} else if (cancel) {
 		clearSelected();
 	} else if (!e->isAutoRepeat()) {
@@ -4646,6 +4673,21 @@ void HistoryInner::vimKeymapClearHints() {
 	update();
 }
 
+void HistoryInner::vimKeymapInvalidateHints() {
+	if (_vimKeymapHintMode != VimKeymapHintMode::ToggleMessages) {
+		vimKeymapClearHints();
+		return;
+	}
+	_vimKeymapHints.clear();
+	_vimKeymapHintPrefix.clear();
+	update();
+	crl::on_main(this, [=] {
+		if (_vimKeymapHintMode == VimKeymapHintMode::ToggleMessages) {
+			vimKeymapBuildMessageHints(VimKeymapHintMode::ToggleMessages);
+		}
+	});
+}
+
 void HistoryInner::vimKeymapBuildMessageHints(VimKeymapHintMode mode) {
 	vimKeymapClearHints();
 	_vimKeymapHintMode = mode;
@@ -4659,7 +4701,8 @@ void HistoryInner::vimKeymapBuildMessageHints(VimKeymapHintMode mode) {
 			&& view->selectedText(AllTextSelection).empty()) {
 			continue;
 		}
-		if (mode == VimKeymapHintMode::SelectMessages
+		if ((mode == VimKeymapHintMode::SelectMessages
+				|| mode == VimKeymapHintMode::ToggleMessages)
 			&& !item->canBeSelected()) {
 			continue;
 		}
@@ -4743,7 +4786,7 @@ void HistoryInner::vimKeymapBuildMessageHints(VimKeymapHintMode mode) {
 			.itemId = view->data()->fullId(),
 		});
 	}
-	if (_vimKeymapHints.empty()) {
+	if (_vimKeymapHints.empty() && mode != VimKeymapHintMode::ToggleMessages) {
 		_vimKeymapHintMode = VimKeymapHintMode::None;
 	}
 	vimKeymapAssignHintLabels();
@@ -5128,7 +5171,9 @@ void HistoryInner::vimKeymapAddWidgetHints() {
 
 void HistoryInner::vimKeymapAssignHintLabels() {
 	for (auto i = 0, count = int(_vimKeymapHints.size()); i != count; ++i) {
-		_vimKeymapHints[i].label = Core::VimKeymap::HintLabel(i, count);
+		_vimKeymapHints[i].label = (_vimKeymapHintMode == VimKeymapHintMode::ToggleMessages)
+			? Core::VimKeymap::SelectionHintLabel(i, count)
+			: Core::VimKeymap::HintLabel(i, count);
 	}
 	const auto total = int(_vimKeymapHints.size());
 	auto offset = 0;
@@ -5173,6 +5218,13 @@ bool HistoryInner::vimKeymapBeginHints(Core::VimKeymap::Action action) {
 		vimKeymapBuildMessageHints(VimKeymapHintMode::SelectMessageText);
 		break;
 	case Core::VimKeymap::Action::SelectMessages:
+		if (hasSelectRestriction()) {
+			return false;
+		}
+		_vimKeymapIndividualSelection = true;
+		vimKeymapBuildMessageHints(VimKeymapHintMode::ToggleMessages);
+		break;
+	case Core::VimKeymap::Action::SelectMessageRange:
 		if (hasSelectRestriction()) {
 			return false;
 		}
@@ -5264,6 +5316,11 @@ void HistoryInner::vimKeymapTriggerHint(VimKeymapHint hint) {
 	if (mode == VimKeymapHintMode::PickMessageLinks) {
 		vimKeymapBuildLinkHints(view);
 		return;
+	} else if (mode == VimKeymapHintMode::ToggleMessages) {
+		vimKeymapToggleMessageSelection(view);
+		_vimKeymapHintPrefix.clear();
+		update();
+		return;
 	} else if (mode == VimKeymapHintMode::SelectMessageText
 		|| mode == VimKeymapHintMode::SelectMessages) {
 		const auto selected = (mode == VimKeymapHintMode::SelectMessages)
@@ -5325,7 +5382,24 @@ bool HistoryInner::vimKeymapReactToItem(not_null<HistoryItem*> item) {
 bool HistoryInner::vimKeymapHandleHintKey(not_null<QKeyEvent*> e) {
 	if (_vimKeymapHintMode == VimKeymapHintMode::None) {
 		return false;
-	} else if (e->isAutoRepeat()) {
+	} else if (_vimKeymapHintMode == VimKeymapHintMode::ToggleMessages) {
+		if (Core::VimKeymap::NavigationKey(e)) {
+			return _widget->vimKeymapHandleScrollKey(e);
+		} else if (Core::VimKeymap::Bindings::IsPlainEscape(e)) {
+			if (!e->isAutoRepeat()) {
+				vimKeymapClearHints();
+				clearSelected();
+			}
+			return true;
+		} else if ((e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter)
+			&& (e->modifiers() & ~Qt::KeypadModifier) == Qt::NoModifier) {
+			if (!e->isAutoRepeat()) {
+				vimKeymapClearHints();
+			}
+			return true;
+		}
+	}
+	if (e->isAutoRepeat()) {
 		return true;
 	} else if (e->key() == Qt::Key_Escape) {
 		vimKeymapClearHints();
@@ -6021,12 +6095,16 @@ bool HistoryInner::wasSelectedText() const {
 }
 
 void HistoryInner::visibleAreaUpdated(int top, int bottom) {
-	if (_visibleAreaTop != top || _visibleAreaBottom != bottom) {
+	const auto choosing = (_vimKeymapHintMode == VimKeymapHintMode::ToggleMessages);
+	if (!choosing && (_visibleAreaTop != top || _visibleAreaBottom != bottom)) {
 		vimKeymapClearHints();
 	}
 	auto scrolledUp = (top < _visibleAreaTop);
 	_visibleAreaTop = top;
 	_visibleAreaBottom = bottom;
+	if (choosing) {
+		vimKeymapBuildMessageHints(VimKeymapHintMode::ToggleMessages);
+	}
 	markReadMetricsStale();
 	registerReadMetricsActivity();
 	const auto visibleAreaHeight = bottom - top;
@@ -6722,6 +6800,9 @@ auto HistoryInner::getSelectionState() const
 }
 
 void HistoryInner::clearSelected(bool onlyTextSelection) {
+	if (!onlyTextSelection) {
+		_vimKeymapIndividualSelection = false;
+	}
 	auto changed = false;
 	if (!onlyTextSelection && !_selected.empty()) {
 		_selected.clear();
