@@ -230,6 +230,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace {
 
+constexpr auto kVimKeymapDeleteTimeout = crl::time(500);
+
 constexpr auto kMessagesPerPageFirst = 30;
 constexpr auto kMessagesPerPage = 50;
 constexpr auto kPreloadHeightsCount = 3; // when 3 screens to scroll left make a preload request
@@ -756,6 +758,30 @@ HistoryWidget::HistoryWidget(
 	}))
 , _topShadow(this) {
 	setAcceptDrops(true);
+	base::install_event_filter(this, qApp, [=](not_null<QEvent*> event) {
+		if (!_vimKeymapComposeDeleteTimer.isActive()) {
+			return base::EventFilterResult::Continue;
+		}
+		const auto type = event->type();
+		if (type == QEvent::KeyPress) {
+			const auto key = static_cast<QKeyEvent*>(event.get());
+			if (!key->isAutoRepeat()
+				&& key->key() != Qt::Key_Shift
+				&& key->key() != Qt::Key_Control
+				&& key->key() != Qt::Key_Meta
+				&& key->key() != Qt::Key_Alt) {
+				_vimKeymapComposeDeleteTimer.cancel();
+			}
+		} else if (type == QEvent::FocusOut
+			|| type == QEvent::WindowDeactivate
+			|| type == QEvent::ApplicationDeactivate
+			|| type == QEvent::MouseButtonPress
+			|| type == QEvent::Wheel) {
+			_vimKeymapComposeDeleteTimer.cancel();
+			_vimKeymapComposeOperator = 0;
+		}
+		return base::EventFilterResult::Continue;
+	});
 	setVisualTabOrder(true);
 
 	// The controls inside these are created in an order of their own - the
@@ -10941,6 +10967,9 @@ bool HistoryWidget::vimKeymapHandleComposeTextKey(not_null<QKeyEvent*> e) {
 		Core::VimKeymap::TraceKey(e, u"compose change pending"_q);
 		return true;
 	} else if (VimKeymapPlainTextKey(e, Qt::Key_D, u"d"_q, u"\u0432"_q)) {
+		if (e->isAutoRepeat()) {
+			return true;
+		}
 		clearPending();
 		if (!_field->hasText()) {
 			_vimKeymapComposeOperator = 0;
@@ -10955,6 +10984,38 @@ bool HistoryWidget::vimKeymapHandleComposeTextKey(not_null<QKeyEvent*> e) {
 		}
 		_vimKeymapComposeOperator = kComposeOpDelete;
 		focusField();
+		if (Core::VimKeymap::ActionKey(e)
+			== Core::VimKeymap::Action::DeleteMessage) {
+			const auto list = QPointer<HistoryInner>(_list);
+			const auto revision = raw->document()->revision();
+			_vimKeymapComposeDeleteTimer.setCallback([=] {
+				if (_vimKeymapComposeOperator != kComposeOpDelete) {
+					return;
+				}
+				_vimKeymapComposeOperator = 0;
+				if (!Core::VimKeymap::NormalMode()
+					|| !list
+					|| list != _list
+					|| !list->isVisible()
+					|| !window()->isActiveWindow()
+					|| !_field->isVisible()
+					|| _vimKeymapSearchInputMode
+					|| raw->document()->revision() != revision
+					|| controller()->isLayerShown()
+					|| controller()->window().locked()
+					|| QApplication::activeModalWidget()
+					|| QApplication::activePopupWidget()) {
+					return;
+				}
+				const auto handled = list->vimKeymapHandleAction(
+					Core::VimKeymap::Action::DeleteMessage);
+				Core::VimKeymap::TraceCommand(u"d"_q,
+					handled ? u"message delete hints"_q : u"no deletable messages"_q);
+			});
+			_vimKeymapComposeDeleteTimer.callOnce(
+				kVimKeymapDeleteTimeout,
+				Qt::PreciseTimer);
+		}
 		Core::VimKeymap::TraceKey(e, u"compose delete pending"_q);
 		return true;
 	} else if (VimKeymapPlainTextKey(e, Qt::Key_S, u"s"_q, u"\u044B"_q)) {

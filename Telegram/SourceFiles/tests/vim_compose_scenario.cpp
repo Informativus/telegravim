@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #ifdef _DEBUG
 #include "base/unixtime.h"
+#include "boxes/delete_messages_box.h"
 #include "core/application.h"
 #include "core/vim_keymap.h"
 #include "core/vim_keymap_options.h"
@@ -73,13 +74,13 @@ struct Fixture {
 };
 
 void Key(Qt::Key key, Qt::KeyboardModifiers modifiers = Qt::NoModifier,
-		QString text = {}, quint32 native = 255) {
+		QString text = {}, quint32 native = 255, bool repeat = false) {
 	const auto guard = QPointer<QWidget>(QApplication::focusWidget());
 	for (const auto type : { QEvent::KeyPress, QEvent::KeyRelease }) {
 		if (!guard) {
 			break;
 		}
-		auto event = QKeyEvent(type, key, modifiers, 0, native, 0, text);
+		auto event = QKeyEvent(type, key, modifiers, 0, native, 0, text, repeat);
 		Settle([&] { QApplication::sendEvent(guard.data(), &event); });
 	}
 }
@@ -304,6 +305,97 @@ void SetupScenario(not_null<Runner*> runner) {
 				u"empty draft still allows selecting messages"_q);
 			Key(Qt::Key_Escape, Qt::NoModifier, {}, 53);
 		});
+	const auto deadline = std::make_shared<crl::time>(0);
+	for (const auto russian : { false, true }) {
+		runner->actOnWidget(u"start delayed single d with a draft"_q,
+			resolve, [=](QWidget *widget) {
+				ForceWindowActive(widget->window());
+				if (!Prepare(fixture, u"first\nsecond\nlast"_q, 8, true)) {
+					return;
+				}
+				const auto key = russian ? Qt::Key(0x0412) : Qt::Key_D;
+				const auto label = russian ? u"в"_q : u"d"_q;
+				Key(key, Qt::NoModifier, label, 2);
+				Key(key, Qt::NoModifier, label, 2, true);
+				Text(fixture, u"first\nsecond\nlast"_q,
+					u"holding d does not act as dd"_q);
+				*deadline = crl::now() + 650;
+			});
+		runner->add({
+			.name = u"single d expires into message hints"_q,
+			.until = [=] { return crl::now() >= *deadline; },
+			.then = [=] {
+				Text(fixture, u"first\nsecond\nlast"_q,
+					u"single d timeout preserves the draft"_q);
+				const auto label = HintLabel(0, 6);
+				for (const auto ch : label) {
+					Key(Qt::Key(ch.toUpper().unicode()), Qt::NoModifier, QString(ch));
+				}
+			},
+		});
+		runner->actOnWidget(u"single d hint opens native delete confirmation"_q,
+			[]() -> QWidget* {
+				const auto boxes = FindVisible<DeleteMessagesBox>(
+					Core::App().activePrimaryWindow()->widget());
+				return boxes.empty() ? nullptr : boxes.front();
+			}, [=](QWidget*) {
+				Check(ranges::all_of(fixture->ids, [&](FullMsgId id) {
+					return Core::App().domain().active().session().data().message(id);
+				}), u"single d still requires confirmation before deletion"_q);
+				Key(Qt::Key_Escape, Qt::NoModifier, {}, 53);
+			});
+		runner->add({
+			.name = u"wait for deletion confirmation to close"_q,
+			.until = [] {
+				return !Core::App().activePrimaryWindow()->sessionController()->isLayerShown();
+			},
+		});
+	}
+	for (const auto cancel : { 0, 1, 2, 3 }) {
+		runner->actOnWidget(u"resolve d before the timeout"_q,
+			resolve, [=](QWidget *widget) {
+				ForceWindowActive(widget->window());
+				if (!Prepare(fixture, u"first\nsecond\nlast"_q, 8, true)) {
+					return;
+				}
+				Key(Qt::Key_D, Qt::NoModifier, u"d"_q, 2);
+				*deadline = crl::now() + 200;
+			});
+		runner->add({
+			.name = u"second key distinguishes dd from single d"_q,
+			.until = [=] { return crl::now() >= *deadline; },
+			.then = [=] {
+				Text(fixture, u"first\nsecond\nlast"_q,
+					u"first d leaves text intact during the interval"_q);
+				if (cancel == 0) {
+					Key(Qt::Key_D, Qt::NoModifier, u"d"_q, 2);
+					Text(fixture, u"first\nlast"_q,
+						u"second d within 500ms deletes only the current line"_q);
+				} else if (cancel == 1) {
+					Key(Qt::Key_Escape, Qt::NoModifier, {}, 53);
+				} else if (cancel == 2) {
+					fixture->history->setInnerFocus();
+				} else {
+					Key(Qt::Key_A, Qt::NoModifier, u"a"_q, 0);
+					Check(!NormalMode(), u"a before timeout enters Insert instead of choosing a delete hint"_q);
+					SetNormalMode(true);
+				}
+				*deadline = crl::now() + 650;
+			},
+		});
+		runner->add({
+			.name = u"resolved d never fires later"_q,
+			.until = [=] { return crl::now() >= *deadline; },
+			.then = [=] {
+				const auto expected = cancel == 0 ? u"first\nlast"_q : u"first\nsecond\nlast"_q;
+				Text(fixture, expected, u"resolved d has no delayed text changes"_q);
+				Key(Qt::Key_A, Qt::NoModifier, u"a"_q, 0);
+				Check(!NormalMode(), u"resolved d has no stale message hints"_q);
+				Key(Qt::Key_Escape, Qt::NoModifier, {}, 53);
+			},
+		});
+	}
+
 }
 
 } // namespace Test
