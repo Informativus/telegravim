@@ -969,6 +969,7 @@ private:
 	int _vimKeymapComposeVisualMode = 0;
 	int _vimKeymapComposeVisualAnchor = -1;
 	int _vimKeymapComposePending = 0;
+	base::Timer _vimKeymapComposeDeleteTimer;
 	std::unique_ptr<HistoryView::SubsectionTabs> _subsectionTabs;
 	rpl::lifetime _subsectionTabsLifetime;
 	rpl::lifetime _subsectionCheckLifetime;
