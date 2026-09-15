@@ -370,17 +370,36 @@ const auto kPsaAboutPrefix = "cloud_lng_about_psa_";
 	return QColor(218, 91, 166);
 }
 
+struct VimKeymapComposeLineRange {
+	int start = 0;
+	int end = 0;
+};
+
+[[nodiscard]] VimKeymapComposeLineRange VimKeymapComposeLineAt(
+		QTextCursor cursor) {
+	const auto block = cursor.block();
+	const auto text = block.text();
+	const auto offset = cursor.positionInBlock();
+	const auto separator = QChar(QChar::LineSeparator);
+	const auto before = (offset > 0)
+		? int(text.lastIndexOf(separator, offset - 1))
+		: -1;
+	const auto after = int(text.indexOf(separator, offset));
+	return {
+		.start = block.position() + before + 1,
+		.end = block.position() + ((after >= 0) ? after : int(text.size())),
+	};
+}
+
 bool VimKeymapNormalizeComposeCursor(QTextCursor &cursor) {
 	if (cursor.hasSelection()) {
 		return false;
 	}
-	const auto block = cursor.block();
-	const auto textSize = int(block.text().size());
-	const auto endPosition = block.position() + textSize;
-	if (textSize <= 0 || cursor.position() != endPosition) {
+	const auto line = VimKeymapComposeLineAt(cursor);
+	if (line.start == line.end || cursor.position() != line.end) {
 		return false;
 	}
-	cursor.setPosition(endPosition - 1);
+	cursor.setPosition(line.end - 1);
 	return true;
 }
 
@@ -852,6 +871,10 @@ HistoryWidget::HistoryWidget(
 			vimKeymapLeaveSearchInputMode();
 			_composeSearch->hideAnimated();
 			Core::VimKeymap::TraceKey(e, u"close chat search"_q);
+			return true;
+		} else if (VimKeymapCleanModifiers(e) == Qt::ShiftModifier
+			&& Core::VimKeymap::Bindings::IsLineStart(e)
+			&& vimKeymapHandleComposeTextKey(e)) {
 			return true;
 		} else if (Core::VimKeymap::HandleSearch(e)) {
 			if (_composeSearch) {
@@ -10100,6 +10123,7 @@ bool HistoryWidget::vimKeymapHandleComposeTextKey(not_null<QKeyEvent*> e) {
 		return false;
 	} else if (Core::VimKeymap::NormalMode()
 		&& !fieldFocused
+		&& _field->empty()
 		&& !stateActive
 		&& !inputCursorMove
 		&& !composeHorizontalMove) {
@@ -10241,11 +10265,8 @@ bool HistoryWidget::vimKeymapHandleComposeTextKey(not_null<QKeyEvent*> e) {
 			: point);
 	};
 	const auto lineLastCharacterPosition = [](QTextCursor cursor) {
-		const auto block = cursor.block();
-		const auto textSize = int(block.text().size());
-		return (textSize > 0)
-			? (block.position() + textSize - 1)
-			: block.position();
+		const auto line = VimKeymapComposeLineAt(cursor);
+		return std::max(line.start, line.end - 1);
 	};
 	const auto refreshMovedCursor = [&] {
 		_field->ensureCursorVisible();
@@ -10260,8 +10281,7 @@ bool HistoryWidget::vimKeymapHandleComposeTextKey(not_null<QKeyEvent*> e) {
 				|| operation == QTextCursor::Right) {
 				auto positionCursor = _field->textCursor();
 				positionCursor.setPosition(visualCharacterPosition());
-				const auto block = positionCursor.block();
-				const auto first = block.position();
+				const auto first = VimKeymapComposeLineAt(positionCursor).start;
 				const auto last = lineLastCharacterPosition(positionCursor);
 				const auto step = (operation == QTextCursor::Right) ? 1 : -1;
 				const auto position = std::clamp(
@@ -10288,8 +10308,7 @@ bool HistoryWidget::vimKeymapHandleComposeTextKey(not_null<QKeyEvent*> e) {
 			if (operation == QTextCursor::Left
 				|| operation == QTextCursor::Right) {
 				const auto was = cursor.position();
-				const auto block = cursor.block();
-				const auto first = block.position();
+				const auto first = VimKeymapComposeLineAt(cursor).start;
 				const auto last = lineLastCharacterPosition(cursor);
 				const auto step = (operation == QTextCursor::Right) ? 1 : -1;
 				const auto position = std::clamp(
@@ -10372,13 +10391,9 @@ bool HistoryWidget::vimKeymapHandleComposeTextKey(not_null<QKeyEvent*> e) {
 	};
 	const auto selectCurrentLine = [&] {
 		auto cursor = _field->textCursor();
-		const auto document = raw->document();
-		const auto block = cursor.block();
-		const auto start = block.position();
-		const auto end = std::min(
-			start + block.length(),
-			std::max(0, document->characterCount() - 1));
-		cursor.setPosition(start);
+		const auto line = VimKeymapComposeLineAt(cursor);
+		const auto end = std::min(line.end + 1, maximumCursorPosition());
+		cursor.setPosition(line.start);
 		cursor.setPosition(end, QTextCursor::KeepAnchor);
 		return cursor;
 	};
@@ -10561,23 +10576,22 @@ bool HistoryWidget::vimKeymapHandleComposeTextKey(not_null<QKeyEvent*> e) {
 		return true;
 	};
 	const auto currentLineStart = [&] {
-		return _field->textCursor().block().position();
+		return VimKeymapComposeLineAt(_field->textCursor()).start;
 	};
 	const auto currentLineEnd = [&] {
-		const auto document = raw->document();
-		const auto block = _field->textCursor().block();
-		return std::min(
-			block.position() + block.length() - 1,
-			std::max(0, document->characterCount() - 1));
+		return VimKeymapComposeLineAt(_field->textCursor()).end;
 	};
 	const auto currentLineFirstNonBlank = [&] {
-		const auto block = _field->textCursor().block();
+		const auto cursor = _field->textCursor();
+		const auto line = VimKeymapComposeLineAt(cursor);
+		const auto block = cursor.block();
 		const auto text = block.text();
-		auto offset = 0;
-		while (offset < text.size() && text[offset].isSpace()) {
-			++offset;
+		auto position = line.start;
+		while (position < line.end
+			&& text[position - block.position()].isSpace()) {
+			++position;
 		}
-		return block.position() + offset;
+		return position;
 	};
 	const auto setInputCursorPosition = [&](int position) {
 		auto cursor = _field->textCursor();
@@ -10868,14 +10882,13 @@ bool HistoryWidget::vimKeymapHandleComposeTextKey(not_null<QKeyEvent*> e) {
 		const auto changed = moveCursor(QTextCursor::EndOfWord);
 		traceMotion(changed, u"compose word end"_q);
 		return true;
-	} else if (VimKeymapTypedText(e, u"0"_q)
-		|| VimKeymapTypedText(e, u"|"_q)) {
-		clearPending();
-		return moveCursorTo(currentLineStart(), u"compose line start"_q);
 	} else if (VimKeymapTypedText(e, u"^"_q)) {
 		clearPending();
 		return moveCursorTo(currentLineFirstNonBlank(), u"compose first nonblank"_q);
-	} else if (VimKeymapTypedText(e, u"$"_q)) {
+	} else if (Core::VimKeymap::Bindings::IsLineStart(e)) {
+		clearPending();
+		return moveCursorTo(currentLineStart(), u"compose line start"_q);
+	} else if (Core::VimKeymap::Bindings::IsLineEnd(e)) {
 		clearPending();
 		return moveCursorTo(currentLineEnd(), u"compose line end"_q);
 	} else if (VimKeymapTypedText(e, u"{"_q)) {
