@@ -188,7 +188,7 @@ void SetupScenario(not_null<Runner*> runner) {
 		}
 		return nullptr;
 	};
-	runner->actOnWidget(u"select a range immediately without changing the draft"_q,
+	runner->actOnWidget(u"choose a range origin by letter without changing the draft"_q,
 		resolve, [=](QWidget *widget) {
 			const auto inner = fixture->inner.data();
 			ForceWindowActive(widget->window());
@@ -208,16 +208,12 @@ void SetupScenario(not_null<Runner*> runner) {
 			input->setTextWithTags({ u"Keep this draft"_q });
 			SetNormalMode(true);
 			widget->setFocus();
-			const auto target = inner->vimKeymapTargetView();
-			Check(target != nullptr, u"range has a visible starting message"_q);
-			if (!target) {
-				return;
-			}
-			const auto origin = int(ranges::find(fixture->items, target->data().get())
-				- begin(fixture->items));
+			const auto origin = 1;
 			fixture->rangeOrigin = origin;
 			Key(inner, Qt::Key_S, Qt::ShiftModifier);
-			Selected(fixture, { origin }, u"Shift S immediately selects the starting message"_q);
+			Selected(fixture, {}, u"Shift S waits for a starting message hint"_q);
+			Hint(inner, origin, 6, false);
+			Selected(fixture, { origin }, u"range hint selects exactly the chosen starting message"_q);
 			Check(input->getTextWithTags().text == u"Keep this draft"_q,
 				u"Shift S leaves a nonempty draft unchanged"_q);
 #ifdef Q_OS_MAC
@@ -239,7 +235,7 @@ void SetupScenario(not_null<Runner*> runner) {
 			Selected(fixture, { origin }, u"reverse movement returns to the starting message"_q);
 			Key(inner, Qt::Key_D);
 		});
-	runner->actOnWidget(u"d confirms deletion directly after Shift S"_q,
+	runner->actOnWidget(u"d confirms deletion after choosing the range origin"_q,
 		[]() -> QWidget* {
 			const auto boxes = FindVisible<DeleteMessagesBox>(Core::App().activePrimaryWindow()->widget());
 			return boxes.empty() ? nullptr : boxes.front();

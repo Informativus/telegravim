@@ -1107,7 +1107,7 @@ void ShowHelpBox() {
 			result += deleteMessage
 				+ u" - подсказки для удаления сообщений\n"_q;
 			result += u"s/ы - выбирать сообщения по буквам; j/k - прокрутка; Enter - закончить; Esc - отменить\n"_q;
-			result += u"Shift+S / Shift+Ы - сразу выделить стартовое сообщение; Ctrl+J/K - изменить диапазон\n"_q;
+			result += u"Shift+S / Shift+Ы - выбрать стартовое сообщение по букве; Ctrl+J/K - изменить диапазон\n"_q;
 			result += u"У бота: Enter - START; m/ь - меню; Tab / Shift+Tab - команды; Enter - выбрать\n"_q;
 			result += u"В выделении: d - удалить с подтверждением, f - переслать, y - копировать, Esc - выйти\n"_q;
 			result += u"Реакции: правый клик по сообщению → эмодзи над контекстным меню.\n"_q;
@@ -1184,7 +1184,7 @@ void ShowHelpBox() {
 			result += edit + u" - show edit message hints\n"_q;
 			result += deleteMessage + u" - show delete message hints\n"_q;
 			result += u"s - toggle messages by letters; j/k - scroll; Enter - finish; Esc - cancel\n"_q;
-			result += u"Shift+S - select the starting message immediately; Ctrl+J/K - change the range\n"_q;
+			result += u"Shift+S - choose the starting message by letter; Ctrl+J/K - change the range\n"_q;
 			result += u"Bots: Enter - START; m - menu; Tab / Shift+Tab - commands; Enter - choose\n"_q;
 			result += u"While selected: d - confirm deletion, f - forward, y - copy, Esc - cancel\n"_q;
 			result += u"Reactions: right-click a message → choose an emoji above the context menu.\n"_q;

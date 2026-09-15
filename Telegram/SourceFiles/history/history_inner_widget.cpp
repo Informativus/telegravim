@@ -5228,20 +5228,8 @@ bool HistoryInner::vimKeymapBeginHints(Core::VimKeymap::Action action) {
 		if (hasSelectRestriction()) {
 			return false;
 		}
-		if (const auto view = vimKeymapTargetView()) {
-			if (vimKeymapBeginMessageSelection(view)) {
-				return true;
-			}
-		}
-		for (const auto view : accessibleElements()) {
-			const auto top = itemTop(view);
-			if (top < _visibleAreaBottom
-				&& top + view->height() > _visibleAreaTop
-				&& vimKeymapBeginMessageSelection(view)) {
-				return true;
-			}
-		}
-		return false;
+		vimKeymapBuildMessageHints(VimKeymapHintMode::SelectMessages);
+		break;
 	case Core::VimKeymap::Action::ReplyToMessage:
 		vimKeymapBuildMessageHints(VimKeymapHintMode::ReplyToMessage);
 		break;

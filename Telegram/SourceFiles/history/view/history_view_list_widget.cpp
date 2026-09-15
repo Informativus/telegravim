@@ -3672,23 +3672,9 @@ bool ListWidget::vimKeymapBeginSelectionHints(bool individual) {
 	}
 	vimKeymapStopScroll();
 	_scrollToAnimation.stop();
-	if (!individual) {
-		if (const auto view = vimKeymapTargetView()) {
-			if (vimKeymapBeginMessageSelection(view)) {
-				return true;
-			}
-		}
-		for (const auto view : accessibleElements()) {
-			const auto top = itemTop(view);
-			if (top < _visibleBottom
-				&& top + view->height() > _visibleTop
-				&& vimKeymapBeginMessageSelection(view)) {
-				return true;
-			}
-		}
-		return false;
-	}
-	_vimKeymapSelectionHintMode = VimKeymapSelectionHintMode::Individual;
+	_vimKeymapSelectionHintMode = individual
+		? VimKeymapSelectionHintMode::Individual
+		: VimKeymapSelectionHintMode::Range;
 	_vimKeymapIndividualSelection = individual;
 	vimKeymapRefreshSelectionHints();
 	return !_vimKeymapSelectionHints.empty();
