@@ -18,6 +18,8 @@ class Session;
 
 namespace Api {
 
+class LocalTranscription;
+
 struct SummaryEntry {
 	TextWithEntities result;
 	LanguageId languageId;
@@ -30,9 +32,13 @@ struct SummaryEntry {
 class Transcribes final {
 public:
 	explicit Transcribes(not_null<ApiWrap*> api);
+	~Transcribes();
+
+	[[nodiscard]] bool localNeedsModel() const;
 
 	struct Entry {
 		QString result;
+		bool local = false;
 		bool shown = false;
 		bool failed = false;
 		bool toolong = false;
@@ -66,6 +72,7 @@ private:
 
 	const not_null<Main::Session*> _session;
 	MTP::Sender _api;
+	std::unique_ptr<LocalTranscription> _local;
 
 	int _trialsCount = -1;
 	std::optional<bool> _trialsSupport;
@@ -75,6 +82,7 @@ private:
 	base::flat_map<uint64, FullMsgId> _ids;
 
 	base::flat_map<FullMsgId, SummaryEntry> _summaries;
+	rpl::lifetime _lifetime;
 
 };
 

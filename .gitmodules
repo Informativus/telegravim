@@ -103,3 +103,6 @@
 [submodule "Telegram/ThirdParty/libfido2"]
 	path = Telegram/ThirdParty/libfido2
 	url = https://github.com/Yubico/libfido2.git
+[submodule "Telegram/ThirdParty/whisper.cpp"]
+	path = Telegram/ThirdParty/whisper.cpp
+	url = https://github.com/ggml-org/whisper.cpp.git

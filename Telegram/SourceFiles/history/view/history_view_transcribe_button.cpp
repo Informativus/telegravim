@@ -7,8 +7,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/history_view_transcribe_button.h"
 
-#include "base/unixtime.h"
-#include "boxes/premium_preview_box.h"
 #include "core/click_handler_types.h" // ClickHandlerContext
 #include "history/history.h"
 #include "history/history_item.h"
@@ -22,6 +20,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/effects/ripple_animation.h"
 #include "ui/painter.h"
 #include "ui/rect.h"
+#include "ui/boxes/confirm_box.h"
 #include "api/api_transcribes.h"
 #include "apiwrap.h"
 #include "styles/style_chat.h"
@@ -331,21 +330,9 @@ void TranscribeButton::paint(
 
 bool TranscribeButton::hasLock() const {
 	const auto session = &_item->history()->session();
-	if (session->premium()) {
-		return false;
-	}
-	const auto transcribes = &session->api().transcribes();
-	if (_summarize) {
-		return transcribes->summary(_item).premiumRequired;
-	}
-	if (transcribes->freeFor(_item) || transcribes->trialsCount()) {
-		return false;
-	}
-	const auto until = transcribes->trialsRefreshAt();
-	if (!until || base::unixtime::now() >= until) {
-		return false;
-	}
-	return true;
+	return _summarize
+		&& !session->premium()
+		&& session->api().transcribes().summary(_item).premiumRequired;
 }
 
 void TranscribeButton::setOpened(bool opened, Fn<void()> update) {
@@ -378,42 +365,34 @@ ClickHandlerPtr TranscribeButton::link() {
 		if (!item) {
 			return;
 		}
-		if (session->premium()) {
+		if (!summarize) {
 			auto &transcribes = session->api().transcribes();
-			return summarize
-				? transcribes.toggleSummary(item)
-				: transcribes.toggle(item);
-		}
-		const auto my = context.other.value<ClickHandlerContext>();
-		if (hasLock()) {
-			if (const auto controller = my.sessionWindow.get()) {
-				if (summarize) {
-					Settings::ShowPremium(controller, u"summary"_q);
-				} else {
-					ShowPremiumPreviewBox(
-						controller,
-						PremiumFeature::VoiceToText);
+			if (transcribes.localNeedsModel() && !transcribes.entry(item).local) {
+				const auto my = context.other.value<ClickHandlerContext>();
+				if (const auto controller = my.sessionWindow.get()) {
+					controller->show(Ui::MakeConfirmBox({
+						.text = tr::lng_local_transcribe_download(tr::now),
+						.confirmed = crl::guard(session, [=](Fn<void()> close) {
+							close();
+							if (const auto item = session->data().message(id)) {
+								session->api().transcribes().toggle(item);
+							}
+						}),
+						.confirmText = tr::lng_local_transcribe_download_button(tr::now),
+					}));
 				}
+			} else {
+				transcribes.toggle(item);
+			}
+			return;
+		}
+		if (hasLock()) {
+			const auto my = context.other.value<ClickHandlerContext>();
+			if (const auto controller = my.sessionWindow.get()) {
+				Settings::ShowPremium(controller, u"summary"_q);
 			}
 		} else {
-			const auto max = session->api().transcribes().trialsMaxLengthMs();
-			const auto doc = _item->media()
-				? _item->media()->document()
-				: nullptr;
-			if (doc && (doc->isVoiceMessage() || doc->isVideoMessage())) {
-				if (doc->duration() > max) {
-					if (const auto controller = my.sessionWindow.get()) {
-						controller->uiShow()->showToast(
-							tr::lng_audio_transcribe_long(tr::now));
-						return;
-					}
-				}
-			}
-			if (summarize) {
-				session->api().transcribes().toggleSummary(item);
-			} else {
-				session->api().transcribes().toggle(item);
-			}
+			session->api().transcribes().toggleSummary(item);
 		}
 	});
 	return _link;

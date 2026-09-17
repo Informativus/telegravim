@@ -8775,3 +8775,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_folder_archive_status" = "ZIP archive";
 
 // Keys finished
+
+"lng_local_transcribe_download" = "Transcribe voice and video messages for free on this device. Download the speech model once (465 MB)? Audio and transcripts stay on your device. The model is downloaded from Hugging Face.";
+"lng_local_transcribe_download_button" = "Download model";
+"lng_local_transcribe_waiting" = "Waiting for local transcription…";
+"lng_local_transcribe_audio_loading" = "Downloading audio…";
+"lng_local_transcribe_model_loading" = "Downloading speech model: {percent}%";
+"lng_local_transcribe_recognizing" = "Transcribing on this device: {percent}%";
+"lng_local_transcribe_model_failed" = "Could not download or verify the speech model. Click the transcription button to retry.";
+"lng_local_transcribe_too_large" = "Local transcription supports recordings up to one hour and 64 MB.";
+"lng_local_transcribe_no_speech" = "No speech recognized. Click the transcription button to retry.";
+"lng_local_transcribe_failed" = "Could not transcribe this recording. Click the transcription button to retry.";

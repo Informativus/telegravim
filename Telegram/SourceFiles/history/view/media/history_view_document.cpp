@@ -502,12 +502,7 @@ QSize Document::countOptimalSize() {
 		if ((media && media->ttlSeconds())
 			|| IsHostedInstantViewMedia(_parent)
 			|| _realParent->isScheduled()
-			|| _realParent->isAdminLogEntry()
-			|| (!session->premium()
-				&& !transcribes->freeFor(_realParent)
-				&& !transcribes->trialsSupport())
-			|| (!session->premium()
-				&& _data->duration() > transcribes->trialsMaxLengthMs())) {
+			|| _realParent->isAdminLogEntry()) {
 			voice->transcribe = nullptr;
 			voice->transcribeText = {};
 		} else {
@@ -532,6 +527,8 @@ QSize Document::countOptimalSize() {
 				: Lottie::IconDescriptor();
 			auto text = (entry.requestId || !entry.shown)
 				? TextWithEntities()
+				: entry.local
+				? TextWithEntities{ entry.result }
 				: entry.toolong
 				? tr::italic(tr::lng_audio_transcribe_long(tr::now))
 				: entry.failed
