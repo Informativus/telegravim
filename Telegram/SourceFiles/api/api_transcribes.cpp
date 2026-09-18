@@ -8,8 +8,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_transcribes.h"
 
 #include "apiwrap.h"
+#include "api/api_local_transcription.h"
 #include "api/api_text_entities.h"
 #include "data/data_channel.h"
+#include "data/data_changes.h"
 #include "data/data_document.h"
 #include "data/data_peer.h"
 #include "data/data_session.h"
@@ -26,7 +28,39 @@ namespace Api {
 
 Transcribes::Transcribes(not_null<ApiWrap*> api)
 : _session(&api->session())
-, _api(&api->instance()) {
+, _api(&api->instance())
+, _local(std::make_unique<LocalTranscription>(
+		_session,
+		[=](FullMsgId id, QString text, bool done, bool failed) {
+			auto i = _map.find(id);
+			if (i == _map.end() || !i->second.local) {
+				return;
+			}
+			auto &entry = i->second;
+			entry.result = std::move(text);
+			entry.pending = !done;
+			entry.failed = failed;
+			if (failed && entry.result.isEmpty()) {
+				entry.shown = false;
+			}
+			if (const auto item = _session->data().message(id)) {
+				if (done && entry.roundview) {
+					_session->data().requestItemViewRefresh(item);
+				}
+				_session->data().requestItemResize(item);
+			}
+		})) {
+	_session->changes().messageUpdates(
+		Data::MessageUpdate::Flag::Destroyed
+	) | rpl::on_next([=](const Data::MessageUpdate &update) {
+		forget(update.item->fullId());
+	}, _lifetime);
+}
+
+Transcribes::~Transcribes() = default;
+
+LocalTranscription &Transcribes::local() const {
+	return *_local;
 }
 
 bool Transcribes::isRated(not_null<HistoryItem*> item) const {
@@ -104,8 +138,22 @@ crl::time Transcribes::trialsMaxLengthMs() const {
 void Transcribes::toggle(not_null<HistoryItem*> item) {
 	const auto id = item->fullId();
 	auto i = _map.find(id);
-	if (i == _map.end()) {
+	const auto useLocal = !_session->premium() && _local->enabled();
+	if (i != _map.end() && i->second.local != useLocal) {
+		forget(id);
+		i = _map.end();
+	}
+	if (i == _map.end() || (i->second.local && i->second.failed)) {
 		load(item);
+		_session->data().requestItemResize(item);
+	} else if (i->second.local && i->second.pending) {
+		_local->cancel(id);
+		i->second.pending = false;
+		i->second.failed = true;
+		i->second.shown = false;
+		if (i->second.roundview) {
+			_session->data().requestItemViewRefresh(item);
+		}
 		_session->data().requestItemResize(item);
 	} else if (!i->second.requestId) {
 		i->second.shown = !i->second.shown;
@@ -113,6 +161,24 @@ void Transcribes::toggle(not_null<HistoryItem*> item) {
 			_session->data().requestItemViewRefresh(item);
 		}
 		_session->data().requestItemResize(item);
+	}
+}
+
+void Transcribes::forget(FullMsgId id) {
+	_local->cancel(id);
+	const auto i = _map.find(id);
+	if (i != _map.end()) {
+		if (i->second.requestId) {
+			_api.request(i->second.requestId).cancel();
+		}
+		_map.erase(i);
+	}
+	for (auto j = _ids.begin(); j != _ids.end();) {
+		if (j->second == id) {
+			j = _ids.erase(j);
+		} else {
+			++j;
+		}
 	}
 }
 
@@ -156,7 +222,7 @@ void Transcribes::apply(const MTPDupdateTranscribedAudio &update) {
 		return;
 	}
 	const auto j = _map.find(i->second);
-	if (j == _map.end()) {
+	if (j == _map.end() || j->second.local) {
 		return;
 	}
 	const auto text = qs(update.vtext());
@@ -172,6 +238,10 @@ void Transcribes::apply(const MTPDupdateTranscribedAudio &update) {
 
 void Transcribes::load(not_null<HistoryItem*> item) {
 	if (!item->isHistoryEntry() || item->isLocal()) {
+		return;
+	}
+	if (!_session->premium() && _local->enabled()) {
+		loadLocal(item);
 		return;
 	}
 	const auto toggleRound = [](not_null<HistoryItem*> item, Entry &entry) {
@@ -207,7 +277,11 @@ void Transcribes::load(not_null<HistoryItem*> item) {
 			}
 		}
 
-		auto &entry = _map[id];
+		const auto i = _map.find(id);
+		if (i == _map.end() || i->second.local) {
+			return;
+		}
+		auto &entry = i->second;
 		entry.requestId = 0;
 		entry.pending = data.is_pending();
 		entry.result = qs(data.vtext());
@@ -217,7 +291,11 @@ void Transcribes::load(not_null<HistoryItem*> item) {
 			_session->data().requestItemResize(item);
 		}
 	}).fail([=](const MTP::Error &error) {
-		auto &entry = _map[id];
+		const auto i = _map.find(id);
+		if (i == _map.end() || i->second.local) {
+			return;
+		}
+		auto &entry = i->second;
 		entry.requestId = 0;
 		entry.pending = false;
 		entry.failed = true;
@@ -234,6 +312,28 @@ void Transcribes::load(not_null<HistoryItem*> item) {
 	entry.shown = true;
 	entry.failed = false;
 	entry.pending = false;
+}
+
+void Transcribes::loadLocal(not_null<HistoryItem*> item) {
+	if (!item->isHistoryEntry() || item->isLocal()) {
+		return;
+	}
+	const auto media = item->media();
+	const auto document = media ? media->document() : nullptr;
+	if (!document || media->ttlSeconds()
+		|| (!document->isVoiceMessage() && !document->isVideoMessage())) {
+		return;
+	}
+	auto &entry = _map[item->fullId()];
+	entry = Entry();
+	entry.local = true;
+	entry.shown = true;
+	entry.pending = true;
+	entry.roundview = document->isVideoMessage();
+	if (entry.roundview) {
+		_session->data().requestItemViewRefresh(item);
+	}
+	_local->enqueue(item->fullId());
 }
 
 void Transcribes::summarize(not_null<HistoryItem*> item) {

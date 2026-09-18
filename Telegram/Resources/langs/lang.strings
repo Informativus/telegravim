@@ -8775,3 +8775,26 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_folder_archive_status" = "ZIP archive";
 
 // Keys finished
+
+"lng_local_transcribe_download" = "Transcribe voice and video messages for free on this device. Download the speech model once (465 MB)? Audio and transcripts stay on your device. The model is downloaded from Hugging Face. You can also enable this later in Settings > Advanced > Local transcription.";
+"lng_local_transcribe_download_button" = "Download model";
+"lng_local_transcribe_waiting" = "Waiting for local transcription…";
+"lng_local_transcribe_audio_loading" = "Downloading audio…";
+"lng_local_transcribe_model_loading" = "Downloading speech model: {percent}%";
+"lng_local_transcribe_recognizing" = "Transcribing on this device: {percent}%";
+"lng_local_transcribe_model_failed" = "Could not download or verify the speech model. Click the transcription button to retry.";
+"lng_local_transcribe_too_large" = "Local transcription supports recordings up to one hour and 64 MB.";
+"lng_local_transcribe_no_speech" = "No speech recognized. Click the transcription button to retry.";
+"lng_local_transcribe_failed" = "Could not transcribe this recording. Click the transcription button to retry.";
+
+"lng_local_transcribe_title" = "Local transcription";
+"lng_local_transcribe_enable" = "Use local transcription without Premium";
+"lng_local_transcribe_dont_show" = "Don't show this offer again";
+"lng_local_transcribe_settings_about" = "Transcribe voice and video messages on this device for free, without uploading them. Download the speech model once (465 MB) from Hugging Face. These preferences apply to this account on this device. Premium accounts always use Telegram's standard transcription. With local transcription off, Telegram's usual limits apply.";
+"lng_local_transcribe_offer_ready" = "Enable free local transcription of voice and video messages? The speech model is already downloaded. Audio and transcripts stay on your device. You can change this later in Settings > Advanced > Local transcription.";
+"lng_local_transcribe_download_enable" = "Download and enable";
+"lng_local_transcribe_enable_button" = "Enable";
+"lng_local_transcribe_cancel_download" = "Cancel download";
+"lng_local_transcribe_model_missing" = "Speech model not downloaded (465 MB).";
+"lng_local_transcribe_model_ready" = "Speech model downloaded. Ready for local transcription.";
+"lng_local_transcribe_download_failed" = "Could not download or verify the speech model. You can retry the download.";
