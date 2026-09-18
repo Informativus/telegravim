@@ -40,23 +40,27 @@ Transcribes::Transcribes(not_null<ApiWrap*> api)
 			entry.result = std::move(text);
 			entry.pending = !done;
 			entry.failed = failed;
+			if (failed && entry.result.isEmpty()) {
+				entry.shown = false;
+			}
 			if (const auto item = _session->data().message(id)) {
+				if (done && entry.roundview) {
+					_session->data().requestItemViewRefresh(item);
+				}
 				_session->data().requestItemResize(item);
 			}
 		})) {
 	_session->changes().messageUpdates(
 		Data::MessageUpdate::Flag::Destroyed
 	) | rpl::on_next([=](const Data::MessageUpdate &update) {
-		const auto id = update.item->fullId();
-		_local->cancel(id);
-		_map.remove(id);
+		forget(update.item->fullId());
 	}, _lifetime);
 }
 
 Transcribes::~Transcribes() = default;
 
-bool Transcribes::localNeedsModel() const {
-	return _local->needsModel();
+LocalTranscription &Transcribes::local() const {
+	return *_local;
 }
 
 bool Transcribes::isRated(not_null<HistoryItem*> item) const {
@@ -134,6 +138,11 @@ crl::time Transcribes::trialsMaxLengthMs() const {
 void Transcribes::toggle(not_null<HistoryItem*> item) {
 	const auto id = item->fullId();
 	auto i = _map.find(id);
+	const auto useLocal = !_session->premium() && _local->enabled();
+	if (i != _map.end() && i->second.local != useLocal) {
+		forget(id);
+		i = _map.end();
+	}
 	if (i == _map.end() || (i->second.local && i->second.failed)) {
 		load(item);
 		_session->data().requestItemResize(item);
@@ -152,6 +161,24 @@ void Transcribes::toggle(not_null<HistoryItem*> item) {
 			_session->data().requestItemViewRefresh(item);
 		}
 		_session->data().requestItemResize(item);
+	}
+}
+
+void Transcribes::forget(FullMsgId id) {
+	_local->cancel(id);
+	const auto i = _map.find(id);
+	if (i != _map.end()) {
+		if (i->second.requestId) {
+			_api.request(i->second.requestId).cancel();
+		}
+		_map.erase(i);
+	}
+	for (auto j = _ids.begin(); j != _ids.end();) {
+		if (j->second == id) {
+			j = _ids.erase(j);
+		} else {
+			++j;
+		}
 	}
 }
 
@@ -195,7 +222,7 @@ void Transcribes::apply(const MTPDupdateTranscribedAudio &update) {
 		return;
 	}
 	const auto j = _map.find(i->second);
-	if (j == _map.end()) {
+	if (j == _map.end() || j->second.local) {
 		return;
 	}
 	const auto text = qs(update.vtext());
@@ -210,6 +237,84 @@ void Transcribes::apply(const MTPDupdateTranscribedAudio &update) {
 }
 
 void Transcribes::load(not_null<HistoryItem*> item) {
+	if (!item->isHistoryEntry() || item->isLocal()) {
+		return;
+	}
+	if (!_session->premium() && _local->enabled()) {
+		loadLocal(item);
+		return;
+	}
+	const auto toggleRound = [](not_null<HistoryItem*> item, Entry &entry) {
+		if (const auto media = item->media()) {
+			if (const auto document = media->document()) {
+				if (document->isVideoMessage()) {
+					entry.roundview = true;
+					document->owner().requestItemViewRefresh(item);
+				}
+			}
+		}
+	};
+	const auto id = item->fullId();
+	const auto requestId = _api.request(MTPmessages_TranscribeAudio(
+		item->history()->peer->input(),
+		MTP_int(item->id)
+	)).done([=](const MTPmessages_TranscribedAudio &result) {
+		const auto &data = result.data();
+
+		{
+			const auto trialsCountChanged = data.vtrial_remains_num()
+				&& (_trialsCount != data.vtrial_remains_num()->v);
+			if (trialsCountChanged) {
+				_trialsCount = data.vtrial_remains_num()->v;
+			}
+			const auto refreshAtChanged = data.vtrial_remains_until_date()
+				&& (_trialsRefreshAt != data.vtrial_remains_until_date()->v);
+			if (refreshAtChanged) {
+				_trialsRefreshAt = data.vtrial_remains_until_date()->v;
+			}
+			if (trialsCountChanged) {
+				ShowTrialTranscribesToast(_trialsCount, _trialsRefreshAt);
+			}
+		}
+
+		const auto i = _map.find(id);
+		if (i == _map.end() || i->second.local) {
+			return;
+		}
+		auto &entry = i->second;
+		entry.requestId = 0;
+		entry.pending = data.is_pending();
+		entry.result = qs(data.vtext());
+		_ids.emplace(data.vtranscription_id().v, id);
+		if (const auto item = _session->data().message(id)) {
+			toggleRound(item, entry);
+			_session->data().requestItemResize(item);
+		}
+	}).fail([=](const MTP::Error &error) {
+		const auto i = _map.find(id);
+		if (i == _map.end() || i->second.local) {
+			return;
+		}
+		auto &entry = i->second;
+		entry.requestId = 0;
+		entry.pending = false;
+		entry.failed = true;
+		if (error.type() == u"MSG_VOICE_TOO_LONG"_q) {
+			entry.toolong = true;
+		}
+		if (const auto item = _session->data().message(id)) {
+			toggleRound(item, entry);
+			_session->data().requestItemResize(item);
+		}
+	}).send();
+	auto &entry = _map.emplace(id).first->second;
+	entry.requestId = requestId;
+	entry.shown = true;
+	entry.failed = false;
+	entry.pending = false;
+}
+
+void Transcribes::loadLocal(not_null<HistoryItem*> item) {
 	if (!item->isHistoryEntry() || item->isLocal()) {
 		return;
 	}

@@ -34,7 +34,7 @@ public:
 	explicit Transcribes(not_null<ApiWrap*> api);
 	~Transcribes();
 
-	[[nodiscard]] bool localNeedsModel() const;
+	[[nodiscard]] LocalTranscription &local() const;
 
 	struct Entry {
 		QString result;
@@ -68,6 +68,8 @@ public:
 
 private:
 	void load(not_null<HistoryItem*> item);
+	void loadLocal(not_null<HistoryItem*> item);
+	void forget(FullMsgId id);
 	void summarize(not_null<HistoryItem*> item);
 
 	const not_null<Main::Session*> _session;

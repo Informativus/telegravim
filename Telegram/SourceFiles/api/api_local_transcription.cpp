@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "api/api_local_transcription.h"
 
+#include "core/application.h"
+#include "core/core_settings.h"
 #include "data/data_document.h"
 #include "data/data_document_media.h"
 #include "data/data_session.h"
@@ -59,6 +61,69 @@ LocalTranscription::~LocalTranscription() {
 	}
 }
 
+bool LocalTranscription::enabled() const {
+	return Core::App().settings().readPref<bool>(
+		"local_transcription_enabled_" + std::to_string(_session->uniqueId()));
+}
+
+void LocalTranscription::setEnabled(bool enabled) {
+	Core::App().settings().writePref<bool>(
+		"local_transcription_enabled_" + std::to_string(_session->uniqueId()),
+		enabled);
+	Core::App().saveSettingsDelayed();
+	if (!enabled) {
+		while (!_queue.empty()) {
+			cancel(_queue.front());
+		}
+		if (_active) {
+			cancel(*_active);
+		}
+	}
+}
+
+bool LocalTranscription::offerDismissed() const {
+	return Core::App().settings().readPref<bool>(
+		"local_transcription_offer_dismissed_"
+			+ std::to_string(_session->uniqueId()));
+}
+
+void LocalTranscription::setOfferDismissed(bool dismissed) {
+	Core::App().settings().writePref<bool>(
+		"local_transcription_offer_dismissed_"
+			+ std::to_string(_session->uniqueId()),
+		dismissed);
+	Core::App().saveSettingsDelayed();
+}
+
+bool LocalTranscription::downloadingModel() const {
+	return _reply != nullptr;
+}
+
+QString LocalTranscription::modelStatus() const {
+	if (downloadingModel()) {
+		return tr::lng_local_transcribe_model_loading(
+			tr::now,
+			lt_percent,
+			QString::number(std::max(_progress, 0)));
+	} else if (_modelFailed) {
+		return tr::lng_local_transcribe_download_failed(tr::now);
+	}
+	return needsModel()
+		? tr::lng_local_transcribe_model_missing(tr::now)
+		: tr::lng_local_transcribe_model_ready(tr::now);
+}
+
+rpl::producer<> LocalTranscription::modelStateValue() const {
+	return _modelChanges.events_starting_with({});
+}
+
+void LocalTranscription::cancelModelDownload() {
+	if (_reply) {
+		_downloadCancelled = true;
+		_reply->abort();
+	}
+}
+
 QString LocalTranscription::modelPath() const {
 	return cWorkingDir() + u"tdata/models/ggml-small.bin"_q;
 }
@@ -81,12 +146,11 @@ void LocalTranscription::cancel(FullMsgId id) {
 	_queue.erase(std::remove(_queue.begin(), _queue.end(), id), _queue.end());
 	if (_active == id) {
 		_cancelled->store(true);
-		if (_reply) {
-			_reply->abort();
-		} else if (!_running) {
+		if (!_running) {
 			finish({}, true);
 		}
 	}
+	_update(id, {}, true, true);
 }
 
 void LocalTranscription::next() {
@@ -129,9 +193,7 @@ void LocalTranscription::check() {
 	if (!item || !item->media() || item->media()->ttlSeconds()
 		|| item->media()->document() != _media->owner()) {
 		_cancelled->store(true);
-		if (_reply) {
-			_reply->abort();
-		} else if (!_running) {
+		if (!_running) {
 			finish({}, true);
 		}
 		return;
@@ -186,18 +248,22 @@ void LocalTranscription::publish(QString text) {
 }
 
 void LocalTranscription::downloadModel() {
+	if (_reply || !needsModel()) {
+		return;
+	}
+	_downloadCancelled = false;
+	_modelFailed = false;
 	if (!QDir().mkpath(QFileInfo(modelPath()).absolutePath())) {
-		finish(ErrorText(Error::Model), true);
+		modelDownloadFailed();
 		return;
 	}
 	_download = std::make_unique<QSaveFile>(modelPath());
 	if (!_download->open(QIODevice::WriteOnly)) {
-		finish(ErrorText(Error::Model), true);
+		modelDownloadFailed();
 		return;
 	}
 	if (!_download->setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner)) {
-		finish(ErrorText(Error::Model), true);
-		_download.reset();
+		modelDownloadFailed();
 		return;
 	}
 	_hash.reset();
@@ -214,6 +280,7 @@ void LocalTranscription::downloadModel() {
 		QNetworkRequest::Manual);
 	_reply = _network.get(request);
 	_reply->setReadBufferSize(1024 * 1024);
+	_modelChanges.fire({});
 	QObject::connect(_reply, &QNetworkReply::readyRead, this, [=] {
 		const auto data = _reply->readAll();
 		_received += data.size();
@@ -226,6 +293,7 @@ void LocalTranscription::downloadModel() {
 		const auto progress = int(100 * _received / Media::Transcription::ModelSize);
 		if (_progress != progress) {
 			_progress = progress;
+			_modelChanges.fire({});
 			publish(tr::lng_local_transcribe_model_loading(
 				tr::now,
 				lt_percent, QString::number(progress)));
@@ -233,7 +301,7 @@ void LocalTranscription::downloadModel() {
 	});
 	QObject::connect(_reply, &QNetworkReply::finished, this, [=] {
 		const auto reply = std::exchange(_reply, nullptr);
-		const auto valid = !_cancelled->load()
+		const auto valid = !_downloadCancelled
 			&& reply->error() == QNetworkReply::NoError
 			&& reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 200
 			&& _received == Media::Transcription::ModelSize
@@ -242,13 +310,28 @@ void LocalTranscription::downloadModel() {
 		const auto saved = valid && _download->commit();
 		_download.reset();
 		if (!saved) {
-			finish(ErrorText(Error::Model), true);
+			modelDownloadFailed();
 			return;
 		}
 		_modelInvalid = false;
+		_modelChanges.fire({});
 		_elapsed.restart();
 		check();
 	});
+}
+
+void LocalTranscription::modelDownloadFailed() {
+	_download.reset();
+	_modelFailed = !_downloadCancelled;
+	_modelChanges.fire({});
+	while (!_queue.empty()) {
+		const auto id = _queue.front();
+		_queue.pop_front();
+		_update(id, ErrorText(Error::Model), true, true);
+	}
+	if (_active && !_running) {
+		finish(ErrorText(Error::Model), true);
+	}
 }
 
 void LocalTranscription::recognize() {
@@ -269,6 +352,7 @@ void LocalTranscription::recognize() {
 	const auto done = crl::guard(this, [=](Media::Transcription::Result result) {
 		_running = false;
 		_modelInvalid = (result.error == Error::Model);
+		_modelChanges.fire({});
 		finish(result.error == Error::None ? result.text : ErrorText(result.error),
 			result.error != Error::None);
 	});

@@ -1884,6 +1884,8 @@ PRIVATE
     settings/settings_credits_graphics.h
     settings/settings_experimental.cpp
     settings/settings_experimental.h
+    settings/settings_local_transcription.cpp
+    settings/settings_local_transcription.h
     settings/settings_vim_editor.cpp
     settings/settings_vim_editor.h
     settings/sections/settings_folders.cpp

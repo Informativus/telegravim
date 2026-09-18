@@ -36,14 +36,23 @@ public:
 	LocalTranscription(not_null<Main::Session*> session, Update update);
 	~LocalTranscription();
 
+	[[nodiscard]] bool enabled() const;
+	void setEnabled(bool enabled);
+	[[nodiscard]] bool offerDismissed() const;
+	void setOfferDismissed(bool dismissed);
 	[[nodiscard]] bool needsModel() const;
+	[[nodiscard]] bool downloadingModel() const;
+	[[nodiscard]] QString modelStatus() const;
+	[[nodiscard]] rpl::producer<> modelStateValue() const;
+	void downloadModel();
+	void cancelModelDownload();
 	void enqueue(FullMsgId id);
 	void cancel(FullMsgId id);
 
 private:
 	void next();
 	void check();
-	void downloadModel();
+	void modelDownloadFailed();
 	void recognize();
 	void clearAudioDownload();
 	void finish(QString text, bool failed);
@@ -63,6 +72,9 @@ private:
 	bool _running = false;
 	bool _audioStarted = false;
 	bool _modelInvalid = false;
+	bool _modelFailed = false;
+	bool _downloadCancelled = false;
+	rpl::event_stream<> _modelChanges;
 	QNetworkAccessManager _network;
 	QNetworkReply *_reply = nullptr;
 	std::unique_ptr<QSaveFile> _download;
