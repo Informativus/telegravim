@@ -1111,7 +1111,11 @@ private:
 	base::Timer _touchScrollTimer;
 	Ui::MiddleClickAutoscroll _middleClickAutoscroll;
 	base::Timer _vimKeymapScrollTimer;
-	std::vector<FullMsgId> _vimKeymapSelectionHints;
+	struct VimKeymapSelectionHint {
+		FullMsgId itemId;
+		QString label;
+	};
+	std::vector<VimKeymapSelectionHint> _vimKeymapSelectionHints;
 	QString _vimKeymapSelectionHintPrefix;
 	rpl::lifetime _vimKeymapPhotoCopyLifetime;
 	int _vimKeymapScrollDirection = 0;

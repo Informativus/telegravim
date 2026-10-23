@@ -4651,9 +4651,19 @@ void HistoryInner::vimKeymapBuildMessageHints(VimKeymapHintMode mode) {
 	_vimKeymapHintMode = mode;
 	_vimKeymapHints.clear();
 	_vimKeymapHintPrefix.clear();
-	auto views = std::vector<Element*>();
+	auto views = accessibleElements();
+	std::erase_if(views, [](not_null<Element*> view) {
+		return view->data()->isService();
+	});
+	ranges::reverse(views);
+	const auto visibleArea = QRect(
+		0,
+		_visibleAreaTop,
+		width(),
+		_visibleAreaBottom - _visibleAreaTop);
 	const auto now = base::unixtime::now();
-	for (const auto view : accessibleElements()) {
+	for (auto index = 0; index != int(views.size()); ++index) {
+		const auto view = views[index];
 		const auto item = view->data();
 		if (mode == VimKeymapHintMode::SelectMessageText
 			&& view->selectedText(AllTextSelection).empty()) {
@@ -4684,14 +4694,7 @@ void HistoryInner::vimKeymapBuildMessageHints(VimKeymapHintMode mode) {
 		if (visibleBottom - visibleTop < kVimKeymapMinVisibleHintHeight) {
 			continue;
 		}
-		views.push_back(view);
-	}
-	const auto visibleArea = QRect(
-		0,
-		_visibleAreaTop,
-		width(),
-		_visibleAreaBottom - _visibleAreaTop);
-	for (const auto view : views) {
+		const auto label = Core::VimKeymap::MessageHintLabel(index);
 		if (mode == VimKeymapHintMode::CopyMessage) {
 			const auto grouped
 				= dynamic_cast<HistoryView::GroupedMedia*>(view->media());
@@ -4729,6 +4732,7 @@ void HistoryInner::vimKeymapBuildMessageHints(VimKeymapHintMode mode) {
 					st::vimHintTargetInset,
 					st::vimHintTargetInset);
 				_vimKeymapHints.push_back({
+					.label = Core::VimKeymap::MessageHintLabel(index, i),
 					.itemId = item->fullId(),
 					.badge = QRect(badgePoint, badgePoint),
 					.target = target,
@@ -4740,13 +4744,13 @@ void HistoryInner::vimKeymapBuildMessageHints(VimKeymapHintMode mode) {
 			}
 		}
 		_vimKeymapHints.push_back({
+			.label = label,
 			.itemId = view->data()->fullId(),
 		});
 	}
 	if (_vimKeymapHints.empty()) {
 		_vimKeymapHintMode = VimKeymapHintMode::None;
 	}
-	vimKeymapAssignHintLabels();
 	update();
 }
 

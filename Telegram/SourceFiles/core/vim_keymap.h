@@ -176,6 +176,7 @@ void TraceKey(not_null<QKeyEvent*> e, const QString &status);
 	bool &pendingStart);
 [[nodiscard]] bool TextVisualKey(not_null<QKeyEvent*> e);
 [[nodiscard]] bool IsJumpToBottomKey(not_null<QKeyEvent*> e);
+[[nodiscard]] QString MessageHintLabel(int index, int photoIndex = -1);
 [[nodiscard]] QString HintLabel(int index, int total);
 [[nodiscard]] QString HintInput(not_null<QKeyEvent*> e);
 

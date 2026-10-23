@@ -3658,13 +3658,24 @@ bool ListWidget::vimKeymapBeginSelectionHints() {
 	}
 	vimKeymapStopScroll();
 	_scrollToAnimation.stop();
-	for (const auto view : accessibleElements()) {
+	auto views = accessibleElements();
+	std::erase_if(views, [](not_null<Element*> view) {
+		return view->data()->isService();
+	});
+	if (!_inverted) {
+		ranges::reverse(views);
+	}
+	for (auto index = 0; index != int(views.size()); ++index) {
+		const auto view = views[index];
 		const auto top = itemTop(view);
 		const auto visibleHeight = std::min(top + view->height(), _visibleBottom)
 			- std::max(top, _visibleTop);
 		if (view->data()->canBeSelected()
 			&& visibleHeight >= st::vimHintMinVisibleHeight) {
-			_vimKeymapSelectionHints.push_back(view->data()->fullId());
+			_vimKeymapSelectionHints.push_back({
+				view->data()->fullId(),
+				Core::VimKeymap::MessageHintLabel(index),
+			});
 		}
 	}
 	update();
@@ -3708,11 +3719,10 @@ bool ListWidget::vimKeymapHandleSelectionHintKey(not_null<QKeyEvent*> e) {
 	}
 	_vimKeymapSelectionHintPrefix += input.front();
 	auto hasPrefix = false;
-	const auto total = int(_vimKeymapSelectionHints.size());
-	for (auto i = 0; i != total; ++i) {
-		const auto label = HintLabel(i, total);
+	for (const auto &hint : _vimKeymapSelectionHints) {
+		const auto &label = hint.label;
 		if (label == _vimKeymapSelectionHintPrefix) {
-			const auto item = session().data().message(_vimKeymapSelectionHints[i]);
+			const auto item = session().data().message(hint.itemId);
 			const auto view = item ? viewForItem(item) : nullptr;
 			if (view && !Core::App().passcodeLocked()) {
 				if (vimKeymapBeginMessageSelection(view)) {
@@ -3746,9 +3756,8 @@ void ListWidget::vimKeymapPaintSelectionHints(Painter &p) const {
 	const auto bounds = QRect(0, _visibleTop, width(), _visibleBottom - _visibleTop)
 		.marginsRemoved(QMargins(margin, margin, margin, margin));
 	auto badges = std::vector<HintBadge>();
-	const auto total = int(_vimKeymapSelectionHints.size());
-	for (auto i = 0; i != total; ++i) {
-		const auto item = session().data().message(_vimKeymapSelectionHints[i]);
+	for (const auto &hint : _vimKeymapSelectionHints) {
+		const auto item = session().data().message(hint.itemId);
 		const auto view = item ? viewForItem(item) : nullptr;
 		if (!view) {
 			continue;
@@ -3758,7 +3767,7 @@ void ListWidget::vimKeymapPaintSelectionHints(Painter &p) const {
 		if (visible.isEmpty()) {
 			continue;
 		}
-		const auto label = HintLabel(i, total);
+		const auto &label = hint.label;
 		const auto remaining = label.mid(_vimKeymapSelectionHintPrefix.size());
 		const auto size = QSize(
 			metrics.horizontalAdvance(remaining.isEmpty() ? label : remaining)
@@ -6346,7 +6355,10 @@ void ListWidget::viewReplaced(not_null<const Element*> was, Element *now) {
 }
 
 void ListWidget::itemRemoved(not_null<const HistoryItem*> item) {
-	if (ranges::contains(_vimKeymapSelectionHints, item->fullId())) {
+	if (ranges::contains(
+		_vimKeymapSelectionHints,
+		item->fullId(),
+		&VimKeymapSelectionHint::itemId)) {
 		vimKeymapClearSelectionHints();
 	}
 	if (_reactionsItem.current() == item) {
