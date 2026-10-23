@@ -528,7 +528,9 @@ QSize Document::countOptimalSize() {
 			auto text = (entry.requestId || !entry.shown)
 				? TextWithEntities()
 				: entry.local
-				? TextWithEntities{ entry.result }
+				? tr::marked(entry.result).append(pending
+					? Ui::Text::LottieEmoji(descriptor)
+					: tr::marked())
 				: entry.toolong
 				? tr::italic(tr::lng_audio_transcribe_long(tr::now))
 				: entry.failed
@@ -547,13 +549,17 @@ QSize Document::countOptimalSize() {
 					- st::msgPadding.left()
 					- st::msgPadding.right();
 				voice->transcribeText = Ui::Text::String(minResizeWidth);
+				auto textContext = pending
+					? Ui::Text::LottieEmojiContext(std::move(descriptor))
+					: Ui::Text::MarkedContext();
+				textContext.repaint = update;
 				voice->transcribeText.setMarkedText(
-					st::messageTextStyle,
+					(entry.local && pending)
+						? st::historyTranscribeStatusStyle
+						: st::messageTextStyle,
 					text,
 					kMarkupTextOptions,
-					pending
-						? Ui::Text::LottieEmojiContext(std::move(descriptor))
-						: Ui::Text::MarkedContext());
+					textContext);
 				hasTranscribe = true;
 				if (const auto skipBlockWidth = _parent->hasVisibleText()
 					? 0
@@ -1073,7 +1079,11 @@ void Document::draw(
 	auto selection = context.selection;
 	auto captiontop = bottom;
 	if (voice && !voice->transcribeText.isEmpty()) {
-		p.setPen(stm->historyTextFg);
+		const auto &entry = _realParent->history()->session()
+			.api().transcribes().entry(_realParent);
+		p.setPen((entry.local && entry.pending)
+			? stm->msgDateFg
+			: stm->historyTextFg);
 		voice->transcribeText.draw(p, st::msgPadding.left(), bottom, captionw, style::al_left, 0, -1, selection);
 		captiontop += voice->transcribeText.countHeight(captionw) + st::mediaCaptionSkip;
 		selection = HistoryView::UnshiftItemSelection(selection, voice->transcribeText);

@@ -8781,7 +8781,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_local_transcribe_waiting" = "Waiting for local transcription…";
 "lng_local_transcribe_audio_loading" = "Downloading audio…";
 "lng_local_transcribe_model_loading" = "Downloading speech model: {percent}%";
-"lng_local_transcribe_recognizing" = "Transcribing on this device: {percent}%";
+"lng_local_transcribe_recognizing" = "Transcribing · {percent}%";
+"lng_local_transcribe_preparing" = "Preparing transcription…";
+"lng_local_transcribe_language" = "Recognition language";
+"lng_local_transcribe_language_system" = "System ({language})";
+"lng_local_transcribe_language_auto" = "Detect automatically";
 "lng_local_transcribe_model_failed" = "Could not download or verify the speech model. Click the transcription button to retry.";
 "lng_local_transcribe_too_large" = "Local transcription supports recordings up to one hour and 64 MB.";
 "lng_local_transcribe_no_speech" = "No speech recognized. Click the transcription button to retry.";

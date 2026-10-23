@@ -84,7 +84,8 @@ void TranscribeButton::setLoading(bool loading) {
 				if (const auto item = session->data().message(itemId)) {
 					session->data().requestItemRepaint(
 						item,
-						_lastPaintedPoint.isNull()
+						(_lastPaintedPoint.isNull()
+							|| (!_roundview && !_summarize))
 							? QRect()
 							: (QRect(_lastPaintedPoint, size()))
 								+ Margins(st::lineWidth));
@@ -109,8 +110,8 @@ void TranscribeButton::paint(
 	auto hq = PainterHighQualityEnabler(p);
 	const auto opened = _openedAnimation.value(_opened ? 1. : 0.);
 	const auto stm = context.messageStyle();
+	_lastPaintedPoint = { x, y };
 	if (_roundview || _summarize) {
-		_lastPaintedPoint = { x, y };
 		const auto r = QRect(QPoint(x, y), size());
 
 		if (_ripple) {

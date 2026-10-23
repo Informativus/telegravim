@@ -23,6 +23,8 @@ inline constexpr auto MaxSamples = SampleRate * 60 * 60;
 
 [[nodiscard]] QString ModelUrl();
 [[nodiscard]] QByteArray ModelDigest();
+[[nodiscard]] std::vector<QString> Languages();
+[[nodiscard]] QString NormalizeLanguage(const QString &language);
 [[nodiscard]] bool VerifyModel(const QString &path, const std::atomic<bool> &cancelled);
 
 struct Result {
@@ -43,6 +45,7 @@ struct Audio {
 	const QString &model,
 	const QByteArray &audio,
 	const std::atomic<bool> &cancelled,
-	const std::function<void(int)> &progress = {});
+	const std::function<void(int)> &progress = {},
+	const QString &language = {});
 
 } // namespace Media::Transcription

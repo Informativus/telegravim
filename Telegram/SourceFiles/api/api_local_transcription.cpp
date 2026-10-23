@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_file_origin.h"
 #include "history/history.h"
 #include "history/history_item.h"
+#include "lang/lang_instance.h"
 #include "lang/lang_keys.h"
 #include "main/main_session.h"
 #include "settings.h"
@@ -79,6 +80,32 @@ void LocalTranscription::setEnabled(bool enabled) {
 			cancel(*_active);
 		}
 	}
+}
+
+QString LocalTranscription::language() const {
+	const auto stored = Core::App().settings().readPref<QByteArray>(
+		"local_transcription_language_" + std::to_string(_session->uniqueId()));
+	return stored.isEmpty() || stored == "system"
+		? u"system"_q
+		: Media::Transcription::NormalizeLanguage(QString::fromLatin1(stored));
+}
+
+void LocalTranscription::setLanguage(const QString &language) {
+	const auto value = (language == u"system"_q)
+		? language
+		: Media::Transcription::NormalizeLanguage(language);
+	Core::App().settings().writePref<QByteArray>(
+		"local_transcription_language_" + std::to_string(_session->uniqueId()),
+		value.toLatin1());
+	Core::App().saveSettingsDelayed();
+}
+
+QString LocalTranscription::recognitionLanguage() const {
+	const auto selected = language();
+	return (selected == u"system"_q)
+		? Media::Transcription::NormalizeLanguage(
+			Lang::GetInstance().systemLangCode())
+		: selected;
 }
 
 bool LocalTranscription::offerDismissed() const {
@@ -336,13 +363,14 @@ void LocalTranscription::modelDownloadFailed() {
 
 void LocalTranscription::recognize() {
 	_running = true;
-	publish(tr::lng_local_transcribe_recognizing(tr::now, lt_percent, u"0"_q));
+	publish(tr::lng_local_transcribe_preparing(tr::now));
 	const auto bytes = _media->bytes();
 	const auto audioDirectory = _audioDirectory;
 	const auto location = bytes.isEmpty()
 		? _media->owner()->location(true)
 		: Core::FileLocation();
 	const auto model = modelPath();
+	const auto language = recognitionLanguage();
 	const auto cancelled = _cancelled;
 	const auto progress = crl::guard(this, [=](int value) {
 		publish(tr::lng_local_transcribe_recognizing(
@@ -371,9 +399,12 @@ void LocalTranscription::recognize() {
 			}
 			location.accessDisable();
 		}
-		auto result = Media::Transcription::Recognize(model, audio, *cancelled, [=](int value) {
-			crl::on_main([=] { progress(value); });
-		});
+		auto result = Media::Transcription::Recognize(
+			model,
+			audio,
+			*cancelled,
+			[=](int value) { crl::on_main([=] { progress(value); }); },
+			language);
 		crl::on_main([=] { done(result); });
 	});
 }

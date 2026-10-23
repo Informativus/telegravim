@@ -38,6 +38,9 @@ public:
 
 	[[nodiscard]] bool enabled() const;
 	void setEnabled(bool enabled);
+	[[nodiscard]] QString language() const;
+	void setLanguage(const QString &language);
+	[[nodiscard]] QString recognitionLanguage() const;
 	[[nodiscard]] bool offerDismissed() const;
 	void setOfferDismissed(bool dismissed);
 	[[nodiscard]] bool needsModel() const;

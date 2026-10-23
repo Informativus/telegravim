@@ -33,8 +33,18 @@ of a message and can be cancelled in settings. Clicking the button again while p
 also cancels that request. Failures can be retried by clicking the
 button again. Work is serialized per account and runs off the UI thread.
 
-The initial language is detected automatically, including Russian. Quality and
-speed depend on the recording and hardware. Technical input limits are 64 MiB
+Recognition defaults to the system language. Settings > Advanced > Local
+transcription > Recognition language offers a searchable list of the model's
+supported languages and automatic detection. The selection is stored per
+account; an unsupported system language falls back to automatic detection.
+Changing it applies to the next recognition request, without translating the
+result into English. Processing shows a compact animated status and separates
+model preparation from recognition progress. The transcription button also
+participates in Vim's `f` hints for both voice and video messages.
+
+The model is [multilingual Whisper small](https://huggingface.co/openai/whisper-small),
+using the pinned [whisper.cpp weights](https://huggingface.co/ggerganov/whisper.cpp/blob/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-small.bin).
+Quality and speed depend on the recording and hardware. Technical input limits are 64 MiB
 of compressed audio and one hour of decoded audio. The recognizer rejects
 external resources referenced by media containers. It does not execute a
 shell or load third-party recognition plugins.

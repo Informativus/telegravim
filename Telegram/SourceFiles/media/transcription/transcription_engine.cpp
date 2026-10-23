@@ -98,6 +98,23 @@ QByteArray ModelDigest() {
 		"1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b");
 }
 
+std::vector<QString> Languages() {
+	auto result = std::vector<QString>();
+	for (auto id = 0; id <= whisper_lang_max_id(); ++id) {
+		result.push_back(QString::fromLatin1(whisper_lang_str(id)));
+	}
+	return result;
+}
+
+QString NormalizeLanguage(const QString &language) {
+	const auto code = language.trimmed().toLower()
+		.replace(u'_', u'-').section(u'-', 0, 0);
+	const auto languages = Languages();
+	return (std::find(languages.begin(), languages.end(), code) != languages.end())
+		? code
+		: u"auto"_q;
+}
+
 namespace {
 
 bool VerifyModelFile(QFile &file, const std::atomic<bool> &cancelled) {
@@ -286,7 +303,8 @@ Result Recognize(
 		const QString &model,
 		const QByteArray &audio,
 		const std::atomic<bool> &cancelled,
-		const std::function<void(int)> &progress) {
+		const std::function<void(int)> &progress,
+		const QString &language) {
 	using Error = Result::Error;
 	auto modelFile = QFile(model);
 	if (!modelFile.open(QIODevice::ReadOnly)
@@ -322,8 +340,9 @@ Result Recognize(
 		return { {}, Error::Recognition };
 	}
 	auto params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
+	const auto languageCode = NormalizeLanguage(language).toLatin1();
 	params.n_threads = std::clamp(QThread::idealThreadCount() / 2, 1, 8);
-	params.language = "auto";
+	params.language = languageCode.constData();
 	params.translate = false;
 	params.no_context = true;
 	params.no_timestamps = true;
@@ -342,6 +361,9 @@ Result Recognize(
 		}
 	};
 	params.progress_callback_user_data = const_cast<std::function<void(int)>*>(&progress);
+	if (progress) {
+		progress(0);
+	}
 	const auto status = whisper_full(
 		context.get(), params, decoded.samples.data(), decoded.samples.size());
 	if (cancelled.load()) {
