@@ -149,22 +149,25 @@ private:
 	while (till < text.size() && text.wordClass(till, big) == kind) {
 		++till;
 	}
-	for (auto i = 1; i < count && till < text.size(); ++i) {
-		while (till < text.size() && text.at(till).isSpace()) {
+	if (around && !kind && till < text.size()) {
+		const auto next = text.wordClass(till, big);
+		while (till < text.size() && text.wordClass(till, big) == next) {
 			++till;
+		}
+	}
+	for (auto i = 1; i < count && till < text.size(); ++i) {
+		if (around) {
+			while (till < text.size() && text.at(till).isSpace()) {
+				++till;
+			}
 		}
 		const auto next = text.wordClass(till, big);
 		while (till < text.size() && text.wordClass(till, big) == next) {
 			++till;
 		}
 	}
-	if (around) {
-		if (!kind && till < text.size()) {
-			const auto next = text.wordClass(till, big);
-			while (till < text.size() && text.wordClass(till, big) == next) {
-				++till;
-			}
-		} else if (till < text.size() && text.at(till).isSpace()) {
+	if (around && kind) {
+		if (till < text.size() && text.at(till).isSpace()) {
 			while (till < text.size() && text.at(till).isSpace()) {
 				++till;
 			}
@@ -236,31 +239,59 @@ private:
 	auto escaped = false;
 	for (auto i = from; i < till; ++i) {
 		const auto ch = text.at(i);
-		if (quote && escaped) {
+		if (escaped) {
 			escaped = false;
 			continue;
-		} else if (quote && ch == QChar('\\')) {
+		} else if (ch == QChar('\\')) {
 			escaped = true;
 			continue;
 		}
 		if (ch == close && !stack.empty()) {
 			const auto start = stack.back();
 			stack.pop_back();
-			if ((start <= position && position <= i)
-				|| (quote && start > position)) {
+			if ((start <= position && position <= i) || start > position) {
 				pairs.emplace_back(start, i);
 			}
 		} else if (ch == open) {
 			stack.push_back(i);
 		}
 	}
-	if (pairs.empty() || (!quote && count > int(pairs.size()))) {
+	if (pairs.empty()) {
 		return std::nullopt;
 	}
-	const auto [start, end] = pairs[quote ? 0 : count - 1];
-	return TextSelection(
-		uint16(start + (around ? 0 : 1)),
-		uint16(end + (around ? 1 : 0)));
+	auto enclosing = std::vector<std::pair<int, int>>();
+	for (const auto pair : pairs) {
+		if (pair.first <= position) {
+			enclosing.push_back(pair);
+		}
+	}
+	auto selected = pairs.front();
+	if (!enclosing.empty()) {
+		if (!quote && count > int(enclosing.size())) {
+			return std::nullopt;
+		}
+		selected = enclosing[quote ? 0 : count - 1];
+	} else if (!quote) {
+		if (open != QChar('(') || count != 1) {
+			return std::nullopt;
+		}
+		selected = *std::min_element(pairs.begin(), pairs.end());
+	}
+	const auto includeDelimiters = around || (quote && count > 1);
+	auto first = selected.first + (includeDelimiters ? 0 : 1);
+	auto last = selected.second + (includeDelimiters ? 1 : 0);
+	if (quote && around) {
+		if (position >= first && last < till && text.at(last).isSpace()) {
+			while (last < till && text.at(last).isSpace()) {
+				++last;
+			}
+		} else {
+			while (first > from && text.at(first - 1).isSpace()) {
+				--first;
+			}
+		}
+	}
+	return TextSelection(uint16(first), uint16(last));
 }
 
 [[nodiscard]] TextSelection SentenceObject(
@@ -337,7 +368,7 @@ private:
 				&& ch != QChar('_') && ch != QChar(':')) {
 				break;
 			}
-			name += ch;
+			name += ch.toLower();
 			++i;
 		}
 		auto quote = QChar();

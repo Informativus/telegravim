@@ -4906,6 +4906,7 @@ bool ListWidget::vimKeymapHandleTextSelectionKey(
 			const auto command = _keyboardTextSelection.handleCommandKey(
 				view, cursor, selectionActive ? &_selectedTextSelection : nullptr, e);
 			if (command) {
+				_vimKeymapTextPendingStart = false;
 				if (command->selection) {
 					setTextSelection(view, *command->selection, true);
 				} else if (command->cursor) {
