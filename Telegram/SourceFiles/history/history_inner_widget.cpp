@@ -5172,6 +5172,7 @@ bool HistoryInner::vimKeymapBeginHints(Core::VimKeymap::Action action) {
 	case Core::VimKeymap::Action::SelectMessageText:
 		vimKeymapBuildMessageHints(VimKeymapHintMode::SelectMessageText);
 		break;
+	case Core::VimKeymap::Action::SelectMessageRange:
 	case Core::VimKeymap::Action::SelectMessages:
 		if (hasSelectRestriction()) {
 			return false;
