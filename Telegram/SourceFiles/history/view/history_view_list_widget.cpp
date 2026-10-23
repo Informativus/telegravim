@@ -2153,6 +2153,7 @@ void ListWidget::clearSelected() {
 }
 
 void ListWidget::clearTextSelection() {
+	_keyboardTextSelection.resetCommand();
 	_vimKeymapTextPendingStart = false;
 	_vimKeymapTextVisualMode = false;
 	_vimKeymapTextCursorRect = std::nullopt;
@@ -4776,6 +4777,7 @@ bool ListWidget::vimKeymapReactToItem(not_null<HistoryItem*> item) {
 }
 
 void ListWidget::vimKeymapClearTextCursor() {
+	_keyboardTextSelection.resetCommand();
 	_vimKeymapTextPendingStart = false;
 	_vimKeymapTextVisualMode = false;
 	if (!_vimKeymapTextCursorItem) {
@@ -4892,6 +4894,48 @@ bool ListWidget::vimKeymapHandleTextSelectionKey(
 		return false;
 	}
 	const auto textModeActive = cursorActive || _vimKeymapTextVisualMode;
+	if (textModeActive && Core::VimKeymap::NormalMode()
+		&& (!selectionActive || _selectedTextSelection.isFlat())) {
+		const auto view = viewForItem(selectionActive
+			? _selectedTextItem : _vimKeymapTextCursorItem);
+		const auto cursor = selectionActive
+			? HistoryView::MessageSelectionFlatEndpoint{
+				_selectedTextSelection.focus.flat.symbol, false }
+			: _vimKeymapTextCursor;
+		if (view) {
+			const auto command = _keyboardTextSelection.handleCommandKey(
+				view, cursor, selectionActive ? &_selectedTextSelection : nullptr, e);
+			if (command) {
+				if (command->selection) {
+					setTextSelection(view, *command->selection, true);
+				} else if (command->cursor) {
+					vimKeymapSetTextCursor(view, *command->cursor);
+				}
+				if (command->copy && command->selection) {
+					const auto copied = !showCopyRestrictionForSelected();
+					if (copied) {
+						copySelectedText();
+					}
+					if (copied) {
+						vimKeymapSetTextCursor(view, {
+							command->selection->flat.from, false });
+						controller()->showToast(tr::lng_text_copied(tr::now));
+					}
+					Core::VimKeymap::TraceKey(e, copied
+						? u"message text command copied"_q
+						: u"message text copy restricted"_q);
+				}
+				if (_vimKeymapTextCursorRect) {
+					const auto rect = _vimKeymapTextCursorRect->translated(0, itemTop(view));
+					const auto minimum = std::min(rect.top(),
+						rect.bottom() + 1 - (_visibleBottom - _visibleTop));
+					_delegate->listScrollTo(
+						std::clamp(_visibleTop, minimum, rect.top()), false);
+				}
+				return true;
+			}
+		}
+	}
 	const auto followLink = textModeActive
 		&& Core::VimKeymap::NormalMode()
 		&& Core::VimKeymap::Bindings::IsTextFollowLink(
