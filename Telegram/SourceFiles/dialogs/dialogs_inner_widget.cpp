@@ -589,6 +589,11 @@ InnerWidget::InnerWidget(
 		};
 		update(previous);
 		update(next);
+		if (next.key.thread() && previous.key != next.key) {
+			_vimKeymapChatNavigationRow = next;
+			_vimKeymapChatNavigationNeedsFirst = false;
+			vimKeymapClearPendingChatNavigation();
+		}
 	}, lifetime());
 
 	_controller->activeChatsFilter(
@@ -2143,10 +2148,12 @@ bool InnerWidget::vimKeymapOpenChatPreview() {
 		return false;
 	}
 	const auto row = base::take(_chatPreviewRow);
+	vimKeymapClearPendingChatNavigation();
 	_controller->cancelScheduledPreview();
 	updateDialogRow(row);
 	if (jumpToDialogRow(row)) {
 		setFocus(Qt::ShortcutFocusReason);
+		vimKeymapSelectChat(row);
 		_vimKeymapChatNavigationRow = row;
 		_vimKeymapChatNavigationNeedsFirst = false;
 		return true;
