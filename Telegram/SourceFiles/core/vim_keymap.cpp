@@ -2008,6 +2008,28 @@ bool IsJumpToBottomKey(not_null<QKeyEvent*> e) {
 		&& MatchesBindings(VimKeymapKeyJumpBottomOption, e);
 }
 
+QString MessageHintLabel(int index, int photoIndex) {
+	if (index < 0) {
+		return {};
+	}
+	auto alphabet = CurrentHintAlphabet();
+	for (const auto ch : u"jkол"_q) {
+		alphabet.remove(ch);
+	}
+	constexpr auto kQuickCount = 10;
+	const auto prefixCount = int(alphabet.size()) - kQuickCount - 1;
+	auto result = alphabet.mid(index % kQuickCount, 1);
+	for (auto prefix = index / kQuickCount; prefix > 0; prefix /= prefixCount) {
+		--prefix;
+		result.prepend(alphabet[kQuickCount + prefix % prefixCount]);
+	}
+	if (photoIndex >= 0 && photoIndex < kQuickCount) {
+		result.prepend(alphabet.back());
+		result.append(alphabet[photoIndex]);
+	}
+	return result;
+}
+
 QString HintLabel(int index, int total) {
 	return Bindings::ShortestHintLabel(index, total, CurrentHintAlphabet());
 }
