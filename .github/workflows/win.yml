@@ -129,6 +129,10 @@ jobs:
           New-Item -ItemType Directory -Path artifact/Telegravim | Out-Null
           Copy-Item out/Release/Telegram.exe artifact/Telegravim/
           Copy-Item LICENSE,Telegram/Resources/dictionaries/LICENSE_*.txt artifact/Telegravim/
+          if (Test-Path Telegram/Resources/licenses/whisper-model.txt) {
+            Copy-Item Telegram/ThirdParty/whisper.cpp/LICENSE artifact/Telegravim/LICENSE_whisper.txt
+            Copy-Item Telegram/Resources/licenses/whisper-model.txt artifact/Telegravim/LICENSE_whisper-model.txt
+          }
           python Telegram/build/package_info.py artifact/Telegravim windows-x64
           if ($LASTEXITCODE -ne 0) { throw 'Package metadata failed' }
           dumpbin /headers artifact/Telegravim/Telegram.exe | Select-String 'machine \(x64\)'

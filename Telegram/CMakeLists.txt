@@ -26,6 +26,7 @@ get_filename_component(res_loc Resources REALPATH)
 
 include(cmake/telegram_options.cmake)
 include(cmake/lib_ffmpeg.cmake)
+include(cmake/lib_transcription.cmake)
 include(cmake/lib_stripe.cmake)
 include(cmake/lib_tgcalls.cmake)
 include(cmake/lib_prisma.cmake)
@@ -87,6 +88,7 @@ PRIVATE
     desktop-app::lib_translate
     desktop-app::lib_webview
     desktop-app::lib_ffmpeg
+    tdesktop::lib_transcription
     desktop-app::lib_stripe
     desktop-app::external_zlib
     desktop-app::external_minizip
@@ -209,6 +211,8 @@ PRIVATE
     api/api_todo_lists.h
     api/api_toggling_media.cpp
     api/api_toggling_media.h
+    api/api_local_transcription.cpp
+    api/api_local_transcription.h
     api/api_transcribes.cpp
     api/api_transcribes.h
     api/api_unread_things.cpp
@@ -1880,6 +1884,8 @@ PRIVATE
     settings/settings_credits_graphics.h
     settings/settings_experimental.cpp
     settings/settings_experimental.h
+    settings/settings_local_transcription.cpp
+    settings/settings_local_transcription.h
     settings/settings_vim_editor.cpp
     settings/settings_vim_editor.h
     settings/sections/settings_folders.cpp

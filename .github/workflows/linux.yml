@@ -83,6 +83,10 @@ jobs:
           mkdir -p artifact/Telegravim
           cp out/Release/Telegram artifact/Telegravim/
           cp LICENSE Telegram/Resources/dictionaries/LICENSE_*.txt artifact/Telegravim/
+          if [ -f Telegram/Resources/licenses/whisper-model.txt ]; then
+            cp Telegram/ThirdParty/whisper.cpp/LICENSE artifact/Telegravim/LICENSE_whisper.txt
+            cp Telegram/Resources/licenses/whisper-model.txt artifact/Telegravim/LICENSE_whisper-model.txt
+          fi
           python3 Telegram/build/package_info.py artifact/Telegravim linux-x86_64
           file artifact/Telegravim/Telegram
           ldd artifact/Telegravim/Telegram
