@@ -1255,5 +1255,49 @@
         "reason": "The comment-percentage metric reports no execution or security defect. The reviewed function expresses its operation in named code and assertions; adding filler comments would conflict with repository style. This exception applies only to this exact diagnostic and source digest."
       }
     ]
+  },
+  {
+    "path": "Telegram/SourceFiles/media/transcription/transcription_engine.cpp",
+    "source_sha256": [
+      "b760e25d17fec5f6ae164f9075a2cc7da7d6f6dd0cbdf3e65508b015ed46900c"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "43b503cc205e14f8:1",
+        "message_sha256": "f7a898193c8fae32b151a149c7281671e16a7e9050c1138aed0d03f88e05343f",
+        "reason": "The FFmpeg decoder explicitly handles bounded in-memory input, audio stream selection, cancellation, resampling to mono float PCM, packet/frame draining and a maximum sample count. The existing native recognition checks pass with Russian OGG/Opus audio. This diagnostic measures comment percentage and reports no execution or security defect; adding filler comments conflicts with repository style. This record applies only to this exact diagnostic and source digest."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/settings/sections/settings_advanced.cpp",
+    "source_sha256": [
+      "e2f4bc0b1822ebc4df0158d9fbe6d86f7234476b248e8fce3a00a4e17d0df11e"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "162cd0fc1d330204:1",
+        "message_sha256": "4589fddab8e8f03942cb7ab968afc51a00cae9908e448648d8ce0ed9e518da6c",
+        "reason": "This settings builder function is unchanged by the transcription PR; that PR only adds a header and a separate navigation button elsewhere in the file. The diagnostic measures comment percentage in existing upstream-derived UI code and reports no execution or security defect. Adding filler comments conflicts with repository style. This record applies only to this exact diagnostic and source digest."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "37c027c464ec4fd5:1",
+        "message_sha256": "755e04c696d8069be49e54fe6c15c4d533f1166d77cfba764b02f79e82e8ae5b",
+        "reason": "This settings builder function is unchanged by the transcription PR; that PR only adds a header and a separate navigation button elsewhere in the file. The diagnostic measures comment percentage in existing upstream-derived UI code and reports no execution or security defect. Adding filler comments conflicts with repository style. This record applies only to this exact diagnostic and source digest."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "262e7ae1ee542000:1",
+        "message_sha256": "690390a7a169988778235691cdab695973fefe18ce91f03518f26f0aa7ed7802",
+        "reason": "This settings builder function is unchanged by the transcription PR; that PR only adds a header and a separate navigation button elsewhere in the file. The diagnostic measures comment percentage in existing upstream-derived UI code and reports no execution or security defect. Adding filler comments conflicts with repository style. This record applies only to this exact diagnostic and source digest."
+      }
+    ]
   }
 ]
