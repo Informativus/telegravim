@@ -126,8 +126,16 @@ void KeyEventLog::record(not_null<QKeyEvent*> event, const QString &status) {
 	if (_suppressed || KeyboardInputActive(nullptr)) {
 		return;
 	}
+	append(KeyEventForLog(event) + u" -> "_q + status);
+}
+
+void KeyEventLog::recordCommand(const QString &command, const QString &status) {
+	append(command + u" -> "_q + status);
+}
+
+void KeyEventLog::append(const QString &entry) {
 	_entries.push_back(QString::number(++_sequence).rightJustified(2, '0')
-		+ u". "_q + KeyEventForLog(event) + u" -> "_q + status);
+		+ u". "_q + entry);
 	if (_entries.size() > kLimit) {
 		_entries.removeFirst();
 	}

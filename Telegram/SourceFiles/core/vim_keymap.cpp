@@ -1277,6 +1277,13 @@ void TraceKey(not_null<QKeyEvent*> e, const QString &status) {
 	RecordKeyEvent(e, status, true);
 }
 
+void TraceCommand(const QString &command, const QString &status) {
+	const auto active = App().activeWindow();
+	if (Enabled() && !App().passcodeLocked() && (!active || !active->locked())) {
+		KeyLog.recordCommand(command, status);
+	}
+}
+
 QString RecentKeyLogText() {
 	return App().passcodeLocked() ? QString() : KeyLog.text();
 }
@@ -1984,6 +1991,8 @@ std::optional<Action> ActionKey(not_null<QKeyEvent*> e) {
 		return Action::LinkHints;
 	} else if (Bindings::IsMessageSelection(e)) {
 		return Action::SelectMessages;
+	} else if (Bindings::IsMessageSelection(e, true)) {
+		return Action::SelectMessageRange;
 	}
 	return std::nullopt;
 }
@@ -2010,6 +2019,14 @@ bool IsJumpToBottomKey(not_null<QKeyEvent*> e) {
 
 QString HintLabel(int index, int total) {
 	return Bindings::ShortestHintLabel(index, total, CurrentHintAlphabet());
+}
+
+QString SelectionHintLabel(int index, int total) {
+	auto alphabet = CurrentHintAlphabet();
+	for (const auto ch : u"jkол"_q) {
+		alphabet.remove(ch);
+	}
+	return Bindings::ShortestHintLabel(index, total, alphabet);
 }
 
 QString HintInput(not_null<QKeyEvent*> e) {

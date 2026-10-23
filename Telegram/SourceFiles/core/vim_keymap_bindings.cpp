@@ -18,6 +18,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace Core::VimKeymap::Bindings {
 
+int PageNavigationDelta(not_null<QKeyEvent*> e) {
+	if (CleanModifiers(e) != Qt::ShiftModifier) {
+		return 0;
+	} else if (KeyIs(e, Qt::Key_U, u"u"_q, u"г"_q)) {
+		return -1;
+	} else if (KeyIs(e, Qt::Key_D, u"d"_q, u"в"_q)) {
+		return 1;
+	}
+	return 0;
+}
+
 bool IsCloseHints(not_null<QKeyEvent*> e) {
 	return CleanModifiers(e) == Qt::NoModifier
 		&& KeyIs(e, Qt::Key_C, u"c"_q, u"\u0441"_q);
@@ -114,8 +125,8 @@ std::optional<TextMotion> TextMotionKey(
 	return std::nullopt;
 }
 
-bool IsMessageSelection(not_null<QKeyEvent*> e) {
-	return CleanModifiers(e) == Qt::NoModifier
+bool IsMessageSelection(not_null<QKeyEvent*> e, bool range) {
+	return CleanModifiers(e) == (range ? Qt::ShiftModifier : Qt::NoModifier)
 		&& !e->isAutoRepeat()
 		&& KeyIs(e, Qt::Key_S, u"s"_q, u"\u044B"_q);
 }
