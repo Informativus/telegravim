@@ -30,6 +30,8 @@ extern "C" {
 namespace Media::Transcription {
 namespace {
 
+constexpr auto kModelLanguageCount = 99;
+
 struct Input {
 	const QByteArray &bytes;
 	qint64 position = 0;
@@ -100,7 +102,8 @@ QByteArray ModelDigest() {
 
 std::vector<QString> Languages() {
 	auto result = std::vector<QString>();
-	for (auto id = 0; id <= whisper_lang_max_id(); ++id) {
+	const auto count = std::min(kModelLanguageCount, whisper_lang_max_id() + 1);
+	for (auto id = 0; id < count; ++id) {
 		result.push_back(QString::fromLatin1(whisper_lang_str(id)));
 	}
 	return result;
