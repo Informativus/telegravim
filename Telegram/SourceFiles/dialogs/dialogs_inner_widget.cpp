@@ -5958,6 +5958,13 @@ bool InnerWidget::chooseRow(
 				}
 			}
 		}
+		if (chosen.key.thread() && !chosen.newWindow && !chosen.userpicClick) {
+			_vimKeymapChatNavigationRow = RowDescriptor(
+				chosen.key,
+				chosen.message.fullId);
+			_vimKeymapChatNavigationNeedsFirst = false;
+			vimKeymapClearPendingChatNavigation();
+		}
 		_chosenRow.fire_copy(chosen);
 		return true;
 	}
@@ -6465,8 +6472,9 @@ bool InnerWidget::vimKeymapJumpToChat(bool next, int steps) {
 	const auto selectedInList = listHasFocus && currentListContains(selected);
 	const auto activeInList = currentListContains(active);
 	const auto navigationInList = currentListContains(_vimKeymapChatNavigationRow);
-	const auto hasAnchor = selectedInList || navigationInList || activeInList;
-	const auto forceFirst = _vimKeymapChatNavigationNeedsFirst && !hasAnchor;
+	const auto forceFirst = _vimKeymapChatNavigationNeedsFirst;
+	const auto hasAnchor = !forceFirst
+		&& (selectedInList || navigationInList || activeInList);
 	auto target = forceFirst
 		? vimKeymapEdgeChat(true)
 		: navigationInList
