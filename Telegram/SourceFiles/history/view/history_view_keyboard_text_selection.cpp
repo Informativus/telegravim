@@ -380,7 +380,7 @@ std::optional<MessageSelectionFlatEndpoint> KeyboardTextSelection::moveCursor(
 		}
 		wanted = (symbol < *maxOffset && !separator(symbol))
 			? symbol
-			: position;
+			: forward ? (*maxOffset - 1) : position;
 	} else {
 		wanted = position + (forward ? 1 : -1);
 	}
