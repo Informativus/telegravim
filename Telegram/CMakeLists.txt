@@ -610,6 +610,8 @@ PRIVATE
     core/update_verify.cpp
     core/update_verify.h
     core/vim_keymap.cpp
+    core/vim_keymap_compose.cpp
+    core/vim_keymap_compose.h
     core/vim_keymap_options.cpp
     core/vim_keymap_options.h
     core/vim_keymap_config.cpp

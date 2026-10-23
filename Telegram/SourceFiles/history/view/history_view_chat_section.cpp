@@ -7,6 +7,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/history_view_chat_section.h"
 
+#include "base/event_filter.h"
+#include "core/vim_keymap.h"
+#include "core/vim_keymap_bindings.h"
+#include "core/vim_keymap_compose.h"
+#include <QtWidgets/QApplication>
+#include <QtWidgets/QTextEdit>
+
 #include "history/admin_log/history_admin_log_section.h"
 #include "history/view/controls/history_view_top_controls.h"
 #include "history/view/controls/history_view_bottom_controls.h"
@@ -69,6 +76,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings/business/settings_quick_replies.h"
 #include "ui/boxes/confirm_box.h"
 #include "chat_helpers/bot_keyboard.h"
+#include "calls/calls_instance.h"
 #include "chat_helpers/message_field.h"
 #include "chat_helpers/tabbed_selector.h"
 #include "boxes/delete_messages_box.h"
@@ -124,6 +132,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_instance.h"
 #include "lang/lang_keys.h"
 #include "styles/style_chat.h"
+#include "styles/style_vim_keymap.h"
 #include "styles/style_chat_helpers.h"
 #include "styles/style_info.h"
 #include "styles/style_window.h"
@@ -660,6 +669,15 @@ ChatWidget::ChatWidget(
 				_composeControls->editMessage(
 					fullId,
 					_inner->getSelectedTextRange(item));
+				if (Core::VimKeymap::Enabled()
+					&& _composeControls->isEditingMessage()) {
+					_vimComposeDeleteTimer.cancel();
+					_vimComposeOperator = _vimComposeVisualMode = _vimComposePending = 0;
+					_vimComposeVisualAnchor = -1;
+					Core::VimKeymap::SetNormalMode(true);
+					_composeControls->focus();
+					vimKeymapRefreshComposeCursor();
+				}
 			} else if (media->todolist()) {
 				Window::PeerMenuEditTodoList(controller, item);
 			}
@@ -851,6 +869,7 @@ ChatWidget::ChatWidget(
 
 	setupTopicViewer();
 	setupComposeControls();
+	setupVimKeymap();
 	setupSwipeReplyAndBack();
 
 	if (mode() != Mode::Sublist) {
@@ -1463,6 +1482,208 @@ void ChatWidget::setKeyboardReplyTo(HistoryItem *item) {
 
 bool ChatWidget::computeAreComments() const {
 	return _repliesRoot && _repliesRoot->isDiscussionPost();
+}
+
+void ChatWidget::vimKeymapRefreshComposeCursor() {
+	if (const auto field = _composeControls->fieldForMention()) {
+		Core::VimKeymap::RefreshComposeCursor(field, _vimComposeVisualMode != 0);
+	}
+}
+
+void ChatWidget::setupVimKeymap() {
+	Core::VimKeymap::RegisterModeIndicatorWidget(this);
+	Core::VimKeymap::RegisterKeyHandler(this, [=](not_null<QKeyEvent*> e) {
+		return vimKeymapHandleKey(e);
+	});
+	Core::VimKeymap::RegisterForcedNormalModeHandler(this, [=] {
+		return isVisible() && window()->isActiveWindow()
+			&& !_canSendMessages && !_composeSearch
+			&& !controller()->isLayerShown();
+	});
+	Core::VimKeymap::RegisterTextInputPassthroughHandler(this, [=](
+			not_null<QKeyEvent*> e) {
+		const auto selector = controller()->tabbedSelector();
+		return isVisible() && window()->isActiveWindow()
+			&& (_composeSearch || (selector->isVisible()
+				&& selector->vimKeymapSearchHasFocus()))
+			&& !Core::VimKeymap::Bindings::IsPlainEscape(e)
+			&& !Core::VimKeymap::SelectMessageTextKey(e);
+	});
+	Core::VimKeymap::RegisterPreLayerKeyHandler(this, [=](
+			not_null<QKeyEvent*> e) {
+		if (!isVisible() || !window()->isActiveWindow()
+			|| !_composeSearch
+			|| !Core::VimKeymap::SelectMessageTextKey(e)) {
+			return false;
+		}
+		if (e->type() == QEvent::KeyPress && !e->isAutoRepeat()) {
+			_composeSearch->hideAnimated();
+			crl::on_main(this, [=] {
+				if (isVisible() && window()->isActiveWindow()) {
+					Core::VimKeymap::SetNormalMode(true);
+					const auto handled = _inner->vimKeymapBeginHints(
+						Core::VimKeymap::Action::SelectMessageText);
+					Core::VimKeymap::TraceCommand(u"select text"_q,
+						handled ? u"message text hints"_q : u"no message text"_q);
+				}
+			});
+		}
+		return true;
+	}, true);
+	paintRequest() | rpl::on_next([=] {
+		vimKeymapRefreshComposeCursor();
+	}, lifetime());
+	const auto field = _composeControls->fieldForMention();
+	if (field) {
+		QObject::connect(field->rawTextEdit(), &QTextEdit::cursorPositionChanged,
+			this, [=] { vimKeymapRefreshComposeCursor(); });
+	}
+	base::install_event_filter(this, qApp, [=](not_null<QEvent*> event) {
+		if (event->type() == QEvent::Hide && !isVisible()) {
+			_vimComposeDeleteTimer.cancel();
+			_vimComposeOperator = _vimComposeVisualMode = _vimComposePending = 0;
+			_vimComposeVisualAnchor = -1;
+		}
+		if (!_vimComposeDeleteTimer.isActive()) {
+			return base::EventFilterResult::Continue;
+		}
+		if (event->type() == QEvent::KeyPress) {
+			const auto key = static_cast<QKeyEvent*>(event.get());
+			if (!key->isAutoRepeat()
+				&& key->key() != Qt::Key_Shift
+				&& key->key() != Qt::Key_Control
+				&& key->key() != Qt::Key_Meta
+				&& key->key() != Qt::Key_Alt) {
+				_vimComposeDeleteTimer.cancel();
+			}
+		} else if (event->type() == QEvent::FocusOut
+			|| event->type() == QEvent::WindowDeactivate
+			|| event->type() == QEvent::ApplicationDeactivate
+			|| event->type() == QEvent::MouseButtonPress
+			|| event->type() == QEvent::Wheel) {
+			_vimComposeDeleteTimer.cancel();
+			_vimComposeOperator = 0;
+		}
+		return base::EventFilterResult::Continue;
+	});
+}
+
+bool ChatWidget::vimKeymapHandleKey(not_null<QKeyEvent*> e) {
+	using namespace Core::VimKeymap;
+	if (!isVisible() || !window()->isActiveWindow()
+		|| controller()->isLayerShown() || controller()->window().locked()
+		|| QApplication::activeModalWidget()
+		|| QApplication::activePopupWidget()) {
+		return false;
+	}
+	if (_composeSearch) {
+		if (Bindings::IsPlainEscape(e)) {
+			_composeSearch->hideAnimated();
+			SetNormalMode(true);
+			return true;
+		}
+		return false;
+	}
+	if (HandleSearch(e)) {
+		return true;
+	}
+	const auto field = _composeControls->fieldForMention();
+	const auto stateActive = _vimComposeOperator
+		|| _vimComposeVisualMode || _vimComposePending;
+	if (Bindings::IsPlainEscape(e) && NormalMode() && !stateActive
+		&& _composeControls->handleCancelRequest()) {
+		SetNormalMode(true);
+		setInnerFocus();
+		return true;
+	}
+	const auto selector = controller()->tabbedSelector();
+	const auto selectorOpen = !selector->isHidden() && selector->isVisible();
+	if (selectorOpen && (FocusChatKey(e)
+		|| (Bindings::IsPlainEscape(e) && !selector->vimKeymapSearchHasFocus()))) {
+		SetNormalMode(true);
+		_inner->setFocus(Qt::ShortcutFocusReason);
+		return true;
+	} else if (selectorOpen && CancelEditKey(e)) {
+		_composeControls->hidePanelsAnimated();
+		SetNormalMode(true);
+		_inner->setFocus(Qt::ShortcutFocusReason);
+		return true;
+	} else if (selectorOpen && selector->vimKeymapHandleKey(e)) {
+		return true;
+	}
+	if (_keyboard && _keyboard->vimKeymapHandleHintKey(e)) {
+		return true;
+	} else if (_keyboard && _kbShown && !_kbScroll->isHidden()
+		&& ActionKey(e) == Action::LinkHints && _keyboard->vimKeymapBeginHints()) {
+		return true;
+	}
+	if (EmojiPanelKey(e) || FocusEmojiKey(e)) {
+		return _composeControls->vimKeymapFocusEmojiPanel();
+	} else if (FocusChatKey(e)) {
+		SetNormalMode(true);
+		_inner->setFocus(Qt::ShortcutFocusReason);
+		return true;
+	} else if (CallKey(e)) {
+		if (_peer->groupCall()) {
+			controller()->startOrJoinGroupCall(_peer, {});
+			return true;
+		}
+		const auto user = _peer->asUser();
+		if (user && user != session().user()
+			&& user->callsStatus() != UserData::CallsStatus::Disabled) {
+			Core::App().calls().startOutgoingCall(user, {});
+			return true;
+		}
+	}
+	if (!selectorOpen && NormalMode() && field && field->isVisible()
+		&& Bindings::IsSystemPaste(e)) {
+		_vimComposeOperator = _vimComposeVisualMode = _vimComposePending = 0;
+		_vimComposeVisualAnchor = -1;
+		SetNormalMode(false);
+		field->setFocusFast();
+		field->rawTextEdit()->paste();
+		field->ensureCursorVisible();
+		_composeControls->saveFieldToHistoryLocalDraft();
+		return true;
+	}
+	if (!selectorOpen && !stateActive && _inner->vimKeymapHandleKey(e)) {
+		_inner->setFocus(Qt::ShortcutFocusReason);
+		return true;
+	}
+	if (HandleComposeTextKey({
+		.field = field,
+		.operation = _vimComposeOperator,
+		.visualMode = _vimComposeVisualMode,
+		.visualAnchor = _vimComposeVisualAnchor,
+		.pending = _vimComposePending,
+		.deleteTimer = _vimComposeDeleteTimer,
+		.panelOpen = selectorOpen,
+		.refreshCursor = [=] { vimKeymapRefreshComposeCursor(); },
+		.saveDraft = [=] { _composeControls->saveFieldToHistoryLocalDraft(); },
+		.canShowDeleteHints = [=] {
+			return isVisible() && window()->isActiveWindow() && !_composeSearch
+				&& !controller()->isLayerShown() && !controller()->window().locked()
+				&& !QApplication::activeModalWidget()
+				&& !QApplication::activePopupWidget();
+		},
+		.showDeleteHints = [=] {
+			return _inner->vimKeymapBeginHints(Action::DeleteMessage);
+		},
+	}, e)) {
+		return true;
+	}
+	if (CancelEditKey(e) && _composeControls->isEditingMessage()) {
+		_composeControls->cancelEditMessage();
+		SetNormalMode(true);
+		setInnerFocus();
+		return true;
+	} else if (CancelReplyKey(e) && _composeControls->replyingToMessage().replying()) {
+		_composeControls->cancelReplyMessage();
+		SetNormalMode(true);
+		setInnerFocus();
+		return true;
+	}
+	return false;
 }
 
 void ChatWidget::setupComposeControls() {
@@ -3869,7 +4090,8 @@ void ChatWidget::doSetInnerFocus() {
 		_composeSearch->setInnerFocus();
 	} else if (isChoosingTheme()) {
 		_chooseTheme->setFocus();
-	} else if (!_inner->getSelectedText().rich.text.isEmpty()
+	} else if (Core::VimKeymap::NormalMode()
+		|| !_inner->getSelectedText().rich.text.isEmpty()
 		|| !_inner->getSelectedItems().empty()
 		|| !_composeControls->focus()) {
 		_inner->setFocus();
@@ -4500,6 +4722,25 @@ void ChatWidget::paintEvent(QPaintEvent *e) {
 			backy,
 			width());
 		_suggestOptions->paintBar(p, 0, backy, width());
+	}
+	if (Core::VimKeymap::Enabled()) {
+		auto p = Painter(this);
+		const auto area = _scroll->geometry();
+		const auto diameter = st::vimModeIndicatorSize;
+		const auto margin = st::vimModeIndicatorMargin;
+		const auto rect = QRect(
+			std::max(area.left(), area.right() - margin - diameter + 1),
+			std::max(area.top(), area.bottom() - margin - diameter + 1),
+			diameter,
+			diameter);
+		const auto visual = _vimComposeVisualMode
+			|| !_inner->getSelectedText().rich.text.isEmpty();
+		p.setRenderHint(QPainter::Antialiasing, true);
+		p.setPen(QPen(QColor(0, 0, 0, 72), st::lineWidth));
+		p.setBrush(visual ? QColor(218, 91, 166)
+			: Core::VimKeymap::NormalMode() ? QColor(246, 205, 70)
+			: QColor(42, 194, 103));
+		p.drawEllipse(rect);
 	}
 }
 
