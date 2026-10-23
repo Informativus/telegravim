@@ -1360,6 +1360,7 @@ bool HistoryInner::vimKeymapTextSelectionActive() const {
 }
 
 void HistoryInner::vimKeymapClearTextCursor() {
+	_keyboardTextSelection.resetCommand();
 	_vimKeymapTextPendingStart = false;
 	if (!_vimKeymapTextCursorItem) {
 		return;
@@ -1376,6 +1377,7 @@ void HistoryInner::vimKeymapClearTextCursor() {
 }
 
 void HistoryInner::clearTextSelection() {
+	_keyboardTextSelection.resetCommand();
 	_vimKeymapTextPendingStart = false;
 	if (_selectedTextItem) {
 		if (const auto view = viewByItem(_selectedTextItem)) {
@@ -4334,6 +4336,43 @@ bool HistoryInner::vimKeymapHandleTextSelectionKey(
 		return false;
 	}
 	const auto textModeActive = cursorActive || _vimKeymapTextVisualMode;
+	if (textModeActive && Core::VimKeymap::NormalMode()
+		&& (!selectionActive || _selectedTextSelection.isFlat())) {
+		const auto view = viewByItem(selectionActive
+			? _selectedTextItem : _vimKeymapTextCursorItem);
+		const auto cursor = selectionActive
+			? HistoryView::MessageSelectionFlatEndpoint{
+				_selectedTextSelection.focus.flat.symbol, false }
+			: _vimKeymapTextCursor;
+		if (view) {
+			const auto command = _keyboardTextSelection.handleCommandKey(
+				view, cursor, selectionActive ? &_selectedTextSelection : nullptr, e);
+			if (command) {
+				_vimKeymapTextPendingStart = false;
+				if (command->selection) {
+					setTextSelection(view, *command->selection, true);
+				} else if (command->cursor) {
+					vimKeymapSetTextCursor(view, *command->cursor);
+				}
+				if (command->copy && command->selection) {
+					const auto copied = copySelectedText();
+					if (copied) {
+						vimKeymapSetTextCursor(view, {
+							command->selection->flat.from, false });
+						_controller->showToast(tr::lng_text_copied(tr::now));
+					}
+					Core::VimKeymap::TraceKey(e, copied
+						? u"message text command copied"_q
+						: u"message text copy restricted"_q);
+				}
+				if (_vimKeymapTextCursorRect) {
+					const auto rect = _vimKeymapTextCursorRect->translated(0, itemTop(view));
+					_scroll->scrollToY(rect.top(), rect.bottom() + 1);
+				}
+				return true;
+			}
+		}
+	}
 	const auto followLink = textModeActive
 		&& Core::VimKeymap::NormalMode()
 		&& Core::VimKeymap::Bindings::IsTextFollowLink(
@@ -5172,6 +5211,7 @@ bool HistoryInner::vimKeymapBeginHints(Core::VimKeymap::Action action) {
 	case Core::VimKeymap::Action::SelectMessageText:
 		vimKeymapBuildMessageHints(VimKeymapHintMode::SelectMessageText);
 		break;
+	case Core::VimKeymap::Action::SelectMessageRange:
 	case Core::VimKeymap::Action::SelectMessages:
 		if (hasSelectRestriction()) {
 			return false;

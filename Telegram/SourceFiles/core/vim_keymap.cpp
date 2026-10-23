@@ -1097,6 +1097,10 @@ void ShowHelpBox() {
 				+ u" - подсказки для visual-выделения текста сообщения\n"_q;
 			result += u"В поиске эта команда закрывает поиск, сохраняя место в чате\n"_q;
 			result += u"В тексте сообщения: gg/G - начало/конец, {/} - абзацы\n"_q;
+			result += u"yiw/yaw, yi'/ya', yi\"/ya\", yi(/ya(, yi[/ya[, yi{/ya{ - текстовые объекты\n"_q;
+			result += u"yis/yas - предложение, yip/yap - абзац, yit/yat - тег; v вместо y выделяет\n"_q;
+			result += u"yw/ye/y$/yy - копировать диапазон/строку; счётчики: 2yiw, y2i(\n"_q;
+			result += u"f/t + символ - найти в строке; F/T - назад. y копирует, сохраняя курсор\n"_q;
 			result += u"Лишние клавиши сохраняют курсор и выделение; Esc - выход\n"_q;
 			result += reply + u" - подсказки для ответа на сообщение\n"_q;
 			result += u"Shift+R / Shift+К - реакции: нажмите букву сообщения, чтобы открыть панель\n"_q;
@@ -1174,6 +1178,10 @@ void ShowHelpBox() {
 				+ u" - show message text visual selection hints\n"_q;
 			result += u"In search, this closes search and keeps the current chat position\n"_q;
 			result += u"Message text: gg/G - start/end, {/} - paragraphs\n"_q;
+			result += u"yiw/yaw, yi'/ya', yi\"/ya\", yi(/ya(, yi[/ya[, yi{/ya{ - text objects\n"_q;
+			result += u"yis/yas - sentence, yip/yap - paragraph, yit/yat - tag; use v to select\n"_q;
+			result += u"yw/ye/y$/yy - yank range/line; counts: 2yiw, y2i(\n"_q;
+			result += u"f/t + character - find on line; F/T - backward. Yank keeps the cursor\n"_q;
 			result += u"Other keys keep the cursor and selection; Esc exits\n"_q;
 			result += reply + u" - show reply message hints\n"_q;
 			result += u"Shift+R / Shift+К - reactions: press a message letter to open its picker\n"_q;
@@ -1275,6 +1283,13 @@ void ShowHelpBox() {
 
 void TraceKey(not_null<QKeyEvent*> e, const QString &status) {
 	RecordKeyEvent(e, status, true);
+}
+
+void TraceCommand(const QString &command, const QString &status) {
+	const auto active = App().activeWindow();
+	if (Enabled() && !App().passcodeLocked() && (!active || !active->locked())) {
+		KeyLog.recordCommand(command, status);
+	}
 }
 
 QString RecentKeyLogText() {
@@ -1984,6 +1999,8 @@ std::optional<Action> ActionKey(not_null<QKeyEvent*> e) {
 		return Action::LinkHints;
 	} else if (Bindings::IsMessageSelection(e)) {
 		return Action::SelectMessages;
+	} else if (Bindings::IsMessageSelection(e, true)) {
+		return Action::SelectMessageRange;
 	}
 	return std::nullopt;
 }
@@ -2010,6 +2027,14 @@ bool IsJumpToBottomKey(not_null<QKeyEvent*> e) {
 
 QString HintLabel(int index, int total) {
 	return Bindings::ShortestHintLabel(index, total, CurrentHintAlphabet());
+}
+
+QString SelectionHintLabel(int index, int total) {
+	auto alphabet = CurrentHintAlphabet();
+	for (const auto ch : u"jkол"_q) {
+		alphabet.remove(ch);
+	}
+	return Bindings::ShortestHintLabel(index, total, alphabet);
 }
 
 QString HintInput(not_null<QKeyEvent*> e) {

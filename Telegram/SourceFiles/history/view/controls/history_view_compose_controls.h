@@ -258,6 +258,7 @@ public:
 		not_null<Data::Thread*> thread,
 		const Window::SectionShow &params);
 	bool returnTabbedSelector();
+	bool vimKeymapFocusEmojiPanel();
 
 	[[nodiscard]] bool isEditingMessage() const;
 	[[nodiscard]] rpl::producer<FullMsgId> editMsgIdValue() const;

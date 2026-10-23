@@ -10,6 +10,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "apiwrap.h"
 #include "base/qt/qt_key_modifiers.h"
 #include "core/ui_integration.h"
+#include "core/vim_keymap.h"
+#include "chat_helpers/tabbed_selector.h"
+#include "window/window_controller.h"
 #include "data/data_changes.h"
 #include "data/data_channel.h"
 #include "data/data_forum_topic.h"
@@ -73,6 +76,9 @@ SubsectionTabs::SubsectionTabs(
 		if (_loading) {
 			_loading = false;
 			refreshSlice();
+		}
+		if (base::take(_pendingNavigation)) {
+			navigate(1, false);
 		}
 	}, _lifetime);
 }
@@ -257,6 +263,7 @@ void SubsectionTabs::setupSlider(
 		not_null<Ui::ScrollArea*> scroll,
 		not_null<Ui::SubsectionSlider*> slider,
 		bool vertical) {
+	setupNavigation();
 	slider->sectionActivated() | rpl::on_next([=](int active) {
 		if (_reordering) {
 			return;
@@ -760,6 +767,9 @@ void SubsectionTabs::hide() {
 void SubsectionTabs::setVisible(bool shown) {
 	Expects((_horizontal || _vertical || _bottom) && _shadow);
 
+	if (!shown) {
+		_pendingNavigation = false;
+	}
 	activeWidget()->setVisible(shown);
 	_shadow->setVisible(shown);
 }
@@ -959,6 +969,70 @@ Ui::RpWidget *SubsectionTabs::activeWidget() const {
 	return _horizontal ? _horizontal : _vertical ? _vertical : _bottom;
 }
 
+void SubsectionTabs::setupNavigation() {
+	Core::VimKeymap::RegisterPreLayerKeyHandler(activeWidget(), [=](not_null<QKeyEvent*> e) {
+		const auto widget = activeWidget();
+		if (!widget || !widget->isVisible()
+			|| !widget->window()->isActiveWindow()
+			|| !Ui::InFocusChain(widget->parentWidget())
+			|| _controller->isLayerShown()
+			|| _controller->window().locked()
+			|| Ui::InFocusChain(_controller->tabbedSelector())) {
+			return false;
+		}
+		const auto previous = Core::VimKeymap::FocusChatKey(e);
+		const auto next = Core::VimKeymap::FocusEmojiKey(e);
+		if (!previous && !next) {
+			return false;
+		}
+		if (e->type() == QEvent::KeyPress) {
+			navigate(next ? 1 : -1);
+		}
+		return true;
+	}, true);
+}
+
+void SubsectionTabs::navigate(int direction, bool requestMore) {
+	_pendingNavigation = false;
+	const auto forum = _history->peer->forum();
+	const auto monoforum = _history->peer->monoforum();
+	const auto list = forum ? forum->topicsList().get()
+		: monoforum ? monoforum->chatsList().get() : nullptr;
+	if (!list) {
+		return;
+	}
+	const auto &rows = list->indexed()->all();
+	const auto i = ranges::find_if(rows, [=](auto row) {
+		return row->thread() == _active;
+	});
+	auto target = static_cast<Data::Thread*>(nullptr);
+	if (direction < 0) {
+		if (_active == _history) {
+			return;
+		}
+		target = (i != rows.end() && i != rows.begin())
+			? (*(i - 1))->thread() : _history.get();
+	} else if (_active == _history) {
+		target = rows.empty() ? nullptr : (*rows.begin())->thread();
+	} else if (i != rows.end() && i + 1 != rows.end()) {
+		target = (*(i + 1))->thread();
+	}
+	if (!target) {
+		if (requestMore && direction > 0 && !list->loaded()) {
+			_pendingNavigation = true;
+			_loading = true;
+			loadMore();
+		}
+		return;
+	}
+	_around = target;
+	refreshSlice();
+	auto params = Window::SectionShow();
+	params.way = Window::SectionShow::Way::ClearStack;
+	params.animated = anim::type::instant;
+	_controller->showThread(target, ShowAtUnreadMsgId, params);
+}
+
 bool SubsectionTabs::switchTo(
 		not_null<Data::Thread*> thread,
 		not_null<Ui::RpWidget*> parent) {
@@ -967,7 +1041,9 @@ bool SubsectionTabs::switchTo(
 	if (thread->owningHistory() != _history) {
 		return false;
 	}
+	_pendingNavigation = false;
 	_active = thread;
+	setupNavigation();
 	const auto widget = activeWidget();
 	widget->setParent(parent);
 	widget->show();

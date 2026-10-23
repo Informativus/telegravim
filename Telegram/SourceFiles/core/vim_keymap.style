@@ -7,6 +7,9 @@
 using "ui/basic.style";
 using "ui/widgets/widgets.style";
 
+vimModeIndicatorSize: 8px;
+vimModeIndicatorMargin: 6px;
+
 vimHintMargin: 4px;
 vimHintMinVisibleHeight: 24px;
 vimHintGap: 3px;
@@ -40,3 +43,5 @@ vimJsonButton: RoundButton(defaultActiveButton) {
 vimJsonSecondaryButton: RoundButton(defaultLightButton) {
 	radius: 6px;
 }
+
+vimHintMediaScanStep: size(16px, 12px);

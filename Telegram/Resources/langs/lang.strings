@@ -8775,3 +8775,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_folder_archive_status" = "ZIP archive";
 
 // Keys finished
+
+"lng_vim_copy_album" = "All photos";
+"lng_vim_copy_album_loading" = "Loading photos…";
+"lng_vim_copy_album_done" = "Photos copied to clipboard.";
+"lng_vim_copy_album_failed" = "Could not copy all photos. Please try again.";
