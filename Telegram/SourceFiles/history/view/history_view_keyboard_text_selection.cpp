@@ -356,14 +356,15 @@ std::optional<MessageSelectionFlatEndpoint> KeyboardTextSelection::moveCursor(
 				: one[0];
 		};
 		const auto separator = [&](int symbol) {
-			return Ui::Text::IsWordSeparator(at, *maxOffset, symbol);
+			return at(symbol).isSpace()
+				|| Ui::Text::IsWordSeparator(at, *maxOffset, symbol);
 		};
 		auto symbol = std::clamp(position, 0, *maxOffset - 1);
 		if (forward) {
-			while (symbol < *maxOffset && separator(symbol)) {
+			while (symbol < *maxOffset && !separator(symbol)) {
 				++symbol;
 			}
-			while (symbol < *maxOffset && !separator(symbol)) {
+			while (symbol < *maxOffset && separator(symbol)) {
 				++symbol;
 			}
 		} else {
@@ -377,7 +378,9 @@ std::optional<MessageSelectionFlatEndpoint> KeyboardTextSelection::moveCursor(
 				--symbol;
 			}
 		}
-		wanted = symbol;
+		wanted = (symbol < *maxOffset && !separator(symbol))
+			? symbol
+			: position;
 	} else {
 		wanted = position + (forward ? 1 : -1);
 	}
