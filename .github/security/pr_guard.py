@@ -861,12 +861,18 @@ def reviewed_finding(run: dict, result: dict, source: Path, reviews: list) -> bo
         "Telegram/SourceFiles/iv/markdown/iv_markdown_article_layout_blocks.cpp": {
             "cpp/poorly-documented-function",
         },
+        "Telegram/SourceFiles/media/transcription/transcription_engine.cpp": {
+            "cpp/poorly-documented-function",
+        },
         "Telegram/SourceFiles/overview/overview_layout.cpp": {
             "cpp/poorly-documented-function",
         },
         "Telegram/SourceFiles/overview/overview_layout.h": {
             "cpp/ambiguously-signed-bit-field",
             "cpp/virtual-destructor",
+        },
+        "Telegram/SourceFiles/settings/sections/settings_advanced.cpp": {
+            "cpp/poorly-documented-function",
         },
         "Telegram/SourceFiles/settings/settings_experimental.cpp": {
             "cpp/ambiguously-signed-bit-field",
