@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_chat_filters.h"
 
+#include "data/local_chat_folders.h"
 #include "data/local_pinned_dialogs.h"
 #include "api/api_text_entities.h"
 #include "history/history.h"
@@ -15,6 +16,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_chat.h"
 #include "data/data_channel.h"
 #include "data/data_session.h"
+#include "data/data_premium_limits.h"
 #include "data/data_folder.h"
 #include "data/data_histories.h"
 #include "dialogs/dialogs_main_list.h"
@@ -25,6 +27,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "main/main_app_config.h"
 #include "apiwrap.h"
+#include "storage/local_data_store.h"
+#include "core/application.h"
+#include "lang/lang_keys.h"
 
 namespace Data {
 namespace {
@@ -32,6 +37,7 @@ namespace {
 constexpr auto kRefreshSuggestedTimeout = 7200 * crl::time(1000);
 constexpr auto kLoadExceptionsAfter = 100;
 constexpr auto kLoadExceptionsPerRequest = 100;
+constexpr auto kLocalFolderColorsCount = 7;
 
 [[nodiscard]] crl::time RequestUpdatesEach(not_null<Session*> owner) {
 	const auto appConfig = &owner->session().appConfig();
@@ -201,6 +207,21 @@ ChatFilter ChatFilter::withTitle(ChatFilterTitle title) const {
 ChatFilter ChatFilter::withColorIndex(std::optional<uint8> c) const {
 	auto result = *this;
 	result._colorIndex = c;
+	result._localColorIndex.reset();
+	return result;
+}
+
+ChatFilter ChatFilter::withLocalColorIndex(
+		std::optional<std::optional<uint8>> color) const {
+	auto result = *this;
+	result._localColorIndex = color;
+	return result;
+}
+
+ChatFilter ChatFilter::withColorFrom(const ChatFilter &other) const {
+	auto result = *this;
+	result._colorIndex = other._colorIndex;
+	result._localColorIndex = other._localColorIndex;
 	return result;
 }
 
@@ -215,6 +236,12 @@ ChatFilter ChatFilter::withChatlist(bool chatlist, bool hasMyLinks) const {
 			result._flags &= ~Flag::HasMyLinks;
 		}
 	}
+	return result;
+}
+
+ChatFilter ChatFilter::withLocalId(QString id) const {
+	auto result = *this;
+	result._localId = std::move(id);
 	return result;
 }
 
@@ -306,7 +333,7 @@ QString ChatFilter::iconEmoji() const {
 }
 
 std::optional<uint8> ChatFilter::colorIndex() const {
-	return _colorIndex;
+	return _localColorIndex.value_or(_colorIndex);
 }
 
 ChatFilter::Flags ChatFilter::flags() const {
@@ -325,6 +352,14 @@ bool ChatFilter::hasMyLinks() const {
 	return _flags & Flag::HasMyLinks;
 }
 
+bool ChatFilter::isLocal() const {
+	return !_localId.isEmpty();
+}
+
+const QString &ChatFilter::localId() const {
+	return _localId;
+}
+
 const base::flat_set<not_null<History*>> &ChatFilter::always() const {
 	return _always;
 }
@@ -340,6 +375,9 @@ const base::flat_set<not_null<History*>> &ChatFilter::never() const {
 bool ChatFilter::contains(
 		not_null<History*> history,
 		bool ignoreFakeUnread) const {
+	if (_never.contains(history)) {
+		return false;
+	}
 	if (const auto local = history->owner().localPinnedDialogsLoaded()
 		; local && local->includes(_id, history)) {
 		return true;
@@ -364,9 +402,6 @@ bool ChatFilter::contains(
 			Unexpected("Peer type in ChatFilter::contains.");
 		}
 	}();
-	if (_never.contains(history)) {
-		return false;
-	}
 	const auto channel = history->peer->asChannel();
 	if (channel && channel->isCommunity()) {
 		// A community never matches a filter by chat type (it is neither a
@@ -394,9 +429,27 @@ bool ChatFilter::contains(
 
 ChatFilters::ChatFilters(not_null<Session*> owner)
 : _owner(owner)
+, _localFolders(std::make_unique<LocalChatFolders>(nullptr, &owner->session()))
 , _moreChatsTimer([=] { checkLoadMoreChatsLists(); }) {
 	_list.emplace_back();
-	crl::on_main(&owner->session(), [=] { load(); });
+	_localFolders->changes() | rpl::on_next([=] {
+		_tagsEnabled = _localFolders->tagsEnabled().value_or(_cloudTagsEnabled);
+		rebuildLocal();
+		if (_lastLocalError != localError()) {
+			_lastLocalError = localError();
+			if (!_lastLocalError.isEmpty()) {
+				_localErrors.fire_copy(_lastLocalError);
+			}
+		}
+		crl::on_main(&owner->session(), [=] {
+			if (!localBusy()) {
+				Core::App().quitPreventFinished();
+			}
+		});
+	}, _localFoldersLifetime);
+	crl::on_main(&owner->session(), [=] {
+		load();
+	});
 }
 
 ChatFilters::~ChatFilters() = default;
@@ -420,7 +473,117 @@ not_null<Dialogs::MainList*> ChatFilters::chatsList(FilterId filterId) {
 	return pointer.get();
 }
 
+FilterId ChatFilters::localFilterId(const QString &id) {
+	if (const auto i = _localFilterIds.find(id); i != end(_localFilterIds)) {
+		return i->second;
+	}
+	auto result = -1000 - int(qHash(id) & 0x3FFFFFFF);
+	const auto collision = [&](FilterId value) {
+		return ranges::find(_localFilterIds, value,
+			[](const auto &entry) { return entry.second; })
+			!= end(_localFilterIds)
+			|| ranges::contains(_list, value, &ChatFilter::id);
+	};
+	while (result == 0 || collision(result)) {
+		--result;
+	}
+	_localFilterIds.emplace(id, result);
+	return result;
+}
+
+bool ChatFilters::rebuildLocal(bool notify) {
+	if (!_localFolders->loaded()) {
+		return false;
+	}
+	auto changed = false;
+	for (auto &filter : _list) {
+		if (filter.id() > 0) {
+			changed = applyChange(filter, applyLocalColor(filter)) || changed;
+		}
+	}
+	auto active = base::flat_set<QString>();
+	for (const auto &folder : _localFolders->folders()) {
+		active.insert(folder.id);
+		const auto id = localFilterId(folder.id);
+		auto always = base::flat_set<not_null<History*>>();
+		for (const auto peer : folder.include) {
+			always.emplace(_owner->history(peer));
+		}
+		auto never = base::flat_set<not_null<History*>>();
+		for (const auto peer : folder.exclude) {
+			never.emplace(_owner->history(peer));
+		}
+		auto title = tr::marked(folder.title);
+		for (const auto &value : folder.titleEntities) {
+			const auto entity = value.toObject();
+			const auto offset = entity.value(u"offset"_q).toInt();
+			const auto length = entity.value(u"length"_q).toInt();
+			if (entity.value(u"type"_q).toString() == u"custom_emoji"_q
+				&& offset >= 0
+				&& length > 0
+				&& offset <= title.text.size()
+				&& length <= title.text.size() - offset) {
+				title.entities.emplace_back(
+					EntityType::CustomEmoji,
+					offset,
+					length,
+					entity.value(u"data"_q).toString());
+			}
+		}
+		auto filter = ChatFilter(
+			id,
+			{ std::move(title), folder.staticTitle },
+			folder.iconEmoji,
+			(folder.colorIndex && *folder.colorIndex < kLocalFolderColorsCount)
+				? folder.colorIndex
+				: std::nullopt,
+			folder.flags,
+			std::move(always),
+			{},
+			std::move(never)).withLocalId(folder.id);
+		const auto i = ranges::find(_list, id, &ChatFilter::id);
+		if (i == end(_list)) {
+			applyInsert(std::move(filter), _list.size());
+			changed = true;
+		} else {
+			changed = applyChange(*i, std::move(filter)) || changed;
+		}
+	}
+	for (auto i = _list.size(); i-- > 0;) {
+		if (_list[i].isLocal() && !active.contains(_list[i].localId())) {
+			applyRemove(i);
+			changed = true;
+		}
+	}
+	auto order = _list | ranges::views::filter([](const ChatFilter &filter) {
+		return !filter.isLocal();
+	}) | ranges::views::transform(&ChatFilter::id) | ranges::to_vector;
+	auto nextPosition = 0;
+	for (const auto &folder : _localFolders->folders()) {
+		const auto position = std::clamp(
+			folder.position,
+			nextPosition,
+			int(order.size()));
+		order.insert(begin(order) + position, localFilterId(folder.id));
+		nextPosition = position + 1;
+	}
+	for (auto position = 0; position != order.size(); ++position) {
+		const auto i = ranges::find(_list, order[position], &ChatFilter::id);
+		Assert(i != end(_list));
+		if (i != begin(_list) + position) {
+			std::iter_swap(i, begin(_list) + position);
+			changed = true;
+		}
+	}
+	if (changed && notify) {
+		_listChanged.fire({});
+	}
+	return changed;
+}
+
 void ChatFilters::clear() {
+	_localFoldersLifetime.destroy();
+	_localFolders->stop();
 	_chatsLists.clear();
 	_list.clear();
 }
@@ -429,7 +592,8 @@ void ChatFilters::setPreloaded(
 		const QVector<MTPDialogFilter> &result,
 		bool tagsEnabled) {
 	_loadRequestId = -1;
-	_tagsEnabled = tagsEnabled;
+	_cloudTagsEnabled = tagsEnabled;
+	_tagsEnabled = _localFolders->tagsEnabled().value_or(_cloudTagsEnabled);
 	received(result);
 	crl::on_main(&_owner->session(), [=] {
 		if (_loadRequestId == -1) {
@@ -455,7 +619,8 @@ void ChatFilters::load(bool force) {
 	api.request(_loadRequestId).cancel();
 	_loadRequestId = api.request(MTPmessages_GetDialogFilters(
 	)).done([=](const MTPmessages_DialogFilters &result) {
-		_tagsEnabled = result.data().is_tags_enabled();
+		_cloudTagsEnabled = result.data().is_tags_enabled();
+		_tagsEnabled = _localFolders->tagsEnabled().value_or(_cloudTagsEnabled);
 		received(result.data().vfilters().v);
 		_loadRequestId = 0;
 	}).fail([=] {
@@ -480,52 +645,48 @@ rpl::producer<bool> ChatFilters::tagsEnabledChanges() const {
 }
 
 void ChatFilters::requestToggleTags(bool value, Fn<void()> fail) {
-	if (_toggleTagsRequestId) {
-		return;
-	}
-	_toggleTagsRequestId = _owner->session().api().request(
-		MTPmessages_ToggleDialogFilterTags(MTP_bool(value))
-	).done([=](const MTPBool &result) {
-		_tagsEnabled = value;
-		_toggleTagsRequestId = 0;
-	}).fail([=](const MTP::Error &error) {
-		const auto message = error.type();
-		_toggleTagsRequestId = 0;
-		LOG(("API Error: Toggle Tags - %1").arg(message));
-		fail();
-	}).send();
+	_localFolders->setTagsEnabled(value, [fail = std::move(fail)](bool success) {
+		if (!success && fail) {
+			fail();
+		}
+	});
 }
 
 void ChatFilters::received(const QVector<MTPDialogFilter> &list) {
-	auto position = 0;
+	auto order = QVector<MTPint>();
 	auto changed = false;
 	for (const auto &filter : list) {
 		auto parsed = ChatFilter::FromTL(filter, _owner);
-		const auto b = begin(_list) + position;
-		const auto e = end(_list);
-		const auto i = ranges::find(b, e, parsed.id(), &ChatFilter::id);
-		if (i == e) {
-			applyInsert(std::move(parsed), position);
+		order.push_back(MTP_int(parsed.id()));
+		const auto i = ranges::find(_list, parsed.id(), &ChatFilter::id);
+		if (i == end(_list)) {
+			applyInsert(std::move(parsed), _list.size());
 			changed = true;
-		} else if (i == b) {
-			if (applyChange(*b, std::move(parsed))) {
-				changed = true;
-			}
 		} else {
-			std::swap(*i, *b);
-			applyChange(*b, std::move(parsed));
+			changed = applyChange(*i, std::move(parsed)) || changed;
+		}
+	}
+	if (!ranges::contains(order, 0, &MTPint::v)) {
+		order.push_front(MTP_int(0));
+	}
+	for (auto i = _list.size(); i-- > 0;) {
+		if (!_list[i].isLocal()
+			&& !ranges::contains(order, _list[i].id(), &MTPint::v)) {
+			applyRemove(i);
 			changed = true;
 		}
-		++position;
 	}
-	while (position < _list.size()) {
-		applyRemove(position);
+	if (!ranges::contains(_list, 0, &ChatFilter::id)) {
+		_list.insert(begin(_list), ChatFilter());
 		changed = true;
 	}
-	if (!ranges::contains(begin(_list), end(_list), 0, &ChatFilter::id)) {
-		_list.insert(begin(_list), ChatFilter());
-	}
-	if (changed || !_loaded || _reloading) {
+	auto before = _list | ranges::views::transform(&ChatFilter::id)
+		| ranges::to_vector;
+	applyOrder(order);
+	changed = rebuildLocal(false) || changed;
+	const auto after = _list | ranges::views::transform(&ChatFilter::id)
+		| ranges::to_vector;
+	if (changed || before != after || !_loaded || _reloading) {
 		_loaded = true;
 		_reloading = false;
 		_listChanged.fire({});
@@ -667,6 +828,7 @@ void ChatFilters::set(ChatFilter filter) {
 	const auto i = ranges::find(_list, filter.id(), &ChatFilter::id);
 	if (i == end(_list)) {
 		applyInsert(std::move(filter), _list.size());
+		rebuildLocal(false);
 		_listChanged.fire({});
 	} else if (applyChange(*i, std::move(filter))) {
 		_listChanged.fire({});
@@ -688,6 +850,7 @@ void ChatFilters::remove(FilterId id) {
 		return;
 	}
 	applyRemove(i - begin(_list));
+	rebuildLocal(false);
 	_listChanged.fire({});
 }
 
@@ -720,6 +883,7 @@ bool ChatFilters::applyChange(ChatFilter &filter, ChatFilter &&updated) {
 
 	using Flag = ChatFilter::Flag;
 
+	updated = applyLocalColor(std::move(updated));
 	const auto id = filter.id();
 	const auto exceptionsChanged = filter.always() != updated.always();
 	const auto rulesMask = Flag() | Flag::RulesMask;
@@ -738,6 +902,7 @@ bool ChatFilters::applyChange(ChatFilter &filter, ChatFilter &&updated) {
 	const auto colorExistenceChanged = (!filter.colorIndex())
 		!= (!updated.colorIndex());
 	if (!listUpdated && !chatlistChanged && !colorChanged) {
+		filter = std::move(updated);
 		return false;
 	}
 	const auto wasFilter = std::move(filter);
@@ -801,43 +966,32 @@ bool ChatFilters::applyChange(ChatFilter &filter, ChatFilter &&updated) {
 		// Trigger a full refresh of height for the main list.
 		entryToRefreshHeight->updateChatListEntryHeight();
 	}
-	return listUpdated;
+	return listUpdated || colorChanged;
 }
 
 bool ChatFilters::applyOrder(const QVector<MTPint> &order) {
-	if (order.size() != _list.size()) {
+	auto cloud = _list | ranges::views::filter([](const ChatFilter &filter) {
+		return !filter.isLocal();
+	}) | ranges::to_vector;
+	if (order.size() != cloud.size()) {
 		return false;
-	} else if (_list.empty()) {
-		return true;
 	}
-	auto indices = ranges::views::all(
-		_list
-	) | ranges::views::transform(
-		&ChatFilter::id
-	) | ranges::to_vector;
-	auto b = indices.begin(), e = indices.end();
-	for (const auto &id : order) {
-		const auto i = ranges::find(b, e, id.v);
-		if (i == e) {
+	for (auto position = 0; position != order.size(); ++position) {
+		const auto i = ranges::find(
+			begin(cloud) + position,
+			end(cloud),
+			order[position].v,
+			&ChatFilter::id);
+		if (i == end(cloud)) {
 			return false;
-		} else if (i != b) {
-			std::swap(*i, *b);
 		}
-		++b;
+		std::iter_swap(i, begin(cloud) + position);
 	}
-	auto changed = false;
-	auto begin = _list.begin(), end = _list.end();
-	for (const auto &id : order) {
-		const auto i = ranges::find(begin, end, id.v, &ChatFilter::id);
-		Assert(i != end);
-		if (i != begin) {
-			changed = true;
-			std::swap(*i, *begin);
+	auto i = begin(cloud);
+	for (auto &filter : _list) {
+		if (!filter.isLocal()) {
+			filter = std::move(*i++);
 		}
-		++begin;
-	}
-	if (changed) {
-		_listChanged.fire({});
 	}
 	return true;
 }
@@ -870,13 +1024,32 @@ const ChatFilter &ChatFilters::applyUpdatedPinned(
 		i->flags(),
 		std::move(always),
 		std::move(pinned),
-		i->never()));
+		i->never()).withLocalId(i->localId()).withColorFrom(*i));
 	return *i;
 }
 
 void ChatFilters::saveOrder(
 		const std::vector<FilterId> &order,
 		mtpRequestId after) {
+	const auto hasLocal = ranges::any_of(order, [=](FilterId id) {
+		return isLocal(id);
+	});
+	auto cloudOrder = order | ranges::views::filter([](FilterId id) {
+		return id >= 0;
+	}) | ranges::to_vector;
+	auto currentCloudOrder = _list
+		| ranges::views::filter([](const ChatFilter &filter) {
+			return !filter.isLocal();
+		}) | ranges::views::transform(&ChatFilter::id) | ranges::to_vector;
+	if (hasLocal) {
+		reorderLocal(order);
+		crl::on_main(&_owner->session(), [=] {
+			_listChanged.fire({});
+		});
+	}
+	if (!after && cloudOrder == currentCloudOrder) {
+		return;
+	}
 	if (after) {
 		_saveOrderAfterId = after;
 	}
@@ -884,8 +1057,8 @@ void ChatFilters::saveOrder(
 	api->request(_saveOrderRequestId).cancel();
 
 	auto ids = QVector<MTPint>();
-	ids.reserve(order.size());
-	for (const auto id : order) {
+	ids.reserve(cloudOrder.size());
+	for (const auto id : cloudOrder) {
 		ids.push_back(MTP_int(id));
 	}
 	const auto wrapped = MTP_vector<MTPint>(ids);
@@ -935,6 +1108,193 @@ bool ChatFilters::has() const {
 	return _list.size() > 1;
 }
 
+bool ChatFilters::isLocal(FilterId id) const {
+	const auto i = ranges::find(_list, id, &ChatFilter::id);
+	return i != end(_list) && i->isLocal();
+}
+
+QString ChatFilters::localId(FilterId id) const {
+	const auto i = ranges::find(_list, id, &ChatFilter::id);
+	return i != end(_list) ? i->localId() : QString();
+}
+
+bool ChatFilters::isLocked(FilterId id) const {
+	if (!id || isLocal(id)) {
+		return false;
+	}
+	auto cloud = 0;
+	for (const auto &filter : _list) {
+		if (!filter.id() || filter.isLocal()) {
+			continue;
+		}
+		if (filter.id() == id) {
+			return cloud >= Data::PremiumLimits(&_owner->session())
+				.dialogFiltersCurrent();
+		}
+		++cloud;
+	}
+	return false;
+}
+
+bool ChatFilters::localBusy() const {
+	return _localFolders->busy();
+}
+
+const QString &ChatFilters::localError() const {
+	return _localFolders->error();
+}
+
+rpl::producer<QString> ChatFilters::localErrors() const {
+	return _localErrors.events();
+}
+
+ChatFilter ChatFilters::makeLocal(ChatFilter filter) {
+	if (filter.isLocal()) {
+		return filter;
+	}
+	const auto id = Storage::LocalData::NewId();
+	return filter.withColorIndex(filter.colorIndex())
+		.withId(localFilterId(id)).withLocalId(id);
+}
+
+ChatFilter ChatFilters::applyLocalColor(ChatFilter filter) const {
+	if (filter.id() <= 0) {
+		return filter;
+	}
+	const auto pins = _owner->localPinnedDialogsLoaded();
+	const auto scope = pins ? pins->filterScope(filter.id()) : QString();
+	return filter.withLocalColorIndex(_localFolders->cloudColor(scope));
+}
+
+void ChatFilters::refreshLocalColors() {
+	if (!_localFolders->loaded()) {
+		return;
+	}
+	auto changed = false;
+	for (auto &filter : _list) {
+		if (filter.id() > 0) {
+			changed = applyChange(filter, applyLocalColor(filter)) || changed;
+		}
+	}
+	if (changed) {
+		_listChanged.fire({});
+	}
+}
+
+void ChatFilters::saveCloudColor(FilterId id, std::optional<uint8> color) {
+	if (id <= 0 || !ranges::contains(_list, id, &ChatFilter::id)) {
+		return;
+	}
+	_localFolders->setCloudColor(
+		_owner->localPinnedDialogs().filterScope(id),
+		color);
+}
+
+void ChatFilters::saveLocal(ChatFilter filter, Fn<void(bool)> done) {
+	if (!filter.isLocal() || filter.id() >= 0) {
+		if (done) {
+			done(false);
+		}
+		return;
+	}
+	const auto i = ranges::find(
+		_localFolders->folders(),
+		filter.localId(),
+		&LocalChatFolder::id);
+	auto folder = (i != end(_localFolders->folders()))
+		? *i
+		: LocalChatFolder();
+	if (i == end(_localFolders->folders())) {
+		folder.position = _list.size();
+	}
+	folder.id = filter.localId();
+	folder.title = filter.titleText().text;
+	folder.staticTitle = filter.staticTitle();
+	auto entities = QJsonArray();
+	for (const auto &entity : folder.titleEntities) {
+		if (entity.toObject().value(u"type"_q).toString()
+			!= u"custom_emoji"_q) {
+			entities.push_back(entity);
+		}
+	}
+	for (const auto &entity : filter.titleText().entities) {
+		if (entity.type() == EntityType::CustomEmoji) {
+			entities.push_back(QJsonObject{
+				{ u"type"_q, u"custom_emoji"_q },
+				{ u"offset"_q, entity.offset() },
+				{ u"length"_q, entity.length() },
+				{ u"data"_q, entity.data() },
+			});
+		}
+	}
+	folder.titleEntities = std::move(entities);
+	folder.iconEmoji = filter.iconEmoji();
+	if (filter.colorIndex() || !folder.colorIndex
+		|| *folder.colorIndex < kLocalFolderColorsCount) {
+		folder.colorIndex = filter.colorIndex();
+	}
+	folder.flags = filter.flags() & ChatFilter::Flag::RulesMask;
+	folder.include.clear();
+	folder.exclude.clear();
+	for (const auto history : filter.always()) {
+		folder.include.push_back(history->peer->id);
+	}
+	auto unpin = std::vector<PeerId>();
+	if (i != end(_localFolders->folders())) {
+		for (const auto peer : i->include) {
+			if (!ranges::contains(folder.include, peer)) {
+				unpin.push_back(peer);
+			}
+		}
+	}
+	for (const auto history : filter.never()) {
+		folder.exclude.push_back(history->peer->id);
+		if (i != end(_localFolders->folders())
+			&& !ranges::contains(i->exclude, history->peer->id)) {
+			unpin.push_back(history->peer->id);
+		}
+	}
+	_localFolders->save(std::move(folder), crl::guard(
+		&_owner->session(),
+		[=, done = std::move(done)](bool success) {
+			if (success && isLocal(filter.id())) {
+				for (const auto peer : unpin) {
+					const auto pins = &_owner->localPinnedDialogs();
+					if (pins->isPinned(filter.id(), peer)) {
+						pins->setPinned(_owner->history(peer), filter.id(), false);
+					}
+				}
+			}
+			if (done) {
+				done(success);
+			}
+		}));
+}
+
+void ChatFilters::removeLocal(FilterId id, Fn<void(bool)> done) {
+	const auto uuid = localId(id);
+	if (uuid.isEmpty()) {
+		if (done) done(false);
+		return;
+	}
+	_localFolders->remove(uuid, std::move(done));
+}
+
+void ChatFilters::reorderLocal(
+		std::vector<FilterId> order,
+		Fn<void(bool)> done) {
+	std::vector<QString> ids;
+	ids.reserve(order.size());
+	for (const auto id : order) {
+		if (const auto uuid = localId(id); !uuid.isEmpty()) {
+			ids.push_back(uuid);
+		} else {
+			ids.push_back(QString());
+		}
+	}
+	_localFolders->reorder(std::move(ids), std::move(done));
+}
+
 rpl::producer<> ChatFilters::changed() const {
 	return _listChanged.events();
 }
@@ -955,30 +1315,33 @@ bool ChatFilters::loadNextExceptions(bool chatsListLoaded) {
 			< kLoadExceptionsAfter)) {
 		return false;
 	}
-	auto inputs = QVector<MTPInputDialogPeer>();
-	const auto collectExceptions = [&](FilterId id) {
-		auto result = QVector<MTPInputDialogPeer>();
-		const auto i = ranges::find(_list, id, &ChatFilter::id);
-		if (i != end(_list)) {
-			result.reserve(i->always().size());
-			for (const auto &history : i->always()) {
-				if (!history->folderKnown()) {
-					inputs.push_back(
-						MTP_inputDialogPeer(history->peer->input()));
-				}
-			}
-		}
-		return result;
-	};
+	auto queued = base::flat_set<PeerId>(
+		begin(_exceptionPeersToLoad),
+		end(_exceptionPeersToLoad));
 	while (!_exceptionsToLoad.empty()) {
 		const auto id = _exceptionsToLoad.front();
-		const auto exceptions = collectExceptions(id);
-		if (inputs.size() + exceptions.size() > kLoadExceptionsPerRequest) {
-			Assert(!inputs.isEmpty());
-			break;
-		}
 		_exceptionsToLoad.pop_front();
-		inputs.append(exceptions);
+		const auto i = ranges::find(_list, id, &ChatFilter::id);
+		if (i == end(_list)) {
+			continue;
+		}
+		for (const auto history : i->always()) {
+			if (!history->folderKnown()
+				&& queued.emplace(history->peer->id).second) {
+				_exceptionPeersToLoad.push_back(history->peer->id);
+			}
+		}
+	}
+	auto inputs = QVector<MTPInputDialogPeer>();
+	while (!_exceptionPeersToLoad.empty()
+		&& inputs.size() < kLoadExceptionsPerRequest) {
+		const auto peer = _exceptionPeersToLoad.front();
+		_exceptionPeersToLoad.pop_front();
+		const auto history = _owner->history(peer);
+		const auto input = history->peer->input();
+		if (!history->folderKnown() && input.type() != mtpc_inputPeerEmpty) {
+			inputs.push_back(MTP_inputDialogPeer(input));
+		}
 	}
 	if (inputs.isEmpty()) {
 		return false;

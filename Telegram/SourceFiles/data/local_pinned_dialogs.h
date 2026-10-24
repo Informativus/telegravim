@@ -40,8 +40,10 @@ public:
 
 	[[nodiscard]] bool supports(Dialogs::Key key, FilterId filterId = 0) const;
 	[[nodiscard]] bool includes(FilterId filterId, not_null<History*> history) const;
+	[[nodiscard]] bool isPinned(FilterId filterId, PeerId peer) const;
 	[[nodiscard]] bool busy() const;
 	[[nodiscard]] rpl::producer<QString> errors() const;
+	[[nodiscard]] QString filterScope(FilterId filterId) const;
 
 	void setPinned(
 		Dialogs::Key key,

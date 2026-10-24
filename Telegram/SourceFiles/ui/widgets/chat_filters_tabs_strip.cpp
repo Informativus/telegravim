@@ -60,6 +60,9 @@ struct State final {
 	std::unique_ptr<Ui::ChatsFiltersTabsReorder> reorder;
 	bool ignoreRefresh = false;
 	std::vector<base::unique_qptr<QWidget>> keyboardTabs;
+	std::vector<FilterId> filterIds;
+	std::vector<bool> locked;
+	bool reorderAll = false;
 };
 
 void ShowMenu(
@@ -152,11 +155,6 @@ void ShowFiltersListMenu(
 		parent,
 		st::popupMenuWithIcons);
 
-	const auto reorderAll = session->user()->isPremium();
-	const auto maxLimit = (reorderAll ? 1 : 0)
-		+ Data::PremiumLimits(session).dialogFiltersCurrent();
-	const auto premiumFrom = (reorderAll ? 0 : 1) + maxLimit;
-
 	for (auto i = 0; i < list.size(); ++i) {
 		const auto title = list[i].title();
 		const auto text = title.text.empty()
@@ -180,7 +178,7 @@ void ShowFiltersListMenu(
 			action,
 			icon,
 			icon);
-		action->setEnabled(i < premiumFrom);
+		action->setEnabled(!session->data().chatsFilters().isLocked(list[i].id()));
 		if (!title.text.empty()) {
 			const auto context = Core::TextContext({
 				.session = session,
@@ -409,20 +407,28 @@ not_null<Ui::RpWidget*> AddChatFiltersTabsStrip(
 				? ComputeFilterIcon(filter)
 				: FilterIcon::All).tabs.get();
 		}) | ranges::to_vector);
-		if (!sectionsChanged) {
+		const auto filters = &session->data().chatsFilters();
+		auto ids = std::vector<FilterId>();
+		auto locked = std::vector<bool>();
+		ids.reserve(list.size());
+		locked.reserve(list.size());
+		for (const auto &filter : list) {
+			ids.push_back(filter.id());
+			locked.push_back(filters->isLocked(filter.id()));
+		}
+		const auto reorderAll = session->user()->isPremium();
+		if (!sectionsChanged && state->filterIds == ids
+			&& state->locked == locked && state->reorderAll == reorderAll) {
 			return;
 		}
+		state->filterIds = std::move(ids);
+		state->locked = locked;
+		state->reorderAll = reorderAll;
+		slider->setLockedSections(std::move(locked));
 		state->keyboardTabs.clear();
 		state->rebuildLifetime.destroy();
 		slider->fitWidthToSections();
 		{
-			const auto reorderAll = session->user()->isPremium();
-			const auto maxLimit = (reorderAll ? 1 : 0)
-				+ Data::PremiumLimits(session).dialogFiltersCurrent();
-			const auto premiumFrom = (reorderAll ? 0 : 1) + maxLimit;
-			slider->setLockedFrom((premiumFrom >= list.size())
-				? 0
-				: premiumFrom);
 			slider->lockedClicked() | rpl::on_next([=] {
 				controller->show(Box(FiltersLimitBox, session, std::nullopt));
 			}, state->rebuildLifetime);
@@ -432,18 +438,18 @@ not_null<Ui::RpWidget*> AddChatFiltersTabsStrip(
 				if (!reorderAll) {
 					state->reorder->addPinnedInterval(0, 1);
 				}
-				state->reorder->addPinnedInterval(
-					premiumFrom,
-					std::max(1, int(list.size()) - maxLimit));
+
 			}
 		}
 		if (trackActiveFilterAndUnreadAndReorder) {
 			reassignUnreadValue();
 		}
 		if (handleKeyboardSwitch && Core::VimKeymap::Enabled()) {
-			const auto limit = slider->lockedFrom()
-				? slider->lockedFrom() : slider->sectionsCount();
+			const auto limit = slider->sectionsCount();
 			for (auto i = 0; i != limit; ++i) {
+				if (slider->isLocked(i)) {
+					continue;
+				}
 				const auto target = Core::VimKeymap::CreateKeyboardTabTarget(
 					slider,
 					[=] {
@@ -586,15 +592,18 @@ not_null<Ui::RpWidget*> AddChatFiltersTabsStrip(
 					|| (request.action == Qt::Key_Backtab));
 		}) | rpl::on_next([=](const Shortcuts::ChatSwitchRequest &request) {
 			const auto count = slider->sectionsCount();
-			const auto locked = slider->lockedFrom();
-			const auto limit = locked ? locked : count;
-			if (limit <= 1) {
+			if (count <= 1) {
 				return;
 			}
 			const auto back = (request.action == Qt::Key_Backtab);
-			const auto current = std::min(slider->activeSection(), limit - 1);
-			const auto next = (current + (back ? -1 : 1) + limit) % limit;
-			slider->setActiveSection(next);
+			auto next = std::clamp(slider->activeSection(), 0, count - 1);
+			for (auto remaining = count; remaining > 0; --remaining) {
+				next = (next + (back ? -1 : 1) + count) % count;
+				if (!slider->isLocked(next)) {
+					slider->setActiveSection(next);
+					break;
+				}
+			}
 		}, wrap->lifetime());
 	}
 

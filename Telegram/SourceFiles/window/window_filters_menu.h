@@ -60,6 +60,7 @@ private:
 		FilterId id,
 		Data::ChatFilterTitle title,
 		Ui::FilterIcon icon,
+		std::optional<uint8> colorIndex = std::nullopt,
 		bool locked = false,
 		bool toBeginning = false);
 	void setupMainMenuIcon();

@@ -381,10 +381,9 @@ not_null<Ui::VerticalLayout*> SetupFoldersList(
 		return &*i;
 	};
 	const auto showLimitReached = [=] {
-		const auto removed = ranges::count_if(
-			state->rows,
-			&FilterRow::removed);
-		const auto count = int(state->rows.size() - removed);
+		const auto count = int(ranges::count_if(state->rows, [](const auto &row) {
+			return !row.removed && !row.filter.isLocal();
+		}));
 		if (count < limit()) {
 			return false;
 		}
@@ -415,6 +414,9 @@ not_null<Ui::VerticalLayout*> SetupFoldersList(
 			row->removePeers = {};
 			row->removed = true;
 			button->setRemoved(true);
+			if (row->filter.isLocal()) {
+				session->data().chatsFilters().removeLocal(row->filter.id());
+			}
 		}
 	};
 	const auto markForRemoval = [=](not_null<FilterRowButton*> button) {
@@ -473,11 +475,15 @@ not_null<Ui::VerticalLayout*> SetupFoldersList(
 		}, button->lifetime());
 		button->restoreRequests(
 		) | rpl::on_next([=] {
-			if (showLimitReached()) {
+			if (!find(button)->filter.isLocal() && showLimitReached()) {
 				return;
 			}
 			button->setRemoved(false);
-			find(button)->removed = false;
+			const auto row = find(button);
+			row->removed = false;
+			if (row->filter.isLocal()) {
+				session->data().chatsFilters().saveLocal(row->filter);
+			}
 		}, button->lifetime());
 		button->setClickedCallback([=] {
 			const auto found = find(button);
@@ -487,6 +493,9 @@ not_null<Ui::VerticalLayout*> SetupFoldersList(
 			const auto doneCallback = [=](const Data::ChatFilter &result) {
 				find(button)->filter = result;
 				button->updateData(result);
+				if (result.isLocal()) {
+					session->data().chatsFilters().saveLocal(result);
+				}
 			};
 			const auto saveAnd = [=](
 					const Data::ChatFilter &data,
@@ -571,9 +580,6 @@ not_null<Ui::VerticalLayout*> SetupFoldersList(
 		highlights->push_back({ u"folders/create"_q, { createButton.get() } });
 	}
 	createButton->setClickedCallback([=] {
-		if (showLimitReached()) {
-			return;
-		}
 		const auto created = std::make_shared<FilterRowButton*>(nullptr);
 		const auto doneCallback = [=](const Data::ChatFilter &result) {
 			if (const auto button = *created) {
@@ -582,6 +588,7 @@ not_null<Ui::VerticalLayout*> SetupFoldersList(
 			} else {
 				*created = addFilter(result);
 			}
+			session->data().chatsFilters().saveLocal(result);
 		};
 		const auto saveAnd = [=](
 				const Data::ChatFilter &data,
@@ -592,7 +599,7 @@ not_null<Ui::VerticalLayout*> SetupFoldersList(
 		controller->window().show(Box(
 			EditFilterBox,
 			controller,
-			Data::ChatFilter(),
+			session->data().chatsFilters().makeLocal(),
 			crl::guard(container, doneCallback),
 			crl::guard(container, saveAnd)));
 	});
@@ -611,7 +618,7 @@ not_null<Ui::VerticalLayout*> SetupFoldersList(
 		auto result = base::flat_map<not_null<FilterRowButton*>, FilterId>();
 		for (auto &row : state->rows) {
 			const auto id = row.filter.id();
-			if (row.removed) {
+			if (row.removed || row.filter.isLocal()) {
 				continue;
 			} else if (!id
 				|| !ranges::contains(list, id, &Data::ChatFilter::id)) {
@@ -635,7 +642,7 @@ not_null<Ui::VerticalLayout*> SetupFoldersList(
 		auto removeChatlistRequests = std::vector<MTPchatlists_LeaveChatlist>();
 
 		const auto &realFilters = session->data().chatsFilters();
-		const auto &list = realFilters.list();
+		const auto list = realFilters.list();
 		order.reserve(state->rows.size());
 		for (auto &row : state->rows) {
 			if (row.button.get() == single) {
@@ -646,8 +653,15 @@ not_null<Ui::VerticalLayout*> SetupFoldersList(
 			const auto i = ranges::find(list, id, &Data::ChatFilter::id);
 			if (removed && (i == end(list) || id == FilterId(0))) {
 				continue;
-			} else if (!removed && i != end(list) && *i == row.filter) {
+			} else if (!removed && i != end(list)
+				&& row.filter.withColorFrom(*i) == *i) {
 				order.push_back(id);
+				continue;
+			}
+			if (row.filter.isLocal()) {
+				if (!removed) {
+					order.push_back(id);
+				}
 				continue;
 			}
 			const auto newId = ids.take(row.button).value_or(id);
@@ -660,7 +674,9 @@ not_null<Ui::VerticalLayout*> SetupFoldersList(
 			}
 			const auto tl = removed
 				? MTPDialogFilter()
-				: row.filter.tl(newId);
+				: ((i != end(list))
+					? row.filter.withColorFrom(*i)
+					: row.filter).tl(newId);
 			const auto removeChatlistWithChats = removed
 				&& row.filter.chatlist()
 				&& !row.removePeers.empty();
@@ -785,10 +801,9 @@ void SetupRecommendedSection(
 	};
 
 	const auto showLimitReached = [=] {
-		const auto removed = ranges::count_if(
-			state->rows,
-			&FilterRow::removed);
-		const auto count = int(state->rows.size() - removed);
+		const auto count = int(ranges::count_if(state->rows, [](const auto &row) {
+			return !row.removed && !row.filter.isLocal();
+		}));
 		if (count < limit()) {
 			return false;
 		}
@@ -810,14 +825,21 @@ void SetupRecommendedSection(
 			const auto row = find(button);
 			row->removed = true;
 			button->setRemoved(true);
+			if (row->filter.isLocal()) {
+				session->data().chatsFilters().removeLocal(row->filter.id());
+			}
 		}, button->lifetime());
 		button->restoreRequests(
 		) | rpl::on_next([=] {
-			if (showLimitReached()) {
+			if (!find(button)->filter.isLocal() && showLimitReached()) {
 				return;
 			}
 			button->setRemoved(false);
-			find(button)->removed = false;
+			const auto row = find(button);
+			row->removed = false;
+			if (row->filter.isLocal()) {
+				session->data().chatsFilters().saveLocal(row->filter);
+			}
 		}, button->lifetime());
 		button->setClickedCallback([=] {
 			const auto found = find(button);
@@ -827,6 +849,9 @@ void SetupRecommendedSection(
 			const auto doneCallback = [=](const Data::ChatFilter &result) {
 				find(button)->filter = result;
 				button->updateData(result);
+				if (result.isLocal()) {
+					session->data().chatsFilters().saveLocal(result);
+				}
 			};
 			const auto saveAnd = [=](
 					const Data::ChatFilter &data,
@@ -906,10 +931,9 @@ void SetupRecommendedSection(
 				suggestion.description));
 			button->addRequests(
 				) | rpl::on_next([=] {
-				if (showLimitReached()) {
-					return;
-				}
-				addFilter(filter);
+				const auto local = session->data().chatsFilters().makeLocal(filter);
+				addFilter(local);
+				session->data().chatsFilters().saveLocal(local);
 				state->suggested = state->suggested.current() - 1;
 				delete button;
 			}, button->lifetime());
@@ -922,8 +946,8 @@ void SetupRecommendedSection(
 		state->suggested.value(),
 		state->count.value(),
 		Data::AmPremiumValue(session)
-	) | rpl::map([limit](int suggested, int count, bool) {
-		return suggested > 0 && count < limit();
+	) | rpl::map([](int suggested, int, bool) {
+		return suggested > 0;
 	});
 	nonEmptyAbout->toggleOn(std::move(showSuggestions));
 }
@@ -994,10 +1018,6 @@ void BuildFoldersListSection(
 }
 
 void BuildTagsSection(SectionBuilder &builder, not_null<FoldersState*> state) {
-	if (!builder.session()->premiumPossible()) {
-		return;
-	}
-
 	builder.addDivider();
 	builder.addSkip();
 
@@ -1013,7 +1033,6 @@ void BuildTagsSection(SectionBuilder &builder, not_null<FoldersState*> state) {
 			Fn<void()> sendCallback;
 		};
 
-		auto premium = Data::AmPremiumValue(session);
 		const auto tagsButton = content->add(
 			object_ptr<Ui::SettingsButton>(
 				content,
@@ -1024,14 +1043,8 @@ void BuildTagsSection(SectionBuilder &builder, not_null<FoldersState*> state) {
 		}
 		const auto tagsState = tagsButton->lifetime().make_state<TagsState>();
 		tagsButton->toggleOn(rpl::merge(
-			rpl::combine(
-				session->data().chatsFilters().tagsEnabledValue(),
-				rpl::duplicate(premium),
-				rpl::mappers::_1 && rpl::mappers::_2),
+			session->data().chatsFilters().tagsEnabledValue(),
 			tagsState->tagsTurnOff.events()));
-		rpl::duplicate(premium) | rpl::on_next([=](bool value) {
-			tagsButton->setToggleLocked(!value);
-		}, tagsButton->lifetime());
 
 		const auto send = [=,
 				weak = base::make_weak(tagsButton)](bool checked) {
@@ -1044,18 +1057,9 @@ void BuildTagsSection(SectionBuilder &builder, not_null<FoldersState*> state) {
 
 		tagsButton->toggledValue(
 		) | rpl::filter([=](bool checked) {
-			const auto premium = session->premium();
-			if (checked && !premium) {
-				ShowPremiumPreviewToBuy(controller, PremiumFeature::FilterTags);
-				tagsState->tagsTurnOff.fire(false);
-			}
-			if (!premium) {
-				state->tagsButtonEnabled.fire(false);
-			} else {
-				state->tagsButtonEnabled.fire_copy(checked);
-			}
-			const auto proceed = premium
-				&& (checked != session->data().chatsFilters().tagsEnabled());
+			state->tagsButtonEnabled.fire_copy(checked);
+			const auto proceed = checked
+				!= session->data().chatsFilters().tagsEnabled();
 			if (!proceed) {
 				tagsState->requestTimer.cancel();
 			}
@@ -1080,29 +1084,16 @@ void BuildTagsSection(SectionBuilder &builder, not_null<FoldersState*> state) {
 		return SearchEntry{
 			.id = u"folders/show-tags"_q,
 			.title = tr::lng_filters_enable_tags(tr::now),
-			.keywords = { u"tags"_q, u"colors"_q, u"premium"_q },
+			.keywords = { u"tags"_q, u"colors"_q },
 		};
 	});
 
 	builder.addSkip();
 
 	builder.add([=](const WidgetContext &ctx) {
-		auto premium = Data::AmPremiumValue(session);
-		const auto about = Ui::AddDividerText(
+		Ui::AddDividerText(
 			ctx.container,
-			rpl::conditional(
-				rpl::duplicate(premium),
-				tr::lng_filters_enable_tags_about(tr::rich),
-				tr::lng_filters_enable_tags_about_premium(
-					lt_link,
-					tr::lng_effect_premium_link() | rpl::map([](QString t) {
-						return tr::link(std::move(t), u"internal:"_q);
-					}),
-					tr::rich)));
-		about->setClickHandlerFilter([=](const auto &...) {
-			Settings::ShowPremium(ctx.controller, u"folder_tags"_q);
-			return true;
-		});
+			tr::lng_filters_enable_tags_about(tr::rich));
 		return SectionBuilder::WidgetToAdd{};
 	});
 }
@@ -1307,15 +1298,13 @@ const auto kMeta = BuildHelper({
 		};
 	});
 
-	if (builder.session()->premiumPossible()) {
-		builder.add(nullptr, [] {
-			return SearchEntry{
-				.id = u"folders/show-tags"_q,
-				.title = tr::lng_filters_enable_tags(tr::now),
-				.keywords = { u"tags"_q, u"colors"_q, u"premium"_q },
-			};
-		});
-	}
+	builder.add(nullptr, [] {
+		return SearchEntry{
+			.id = u"folders/show-tags"_q,
+			.title = tr::lng_filters_enable_tags(tr::now),
+			.keywords = { u"tags"_q, u"colors"_q },
+		};
+	});
 
 	builder.add(nullptr, [] {
 		return SearchEntry{

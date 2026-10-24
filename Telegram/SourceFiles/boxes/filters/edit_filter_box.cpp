@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/filters/edit_filter_chats_preview.h"
 #include "boxes/filters/edit_filter_links.h"
 #include "boxes/premium_limits_box.h"
+#include "storage/local_chat_folders_format.h"
 #include "boxes/premium_preview_box.h"
 #include "chat_helpers/emoji_suggestions_widget.h"
 #include "chat_helpers/message_field.h"
@@ -31,6 +32,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_premium_limits.h"
 #include "data/data_session.h"
 #include "data/data_user.h"
+#include "data/local_pinned_dialogs.h"
+#include "dialogs/dialogs_main_list.h"
+#include "dialogs/dialogs_pinned_list.h"
 #include "history/history.h"
 #include "info/userpic/info_userpic_color_circle_button.h"
 #include "lang/lang_keys.h"
@@ -102,7 +106,7 @@ not_null<FilterChatsPreview*> SetupChatsPreview(
 			(rules.flags() & ~flag),
 			rules.always(),
 			rules.pinned(),
-			rules.never());
+			rules.never()).withLocalId(rules.localId()).withColorFrom(rules);
 		updateDefaultTitle(computed);
 		*data = std::move(computed);
 	}, preview->lifetime());
@@ -124,7 +128,7 @@ not_null<FilterChatsPreview*> SetupChatsPreview(
 			rules.flags(),
 			std::move(always),
 			std::move(pinned),
-			std::move(never));
+			std::move(never)).withLocalId(rules.localId()).withColorFrom(rules);
 		updateDefaultTitle(computed);
 		*data = std::move(computed);
 	}, preview->lifetime());
@@ -142,11 +146,21 @@ void EditExceptions(
 	const auto include = (options & Flag::Contacts) != Flags(0);
 	const auto rules = data->current();
 	const auto session = &window->session();
-	const auto limit = Data::PremiumLimits(
-		session
-	).dialogFiltersChatsCurrent();
+	const auto limit = rules.isLocal()
+		? Storage::LocalData::ChatFolders::kMaximumMembers
+		: Data::PremiumLimits(session).dialogFiltersChatsCurrent();
 	const auto showLimitReached = [=] {
-		window->show(Box(FilterChatsLimitBox, session, limit, include));
+		if (rules.isLocal()) {
+			window->showToast((include
+				? tr::lng_filter_chats_limit1
+				: tr::lng_filter_chats_exlude_limit1)(
+					tr::now,
+					lt_count,
+					limit,
+					tr::rich));
+		} else {
+			window->show(Box(FilterChatsLimitBox, session, limit, include));
+		}
 	};
 	auto controller = std::make_unique<EditFilterChatsListController>(
 		session,
@@ -192,7 +206,8 @@ void EditExceptions(
 					| rawController->chosenOptions()),
 				include ? std::move(changed) : std::move(removeFrom),
 				std::move(pinned),
-				include ? std::move(removeFrom) : std::move(changed));
+				include ? std::move(removeFrom) : std::move(changed)
+				).withLocalId(rules.localId()).withColorFrom(rules);
 			updateDefaultTitle(computed);
 			*data = computed;
 			refresh();
@@ -427,7 +442,7 @@ void CreateIconSelector(
 			rules.flags(),
 			rules.always(),
 			rules.pinned(),
-			rules.never());
+			rules.never()).withLocalId(rules.localId()).withColorFrom(rules);
 	}, panel->lifetime());
 
 	const auto updatePanelGeometry = [=] {
@@ -528,8 +543,31 @@ void EditFilterBox(
 		base::unique_qptr<ChatHelpers::TabbedPanel> emojiPanel;
 	};
 	const auto owner = &window->session().data();
+	auto initial = filter;
+	if (filter.isLocal() && owner->chatsFilters().isLocal(filter.id())) {
+		auto always = filter.always();
+		auto pinned = std::vector<not_null<History*>>();
+		for (const auto &key : owner->chatsFilters().chatsList(
+				filter.id())->pinned()->order()) {
+			if (const auto history = key.history()) {
+				if (!filter.never().contains(history)) {
+					always.emplace(history);
+					pinned.push_back(history);
+				}
+			}
+		}
+		initial = Data::ChatFilter(
+			filter.id(),
+			filter.title(),
+			filter.iconEmoji(),
+			filter.colorIndex(),
+			filter.flags(),
+			std::move(always),
+			std::move(pinned),
+			filter.never()).withLocalId(filter.localId());
+	}
 	const auto state = box->lifetime().make_state<State>(State{
-		.rules = filter,
+		.rules = initial,
 		.chatlist = filter.chatlist(),
 		.creating = filter.title().empty(),
 		.title = filter.titleText(),
@@ -667,6 +705,7 @@ void EditFilterBox(
 		st::emojiPanMinHeight);
 	state->emojiPanel->hide();
 	state->emojiPanel->selector()->setCurrentPeer(window->session().user());
+	state->emojiPanel->selector()->setAllowEmojiWithoutPremium(filter.isLocal());
 	state->emojiPanel->selector()->emojiChosen(
 	) | rpl::on_next([=](ChatHelpers::EmojiChosen data) {
 		Ui::InsertEmojiAtCursor(name->textCursor(), data.emoji);
@@ -676,6 +715,7 @@ void EditFilterBox(
 		const auto info = data.document->sticker();
 		if (info
 			&& info->setType == Data::StickersType::Emoji
+			&& !filter.isLocal()
 			&& !window->session().premium()) {
 			ShowPremiumPreviewBox(
 				window,
@@ -798,20 +838,10 @@ void EditFilterBox(
 				content,
 				object_ptr<Ui::VerticalLayout>(content)));
 		const auto colors = wrap->entity();
-		const auto session = &window->session();
 
-		wrap->toggleOn(
-			rpl::combine(
-				session->premiumPossibleValue(),
-				session->data().chatsFilters().tagsEnabledValue(),
-				Data::AmPremiumValue(session)
-			) | rpl::map([=] (bool possible, bool tagsEnabled, bool premium) {
-				return possible && (tagsEnabled || !premium);
-			}),
-			anim::type::instant);
+		wrap->toggleOn(rpl::single(true), anim::type::instant);
 
 		const auto &padding = st::defaultSubsectionTitlePadding;
-		const auto isPremium = session->premium();
 		const auto titleWrap = colors->add(
 			object_ptr<Ui::FixedHeightWidget>(
 				colors,
@@ -896,9 +926,7 @@ void EditFilterBox(
 			const auto button = Ui::CreateChild<UserpicBuilder::CircleButton>(
 				line);
 			button->resize(side, side);
-			const auto progress = isPremium
-				? (state->colorIndex.current() == i)
-				: (i == kNoTag);
+			const auto progress = (state->colorIndex.current() == i);
 			button->setSelectedProgress(progress);
 			const auto color = palette(i);
 			button->setBrush(color);
@@ -939,11 +967,6 @@ void EditFilterBox(
 				}
 				state->colorIndex = now;
 			});
-			if (!session->premium()) {
-				button->setClickedCallback([w = window] {
-					ShowPremiumPreviewToBuy(w, PremiumFeature::FilterTags);
-				});
-			}
 		}
 		line->sizeValue() | rpl::on_next([=](const QSize &size) {
 			const auto totalWidth = buttons.size() * side;
@@ -961,9 +984,7 @@ void EditFilterBox(
 			icon->resize(side, side);
 			icon->paintRequest() | rpl::on_next([=] {
 				auto p = QPainter(icon);
-				(session->premium()
-					? st::windowFilterSmallRemove.icon
-					: st::historySendDisabledIcon).paintInCenter(
+				st::windowFilterSmallRemove.icon.paintInCenter(
 						p,
 						QRectF(icon->rect()),
 						st::historyPeerUserpicFg->c);
@@ -1000,99 +1021,112 @@ void EditFilterBox(
 		const auto rawColorIndex = state->colorIndex.current();
 		const auto colorIndex = (rawColorIndex >= kNoTag
 			? std::nullopt
-			: std::make_optional(rawColorIndex));
-		return rules.withTitle(
-			{ std::move(title), staticTitle }
-		).withColorIndex(colorIndex);
+			: std::make_optional(uint8(rawColorIndex)));
+		const auto titled = rules.withTitle({ std::move(title), staticTitle });
+		return rules.isLocal()
+			? titled.withColorIndex(colorIndex)
+			: titled.withLocalColorIndex(std::make_optional(colorIndex));
+	};
+	const auto saveColor = [=](const Data::ChatFilter &result) {
+		const auto &current = owner->chatsFilters().list();
+		const auto i = ranges::find(current, result.id(), &Data::ChatFilter::id);
+		if (!result.isLocal() && i != end(current)
+			&& result.colorIndex() != i->colorIndex()) {
+			owner->chatsFilters().saveCloudColor(result.id(), result.colorIndex());
+		}
 	};
 
-	Ui::AddSubsectionTitle(
-		content,
-		rpl::conditional(
+	if (!filter.isLocal()) {
+		Ui::AddSubsectionTitle(
+			content,
+			rpl::conditional(
+				state->hasLinks.value(),
+				tr::lng_filters_link_has(),
+				tr::lng_filters_link()));
+
+		state->hasLinks.changes() | rpl::on_next([=] {
+			content->resizeToWidth(content->widthNoMargins());
+		}, content->lifetime());
+
+		if (filter.chatlist()) {
+			window->session().data().chatsFilters().reloadChatlistLinks(
+				filter.id());
+		}
+
+		const auto createLink = AddToggledButton(
+			content,
+			state->hasLinks.value() | rpl::map(!rpl::mappers::_1),
+			tr::lng_filters_link_create(),
+			st::settingsButtonActive,
+			{ &st::settingsFolderShareIcon, IconType::Simple });
+		const auto addLink = AddToggledButton(
+			content,
 			state->hasLinks.value(),
-			tr::lng_filters_link_has(),
-			tr::lng_filters_link()));
+			tr::lng_group_invite_add(),
+			st::settingsButtonActive,
+			{ &st::settingsIconAdd, IconType::Round, &st::windowBgActive });
 
-	state->hasLinks.changes() | rpl::on_next([=] {
-		content->resizeToWidth(content->widthNoMargins());
-	}, content->lifetime());
+		SetupFilterLinks(
+			content,
+			window,
+			state->links.value(),
+			[=] { return collect().value_or(Data::ChatFilter()); });
 
-	if (filter.chatlist()) {
-		window->session().data().chatsFilters().reloadChatlistLinks(
-			filter.id());
-	}
+		rpl::merge(
+			createLink->clicks(),
+			addLink->clicks()
+		) | rpl::filter(
+			(rpl::mappers::_1 == Qt::LeftButton)
+		) | rpl::on_next([=](Qt::MouseButton button) {
+			const auto result = collect();
+			if (!result || !GoodForExportFilterLink(window, *result)) {
+				return;
+			}
+			const auto shared = CollectFilterLinkChats(*result);
+			if (shared.empty()) {
+				window->show(ShowLinkBox(window, *result, {}));
+				return;
+			}
+			saveColor(*result);
+			saveAnd(*result, crl::guard(box, [=](Data::ChatFilter updated) {
+				state->creating = false;
 
-	const auto createLink = AddToggledButton(
-		content,
-		state->hasLinks.value() | rpl::map(!rpl::mappers::_1),
-		tr::lng_filters_link_create(),
-		st::settingsButtonActive,
-		{ &st::settingsFolderShareIcon, IconType::Simple });
-	const auto addLink = AddToggledButton(
-		content,
-		state->hasLinks.value(),
-		tr::lng_group_invite_add(),
-		st::settingsButtonActive,
-		{ &st::settingsIconAdd, IconType::Round, &st::windowBgActive });
+				// Comparison of ChatFilter-s don't take id into account!
+				data->force_assign(updated);
+				const auto id = updated.id();
+				state->links = owner->chatsFilters().chatlistLinks(id);
+				ExportFilterLink(id, shared, crl::guard(box, [=](
+						Data::ChatFilterLink link) {
+					Expects(link.id == id);
 
-	SetupFilterLinks(
-		content,
-		window,
-		state->links.value(),
-		[=] { return collect().value_or(Data::ChatFilter()); });
-
-	rpl::merge(
-		createLink->clicks(),
-		addLink->clicks()
-	) | rpl::filter(
-		(rpl::mappers::_1 == Qt::LeftButton)
-	) | rpl::on_next([=](Qt::MouseButton button) {
-		const auto result = collect();
-		if (!result || !GoodForExportFilterLink(window, *result)) {
-			return;
-		}
-		const auto shared = CollectFilterLinkChats(*result);
-		if (shared.empty()) {
-			window->show(ShowLinkBox(window, *result, {}));
-			return;
-		}
-		saveAnd(*result, crl::guard(box, [=](Data::ChatFilter updated) {
-			state->creating = false;
-
-			// Comparison of ChatFilter-s don't take id into account!
-			data->force_assign(updated);
-			const auto id = updated.id();
-			state->links = owner->chatsFilters().chatlistLinks(id);
-			ExportFilterLink(id, shared, crl::guard(box, [=](
-					Data::ChatFilterLink link) {
-				Expects(link.id == id);
-
-				*data = data->current().withChatlist(true, true);
-				window->show(ShowLinkBox(window, updated, link));
-			}), crl::guard(box, [=](QString error) {
-				const auto session = &window->session();
-				if (error == u"CHATLISTS_TOO_MUCH"_q) {
-					window->show(Box(ShareableFiltersLimitBox, session));
-				} else if (error == u"INVITES_TOO_MUCH"_q) {
-					window->show(Box(FilterLinksLimitBox, session));
-				} else if (error == u"CHANNELS_TOO_MUCH"_q) {
-					window->show(Box(ChannelsLimitBox, session));
-				} else if (error == u"USER_CHANNELS_TOO_MUCH"_q) {
-					window->showToast(
-						{ tr::lng_filters_link_group_admin_error(tr::now) });
-				} else {
-					window->show(ShowLinkBox(window, updated, { .id = id }));
-				}
+					*data = data->current().withChatlist(true, true);
+					window->show(ShowLinkBox(window, updated, link));
+				}), crl::guard(box, [=](QString error) {
+					const auto session = &window->session();
+					if (error == u"CHATLISTS_TOO_MUCH"_q) {
+						window->show(Box(ShareableFiltersLimitBox, session));
+					} else if (error == u"INVITES_TOO_MUCH"_q) {
+						window->show(Box(FilterLinksLimitBox, session));
+					} else if (error == u"CHANNELS_TOO_MUCH"_q) {
+						window->show(Box(ChannelsLimitBox, session));
+					} else if (error == u"USER_CHANNELS_TOO_MUCH"_q) {
+						window->showToast(
+							{ tr::lng_filters_link_group_admin_error(tr::now) });
+					} else {
+						window->show(ShowLinkBox(window, updated, { .id = id }));
+					}
+				}));
 			}));
-		}));
-	}, createLink->lifetime());
-	Ui::AddSkip(content);
-	Ui::AddDividerText(
-		content,
-		rpl::conditional(
-			state->hasLinks.value(),
-			tr::lng_filters_link_about_many(),
-			tr::lng_filters_link_about()));
+		}, createLink->lifetime());
+		Ui::AddSkip(content);
+		Ui::AddDividerText(
+			content,
+			rpl::conditional(
+				state->hasLinks.value(),
+				tr::lng_filters_link_about_many(),
+				tr::lng_filters_link_about()));
+
+	}
 
 	const auto show = box->uiShow();
 	const auto refreshPreviews = [=] {
@@ -1124,8 +1158,19 @@ void EditFilterBox(
 
 	const auto save = [=] {
 		if (const auto result = collect()) {
+			saveColor(*result);
 			box->closeBox();
 			doneCallback(*result);
+			if (initial.isLocal()) {
+				for (const auto history : initial.pinned()) {
+					if (!ranges::contains(result->pinned(), history)) {
+						owner->localPinnedDialogs().setPinned(
+							history,
+							initial.id(),
+							false);
+					}
+				}
+			}
 		}
 	};
 	name->submits() | rpl::on_next(save, name->lifetime());
@@ -1152,7 +1197,17 @@ void EditExistingFilter(
 	const auto doneCallback = [=](const Data::ChatFilter &result) {
 		Expects(id == result.id());
 
-		const auto tl = result.tl();
+		if (result.isLocal()) {
+			session->data().chatsFilters().saveLocal(result);
+			return;
+		}
+		const auto &current = session->data().chatsFilters().list();
+		const auto i = ranges::find(current, id, &Data::ChatFilter::id);
+		if (i == end(current)
+			|| (result.withColorFrom(*i) == *i && result.pinned() == i->pinned())) {
+			return;
+		}
+		const auto tl = result.withColorFrom(*i).tl();
 		session->data().chatsFilters().apply(MTP_updateDialogFilter(
 			MTP_flags(MTPDupdateDialogFilter::Flag::f_filter),
 			MTP_int(id),

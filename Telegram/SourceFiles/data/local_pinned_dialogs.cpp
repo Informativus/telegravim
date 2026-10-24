@@ -95,6 +95,7 @@ LocalPinnedDialogs::LocalPinnedDialogs(not_null<Session*> owner)
 , _api(std::make_unique<MTP::Sender>(&owner->session().mtp()))
 , _hydrateTimer([=] { scheduleRefresh(); }) {
 	_items->changes() | rpl::on_next([=] {
+		_owner->chatsFilters().refreshLocalColors();
 		const auto error = _items->error();
 		if (error != _error) {
 			_error = error;
@@ -175,11 +176,18 @@ bool LocalPinnedDialogs::supports(Dialogs::Key key, FilterId filterId) const {
 	return false;
 }
 
+QString LocalPinnedDialogs::filterScope(FilterId filterId) const {
+	const auto id = _owner->chatsFilters().localId(filterId);
+	return !id.isEmpty()
+		? u"local:"_q + id
+		: (filterId > 0 ? _items->filterScope(filterId) : QString());
+}
+
 QString LocalPinnedDialogs::scope(Dialogs::Key key, FilterId filterId) const {
 	if (!supports(key, filterId)) {
 		return QString();
 	} else if (filterId) {
-		return _items->filterScope(filterId);
+		return filterScope(filterId);
 	} else if (key.sublist()) {
 		return u"saved"_q;
 	}
@@ -194,9 +202,12 @@ bool LocalPinnedDialogs::includes(
 		|| !Eligible(history, _confirmed.contains(history->peer->id))) {
 		return false;
 	}
-	const auto scope = _items->filterScope(filterId);
-	return !scope.isEmpty()
-		&& _items->overridden(scope, history->peer->id).value_or(false);
+	return isPinned(filterId, history->peer->id);
+}
+
+bool LocalPinnedDialogs::isPinned(FilterId filterId, PeerId peer) const {
+	const auto scope = filterScope(filterId);
+	return !scope.isEmpty() && _items->overridden(scope, peer).value_or(false);
 }
 
 bool LocalPinnedDialogs::busy() const {
@@ -276,7 +287,7 @@ void LocalPinnedDialogs::saveOrder(Folder *folder) {
 }
 
 void LocalPinnedDialogs::saveOrder(FilterId filterId) {
-	storeOrder(_items->filterScope(filterId),
+	storeOrder(filterScope(filterId),
 		_owner->chatsFilters().chatsList(filterId)->pinned());
 }
 
@@ -376,7 +387,15 @@ void LocalPinnedDialogs::attach(
 		if (!ranges::contains(filters, filterId, &ChatFilter::id)) {
 			return cloud;
 		}
-		return weak->project(weak->_items->filterScope(filterId), cloud);
+		auto result = weak->project(weak->filterScope(filterId), cloud);
+		const auto i = ranges::find(filters, filterId, &ChatFilter::id);
+		if (i != end(filters) && i->isLocal()) {
+			result.erase(ranges::remove_if(result, [&](Dialogs::Key key) {
+				const auto history = key.history();
+				return !history || i->never().contains(history);
+			}), end(result));
+		}
+		return result;
 	});
 }
 
@@ -410,7 +429,7 @@ void LocalPinnedDialogs::syncFilters() {
 	}
 	auto ids = std::vector<FilterId>();
 	for (const auto &filter : _owner->chatsFilters().list()) {
-		if (filter.id()) {
+		if (filter.id() && !filter.isLocal()) {
 			ids.push_back(filter.id());
 		}
 	}
@@ -509,11 +528,11 @@ void LocalPinnedDialogs::hydrate() {
 		}
 	};
 	for (const auto &scope : _items->scopes()) {
-		if (scope.startsWith(u"local:")
-			|| (scope.startsWith(u"filter:") && !ranges::any_of(
+		if ((scope.startsWith(u"local:") || scope.startsWith(u"filter:"))
+			&& !ranges::any_of(
 				_owner->chatsFilters().list(), [&](const ChatFilter &filter) {
-					return _items->filterScope(filter.id()) == scope;
-				}))) {
+					return filterScope(filter.id()) == scope;
+				})) {
 			continue;
 		}
 		for (const auto id : _items->localPins(scope)) {

@@ -145,8 +145,6 @@ void ChatsFiltersTabs::updateSectionsContentWidths() {
 void ChatsFiltersTabs::fitWidthToSections() {
 	SettingsSlider::fitWidthToSections();
 
-	_lockedFromX = calculateLockedFromX();
-
 	{
 		_sections.clear();
 		enumerateSections([&](Section &section) {
@@ -182,35 +180,34 @@ void ChatsFiltersTabs::setUnreadCount(int index, int unreadCount, bool mute) {
 	updateSectionsContentWidths();
 }
 
-int ChatsFiltersTabs::calculateLockedFromX() const {
-	if (!_lockedFrom) {
-		return std::numeric_limits<int>::max();
-	}
-	auto left = 0;
-	auto index = 0;
-	enumerateSections([&](const Section &section) {
-		const auto currentRight = section.left + section.width;
-		if (index == _lockedFrom) {
-			return false;
-		}
-		left = currentRight;
-		index++;
-		return true;
-	});
-	return left ? left : std::numeric_limits<int>::max();
+bool ChatsFiltersTabs::isLocked(int index) const {
+	return index >= 0
+		&& index < _lockedSections.size()
+		&& _lockedSections[index];
 }
 
-void ChatsFiltersTabs::setLockedFrom(int index) {
-	_lockedFrom = index;
-	_lockedFromX = calculateLockedFromX();
-	if (!index) {
-		_paletteLifetime.destroy();
-		return;
-	}
-	_paletteLifetime = style::PaletteChanged(
-	) | rpl::on_next([this] {
-		_lockCache.emplace(Ui::SideBarLockIcon(_st.labelFg));
+bool ChatsFiltersTabs::lockedAtPosition(QPoint position) const {
+	auto index = 0;
+	enumerateSections([&](const Section &section) {
+		if (position.x() < section.left + section.width) {
+			return false;
+		}
+		++index;
+		return true;
 	});
+	return isLocked(index);
+}
+
+void ChatsFiltersTabs::setLockedSections(std::vector<bool> locked) {
+	_lockedSections = std::move(locked);
+	_paletteLifetime.destroy();
+	if (ranges::contains(_lockedSections, true)) {
+		_paletteLifetime = style::PaletteChanged(
+		) | rpl::on_next([this] {
+			_lockCache.emplace(Ui::SideBarLockIcon(_st.labelFg));
+		});
+	}
+	update();
 }
 
 QImage ChatsFiltersTabs::cacheUnreadCount(int count, bool muted) const {
@@ -288,7 +285,7 @@ void ChatsFiltersTabs::paintEvent(QPaintEvent *e) {
 			section.contentWidth,
 			_st.labelStyle.font->height);
 		if (rect.intersects(clip)) {
-			const auto locked = (_lockedFrom && (index >= _lockedFrom));
+			const auto locked = isLocked(index);
 			if (locked) {
 				constexpr auto kPremiumLockedOpacity = 0.6;
 				p.setOpacity(kPremiumLockedOpacity);
@@ -378,7 +375,7 @@ void ChatsFiltersTabs::paintEvent(QPaintEvent *e) {
 void ChatsFiltersTabs::mousePressEvent(QMouseEvent *e) {
 	const auto mouseButton = e->button();
 	if (mouseButton == Qt::MouseButton::LeftButton) {
-		_lockedPressed = (e->pos().x() >= _lockedFromX);
+		_lockedPressed = lockedAtPosition(e->pos());
 		if (_lockedPressed) {
 			Ui::RpWidget::mousePressEvent(e);
 		} else {
@@ -390,7 +387,7 @@ void ChatsFiltersTabs::mousePressEvent(QMouseEvent *e) {
 }
 
 void ChatsFiltersTabs::mouseMoveEvent(QMouseEvent *e) {
-	if (_reordering) {
+	if (_reordering || lockedAtPosition(e->pos())) {
 		Ui::RpWidget::mouseMoveEvent(e);
 	} else {
 		Ui::SettingsSlider::mouseMoveEvent(e);
@@ -421,7 +418,7 @@ void ChatsFiltersTabs::mouseReleaseEvent(QMouseEvent *e) {
 
 void ChatsFiltersTabs::contextMenuEvent(QContextMenuEvent *e) {
 	const auto pos = e->pos();
-	if (pos.x() >= _lockedFromX) {
+	if (lockedAtPosition(pos)) {
 		return;
 	}
 	auto left = 0;
