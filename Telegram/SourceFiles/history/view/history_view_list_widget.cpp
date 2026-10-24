@@ -92,6 +92,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/crash_reports.h"
 #include "data/components/sponsored_messages.h"
 #include "data/data_session.h"
+#include "data/data_message_reactions.h"
+#include "data/local_saved_tags.h"
 #include "data/data_changes.h"
 #include "data/data_folder.h"
 #include "data/data_media_types.h"
@@ -4733,13 +4735,35 @@ void ListWidget::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 		&& _overState.pointState != PointState::Outside)
 		? _overElement->data().get()
 		: nullptr;
+	auto tagSelection = std::vector<FullMsgId>();
+	if (reactItem && reactItem->reactionsAreTags() && request.overSelection) {
+		const auto self = session().userPeerId();
+		for (const auto &selected : request.selectedItems) {
+			if (selected.msgId.peer == self && IsServerMsgId(selected.msgId.msg)) {
+				tagSelection.push_back(selected.msgId);
+			}
+		}
+	}
 	const auto attached = reactItem
 		? AttachSelectorToMenu(
 			_menu.get(),
 			controller(),
 			desiredPosition,
 			reactItem,
-			[=](ChosenReaction reaction) { reactionChosen(reaction); },
+			[=](ChosenReaction reaction) {
+				if (tagSelection.size() < 2 || reaction.id.paid()) {
+					reactionChosen(reaction);
+					return;
+				}
+				auto &tags = session().data().reactions().localSavedTags();
+				const auto assigned = !ranges::all_of(tagSelection, [&](auto id) {
+					return ranges::contains(tags.chosenReactions(id), reaction.id);
+				});
+				tags.setReaction(tagSelection, reaction.id, assigned);
+				if (_menu) {
+					_menu->hideMenu();
+				}
+			},
 			ItemReactionsAbout(reactItem))
 		: AttachSelectorResult::Skipped;
 	if (attached == AttachSelectorResult::Failed) {

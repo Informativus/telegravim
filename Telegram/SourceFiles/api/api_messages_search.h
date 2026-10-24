@@ -16,6 +16,7 @@ class PeerData;
 
 namespace Data {
 struct ReactionId;
+class LocalSavedTagsSearch;
 } // namespace Data
 
 namespace Api {
@@ -29,6 +30,9 @@ struct FoundMessages {
 	int total = -1;
 	MessageIdsList messages;
 	QString nextToken;
+	bool complete = false;
+	QString error;
+	bool local = false;
 };
 
 class MessagesSearch final {
@@ -53,6 +57,7 @@ public:
 
 	void searchMessages(Request request);
 	void searchMore();
+	void cancel();
 
 	[[nodiscard]] rpl::producer<FoundMessages> messagesFounds() const;
 
@@ -73,8 +78,12 @@ private:
 
 	int _searchInHistoryRequest = 0; // Not real mtpRequestId.
 	mtpRequestId _requestId = 0;
+	std::unique_ptr<Data::LocalSavedTagsSearch> _localSearch;
+	quint64 _localToken = 0;
+	bool _localFailed = false;
 
 	rpl::event_stream<FoundMessages> _messagesFounds;
+	rpl::lifetime _lifetime;
 
 };
 

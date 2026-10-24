@@ -1,0 +1,218 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/telegravim/local-data/v1",
+  "title": "Telegravim local data module envelope",
+  "type": "object",
+  "required": ["module_id", "schema_version"],
+  "properties": {
+    "module_id": {"type": "string", "pattern": "^[a-z0-9_]{1,96}$"},
+    "schema_version": {"type": "integer", "minimum": 1, "maximum": 2147483647}
+  },
+  "additionalProperties": true,
+  "allOf": [{
+    "if": {
+      "properties": {"module_id": {"const": "saved_tags"}, "schema_version": {"enum": [1, 2]}},
+      "required": ["module_id", "schema_version"]
+    },
+    "then": {
+      "required": ["records"],
+      "properties": {"records": {"type": "array", "maxItems": 1000000, "items": {"$ref": "#/$defs/savedRecord"}}}
+    }
+  }],
+  "$defs": {
+    "uuid": {"type": "string", "format": "uuid", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+    "decimalId": {"type": "string", "pattern": "^[1-9][0-9]{0,19}$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "account": {
+      "type": "object",
+      "required": ["environment", "user_id"],
+      "properties": {
+        "environment": {"enum": ["production", "test"]},
+        "user_id": {"$ref": "#/$defs/decimalId"}
+      },
+      "additionalProperties": true
+    },
+    "accountFile": {
+      "allOf": [{"$ref": "#/$defs/account"}],
+      "required": ["profile_id", "extra"],
+      "properties": {
+        "profile_id": {"$ref": "#/$defs/uuid"},
+        "extra": {"type": "object"},
+        "retained_transfer": {
+          "type": "object",
+          "propertyNames": {"not": {"enum": ["account", "profile", "modules", "files"]}},
+          "additionalProperties": true
+        }
+      }
+    },
+    "versionVector": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 256,
+      "propertyNames": {"$ref": "#/$defs/uuid"},
+      "additionalProperties": {"type": "integer", "minimum": 1, "maximum": 9007199254740991}
+    },
+    "record": {
+      "type": "object",
+      "required": ["id", "version_vector", "deleted"],
+      "properties": {
+        "id": {"$ref": "#/$defs/uuid"},
+        "version_vector": {"$ref": "#/$defs/versionVector"},
+        "deleted": {"type": "boolean"},
+        "kind": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "nativeReaction": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind", "emoji"],
+          "properties": {
+            "kind": {"const": "emoji"},
+            "emoji": {"type": "string", "minLength": 1, "maxLength": 32, "not": {"const": "*"}}
+          },
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "required": ["kind", "document_id"],
+          "properties": {
+            "kind": {"const": "custom"},
+            "document_id": {"$ref": "#/$defs/decimalId"}
+          },
+          "additionalProperties": true
+        }
+      ]
+    },
+    "savedPeer": {
+      "type": "object",
+      "required": ["peer_type", "peer_id"],
+      "properties": {
+        "peer_type": {"enum": ["user", "chat", "channel"]},
+        "peer_id": {"$ref": "#/$defs/decimalId"}
+      },
+      "additionalProperties": true
+    },
+    "savedRecord": {
+      "allOf": [
+        {"$ref": "#/$defs/record"},
+        {
+          "if": {"properties": {"kind": {"const": "tag"}, "deleted": {"const": false}}, "required": ["kind", "deleted"]},
+          "then": {
+            "required": ["title", "emoji", "position"],
+            "anyOf": [
+              {"required": ["native_reaction"]},
+              {"properties": {"title": {"minLength": 1}}}
+            ],
+            "properties": {
+              "title": {"type": "string", "maxLength": 100},
+              "emoji": {"type": "string", "maxLength": 32},
+              "native_reaction": {"$ref": "#/$defs/nativeReaction"},
+              "position": {"type": "integer", "minimum": 0, "maximum": 2147483647}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "binding"}, "deleted": {"const": false}}, "required": ["kind", "deleted"]},
+          "then": {
+            "required": ["tag_id", "message"],
+            "properties": {
+              "tag_id": {"$ref": "#/$defs/uuid"},
+              "message": {
+                "type": "object",
+                "required": ["peer_type", "peer_id", "message_id"],
+                "properties": {
+                  "peer_type": {"const": "user"},
+                  "peer_id": {"$ref": "#/$defs/decimalId"},
+                  "message_id": {"type": "string", "pattern": "^[1-9][0-9]{0,9}$"}
+                },
+                "additionalProperties": true
+              },
+              "source_text": {"type": "string", "maxLength": 32768},
+              "source_hash": {"$ref": "#/$defs/sha256"},
+              "saved_peer": {"$ref": "#/$defs/savedPeer"},
+              "reaction_position": {"type": "integer", "minimum": 0, "maximum": 2147483647}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "filter"}, "deleted": {"const": false}}, "required": ["kind", "deleted"]},
+          "then": {
+            "required": ["tags", "text"],
+            "properties": {
+              "tags": {"type": "array", "items": {"$ref": "#/$defs/uuid"}},
+              "text": {"type": "string", "maxLength": 4096}
+            }
+          }
+        }
+      ]
+    },
+    "file": {
+      "type": "object",
+      "required": ["path", "size", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "size": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": true
+    },
+    "manifest": {
+      "type": "object",
+      "required": ["format", "version", "package_id", "created_at", "device_id", "generation", "extra", "profiles", "assets", "files"],
+      "properties": {
+        "format": {"const": "telegravim-transfer"},
+        "version": {"const": 1},
+        "package_id": {"$ref": "#/$defs/uuid"},
+        "created_at": {"type": "string", "format": "date-time"},
+        "device_id": {"$ref": "#/$defs/uuid"},
+        "generation": {"$ref": "#/$defs/uuid"},
+        "extra": {"type": "object"},
+        "retained_transfer": {
+          "type": "object",
+          "propertyNames": {"not": {"const": "manifest"}},
+          "additionalProperties": true
+        },
+        "profiles": {
+          "type": "array", "maxItems": 128,
+          "items": {
+            "type": "object", "required": ["profile_id", "account", "modules"],
+            "properties": {
+              "profile_id": {"$ref": "#/$defs/uuid"},
+              "account": {"type": "string"},
+              "modules": {
+                "type": "array", "maxItems": 128,
+                "items": {
+                  "type": "object", "required": ["module_id", "path"],
+                  "properties": {"module_id": {"type": "string", "pattern": "^[a-z0-9_]{1,96}$"}, "path": {"type": "string"}},
+                  "additionalProperties": true
+                }
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "assets": {
+          "type": "array", "maxItems": 100000,
+          "items": {
+            "type": "object", "required": ["sha256", "size", "extra"],
+            "properties": {
+              "sha256": {"$ref": "#/$defs/sha256"},
+              "size": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+              "extra": {"type": "object"},
+              "retained_transfer": {
+                "type": "object",
+                "propertyNames": {"not": {"enum": ["registry", "file"]}},
+                "additionalProperties": true
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "files": {"type": "array", "maxItems": 116512, "items": {"$ref": "#/$defs/file"}}
+      },
+      "additionalProperties": true
+    }
+  }
+}

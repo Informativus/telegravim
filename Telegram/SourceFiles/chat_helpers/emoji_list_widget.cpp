@@ -3554,7 +3554,7 @@ void EmojiListWidget::refreshCustom() {
 	const auto wasSectionTop = sectionInfoByOffset(wasTop).top;
 	auto old = base::take(_custom);
 	const auto session = &this->session();
-	const auto premiumPossible = session->premiumPossible();
+	const auto premiumPossible = _allowWithoutPremium || session->premiumPossible();
 	const auto onlyUnicodeEmoji = _onlyUnicodeEmoji || !premiumPossible;
 	const auto premiumMayBeBought = (!onlyUnicodeEmoji)
 		&& premiumPossible

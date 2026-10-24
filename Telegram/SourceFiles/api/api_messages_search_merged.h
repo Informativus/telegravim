@@ -29,6 +29,7 @@ public:
 	void clear();
 	void search(const Request &search);
 	void searchMore();
+	void cancel();
 	void disableMigrated();
 
 	[[nodiscard]] const FoundMessages &messages() const;

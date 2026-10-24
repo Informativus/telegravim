@@ -58,6 +58,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_changes.h"
 #include "data/data_session.h"
 #include "data/data_message_reactions.h"
+#include "data/local_saved_tags.h"
 #include "data/data_folder.h"
 #include "data/data_forum.h"
 #include "data/data_forum_topic.h"
@@ -3618,6 +3619,10 @@ void HistoryItem::toggleReaction(
 		const Data::ReactionId &reaction,
 		HistoryReactionSource source) {
 	Expects(!reaction.paid());
+	if (Data::UsesLocalSavedTags(this)) {
+		_history->owner().reactions().toggleLocalTag(this, reaction);
+		return;
+	}
 
 	const auto addToRecent = (source == HistoryReactionSource::Selector);
 	if (_reactions
@@ -3669,11 +3674,17 @@ void HistoryItem::updateReactionsUnknown() {
 }
 
 const std::vector<Data::MessageReaction> &HistoryItem::reactions() const {
+	if (Data::UsesLocalSavedTags(this)) {
+		return _history->owner().reactions().localSavedTags().reactions(fullId());
+	}
 	static const auto kEmpty = std::vector<Data::MessageReaction>();
 	return _reactions ? _reactions->list() : kEmpty;
 }
 
 std::vector<Data::MessageReaction> HistoryItem::reactionsWithLocal() const {
+	if (Data::UsesLocalSavedTags(this)) {
+		return reactions();
+	}
 	if (!_reactions) {
 		return {};
 	}
@@ -3713,7 +3724,8 @@ PeerId HistoryItem::reactionsLocalShownPeer() const {
 }
 
 bool HistoryItem::reactionsAreTags() const {
-	return _flags & MessageFlag::ReactionsAreTags;
+	return Data::UsesLocalSavedTags(this)
+		|| (_flags & MessageFlag::ReactionsAreTags);
 }
 
 auto HistoryItem::recentReactions() const
@@ -3723,7 +3735,9 @@ auto HistoryItem::recentReactions() const
 	static const auto kEmpty = base::flat_map<
 		Data::ReactionId,
 		std::vector<Data::RecentReaction>>();
-	return _reactions ? _reactions->recent() : kEmpty;
+	return !Data::UsesLocalSavedTags(this) && _reactions
+		? _reactions->recent()
+		: kEmpty;
 }
 
 auto HistoryItem::topPaidReactionsWithLocal() const
@@ -3765,12 +3779,17 @@ auto HistoryItem::topPaidReactionsWithLocal() const
 }
 
 bool HistoryItem::canViewReactions() const {
-	return (_flags & MessageFlag::CanViewReactions)
+	return !Data::UsesLocalSavedTags(this)
+		&& (_flags & MessageFlag::CanViewReactions)
 		&& _reactions
 		&& !_reactions->list().empty();
 }
 
 std::vector<Data::ReactionId> HistoryItem::chosenReactions() const {
+	if (Data::UsesLocalSavedTags(this)) {
+		return _history->owner().reactions().localSavedTags()
+			.chosenReactions(fullId());
+	}
 	return _reactions
 		? _reactions->chosen()
 		: std::vector<Data::ReactionId>();
@@ -5263,12 +5282,18 @@ void HistoryItem::setReactions(const MTPMessageReactions *reactions) {
 	if (changeReactions(reactions) && _reactions->hasUnread()) {
 		_flags |= MessageFlag::HasUnreadReaction;
 	}
+	if (Data::UsesLocalSavedTags(this)) {
+		_history->owner().reactions().localSavedTags().observeMessage(this);
+	}
 }
 
 void HistoryItem::updateReactions(const MTPMessageReactions *reactions) {
 	const auto wasRecentUsers = LookupRecentUnreadReactedUsers(this);
 	const auto hadUnread = hasUnreadReaction();
 	const auto changed = changeReactions(reactions);
+	if (Data::UsesLocalSavedTags(this)) {
+		_history->owner().reactions().localSavedTags().observeMessage(this);
+	}
 	if (!changed) {
 		return;
 	}

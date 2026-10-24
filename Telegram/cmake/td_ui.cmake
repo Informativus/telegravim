@@ -29,6 +29,7 @@ set(style_files
     api/api_chat_invite.style
     boxes/add_contact_box.style
     boxes/background_preview_box.style
+    boxes/local_transfer.style
     boxes/moderate_messages_box.style
     boxes/passcode_box.style
     boxes/peer_list_section_index.style

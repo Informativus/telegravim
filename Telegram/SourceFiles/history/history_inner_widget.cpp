@@ -125,6 +125,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_saved_music.h"
 #include "data/data_saved_sublist.h"
 #include "data/data_session.h"
+#include "data/data_message_reactions.h"
+#include "data/local_saved_tags.h"
 #include "data/data_document.h"
 #include "data/data_photo.h"
 #include "data/data_channel.h"
@@ -4093,13 +4095,34 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 	const auto reactItem = Element::Hovered()
 		? Element::Hovered()->data().get()
 		: nullptr;
+	auto tagSelection = std::vector<FullMsgId>();
+	if (_peer->isSelf() && isUponSelected > 1) {
+		for (const auto &item : _selected) {
+			if (item->reactionsAreTags()) {
+				tagSelection.push_back(item->fullId());
+			}
+		}
+	}
 	const auto attached = reactItem
 		? AttachSelectorToMenu(
 			_menu.get(),
 			controller,
 			desiredPosition,
 			reactItem,
-			[=](ChosenReaction reaction) { reactionChosen(reaction); },
+			[=](ChosenReaction reaction) {
+				if (tagSelection.size() < 2 || reaction.id.paid()) {
+					reactionChosen(reaction);
+					return;
+				}
+				auto &tags = session->data().reactions().localSavedTags();
+				const auto assigned = !ranges::all_of(tagSelection, [&](auto id) {
+					return ranges::contains(tags.chosenReactions(id), reaction.id);
+				});
+				tags.setReaction(tagSelection, reaction.id, assigned);
+				if (_menu) {
+					_menu->hideMenu();
+				}
+			},
 			ItemReactionsAbout(reactItem))
 		: AttachSelectorResult::Skipped;
 	if (attached == AttachSelectorResult::Failed) {

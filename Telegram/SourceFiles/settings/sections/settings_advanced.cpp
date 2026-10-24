@@ -19,6 +19,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/auto_download_box.h"
 #include "boxes/connection_box.h"
 #include "boxes/download_path_box.h"
+#include "boxes/local_transfer_box.h"
 #include "core/application.h"
 #include "core/core_settings.h"
 #include "core/file_utilities.h"
@@ -1268,6 +1269,16 @@ void BuildExportSection(SectionBuilder &builder) {
 				[=] { Core::App().exportManager().start(session); });
 		},
 		.keywords = { u"export"_q, u"data"_q, u"backup"_q },
+	});
+
+	builder.addButton({
+		.id = u"advanced/local_data_transfer"_q,
+		.title = tr::lng_local_transfer_title(),
+		.icon = { &st::menuIconExport },
+		.onClick = [=] {
+			controller->show(Box(LocalTransferBox, session));
+		},
+		.keywords = { u"local"_q, u"transfer"_q, u"import"_q, u"backup"_q },
 	});
 
 	builder.addButton({

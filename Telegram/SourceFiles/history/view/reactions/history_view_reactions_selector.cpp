@@ -1290,6 +1290,7 @@ void Selector::createList() {
 			inner.y(),
 			inner.width(),
 			_footer->height());
+		_list->setAllowWithoutPremium(_reactions.tags);
 		_shadowTop = _outer.y();
 		_shadowSkip = _useTransparency ? (st::reactStripHeight / 2) : 0;
 		_shadow = Ui::CreateChild<Ui::PlainShadow>(this);
@@ -1698,15 +1699,7 @@ auto AttachSelectorToMenu(
 TextWithEntities ItemReactionsAbout(not_null<HistoryItem*> item) {
 	return !item->reactionsAreTags()
 		? TextWithEntities()
-		: item->history()->session().premium()
-		? TextWithEntities{ tr::lng_add_tag_about(tr::now) }
-		: tr::lng_subscribe_tag_about(
-			tr::now,
-			lt_link,
-			tr::link(
-				tr::lng_subscribe_tag_link(tr::now),
-				u"internal:about_tags"_q),
-			tr::marked);
+		: tr::marked(tr::lng_add_tag_about(tr::now));
 }
 
 } // namespace HistoryView::Reactions

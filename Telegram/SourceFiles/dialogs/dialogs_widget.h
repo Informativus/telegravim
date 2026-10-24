@@ -26,6 +26,7 @@ class Error;
 namespace Data {
 class Forum;
 class CommunityInfo;
+class LocalSavedTagsSearch;
 enum class StorySourcesList : uchar;
 struct ReactionId;
 } // namespace Data
@@ -194,6 +195,7 @@ private:
 	void clearSearchField();
 	void searchRequested(SearchRequestDelay delay);
 	bool search(bool inCache = false, SearchRequestDelay after = {});
+	void setupLocalTagsSearch();
 	void searchTopics();
 	void searchMore();
 
@@ -400,6 +402,11 @@ private:
 	SearchState _searchState;
 	History *_searchInMigrated = nullptr;
 	rpl::lifetime _searchTagsLifetime;
+	std::unique_ptr<Data::LocalSavedTagsSearch> _localTagsSearch;
+	int _localTagsResultCount = 0;
+	bool _localTagsSearchActive = false;
+	bool _localTagsSearchFailed = false;
+	bool _localTagsRestorePending = false;
 	QString _lastSearchText;
 	bool _searchSuggestionsLocked = false;
 	bool _searchHasFocus = false;

@@ -8,13 +8,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "dialogs/dialogs_search_tags.h"
 
 #include "base/qt/qt_key_modifiers.h"
-#include "boxes/premium_preview_box.h"
 #include "core/click_handler_types.h"
 #include "core/ui_integration.h"
 #include "data/stickers/data_custom_emoji.h"
 #include "data/data_document.h"
 #include "data/data_message_reactions.h"
-#include "data/data_peer_values.h"
 #include "data/data_session.h"
 #include "history/view/reactions/history_view_reactions.h"
 #include "main/main_session.h"
@@ -39,17 +37,6 @@ namespace {
 		result.append(QString::number(tag.count));
 	}
 	return TextUtilities::SingleLine(result);
-}
-
-[[nodiscard]] ClickHandlerPtr MakePromoLink() {
-	return std::make_shared<LambdaClickHandler>([=](ClickContext context) {
-		const auto my = context.other.value<ClickHandlerContext>();
-		if (const auto controller = my.sessionWindow.get()) {
-			ShowPremiumPreviewBox(
-				controller,
-				PremiumFeature::TagsForMessages);
-		}
-	});
 }
 
 [[nodiscard]] Ui::Text::String FillAdditionalText(int width) {
@@ -89,13 +76,9 @@ SearchTags::SearchTags(
 	std::vector<Data::ReactionId> selected)
 : _owner(owner)
 , _added(selected) {
-	rpl::combine(
-		std::move(tags),
-		Data::AmPremiumValue(&owner->session())
-	) | rpl::on_next([=](
-			const std::vector<Data::Reaction> &list,
-			bool premium) {
-		fill(list, premium);
+	std::move(tags) | rpl::on_next([=](
+			const std::vector<Data::Reaction> &list) {
+		fill(list);
 	}, _lifetime);
 
 	// Mark the `selected` reactions as selected in `_tags`.
@@ -114,19 +97,14 @@ SearchTags::SearchTags(
 
 SearchTags::~SearchTags() = default;
 
-void SearchTags::fill(
-		const std::vector<Data::Reaction> &list,
-		bool premium) {
+void SearchTags::fill(const std::vector<Data::Reaction> &list) {
 	const auto selected = collectSelected();
 	_tags.clear();
 	_tags.reserve(list.size());
 	const auto link = [&](Data::ReactionId id) {
 		return std::make_shared<GenericClickHandler>(crl::guard(this, [=](
 				ClickContext context) {
-			if (!premium) {
-				MakePromoLink()->onClick(context);
-				return;
-			} else if (context.button == Qt::RightButton) {
+			if (context.button == Qt::RightButton) {
 				_menuRequests.fire_copy(id);
 				return;
 			}
@@ -160,18 +138,6 @@ void SearchTags::fill(
 			_owner->reactions().preloadReactionImageFor(id);
 		}
 	};
-	if (!premium) {
-		const auto text = (list.empty() && _added.empty())
-			? tr::lng_add_tag_button(tr::now)
-			: tr::lng_unlock_tags(tr::now);
-		_tags.push_back({
-			.id = Data::ReactionId(),
-			.text = text,
-			.textWidth = st::reactionInlineTagFont->width(text),
-			.link = MakePromoLink(),
-			.promo = true,
-		});
-	}
 	for (const auto &reaction : list) {
 		if (reaction.count > 0
 			|| ranges::contains(_added, reaction.id)

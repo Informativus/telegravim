@@ -110,6 +110,19 @@ nice_target_sources(Telegram ${src_loc}
 PRIVATE
     ${style_files}
 
+    boxes/local_transfer_box.cpp
+    boxes/local_transfer_box.h
+    data/local_saved_tags.cpp
+    data/local_saved_tags.h
+    data/local_saved_tags_search.cpp
+    data/local_saved_tags_search.h
+    storage/local_data_store.cpp
+    storage/local_data_store.h
+    storage/local_transfer.cpp
+    storage/local_transfer.h
+    storage/local_transfer_format.cpp
+    storage/local_transfer_format.h
+
     api/api_attached_stickers.cpp
     api/api_attached_stickers.h
     api/api_authorizations.cpp

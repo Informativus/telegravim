@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_message_reaction_id.h"
 #include "data/data_peer.h"
 #include "data/data_session.h"
+#include "data/local_saved_tags_search.h"
 #include "history/history.h"
 #include "history/history_item.h"
 #include "main/main_session.h"
@@ -79,6 +80,23 @@ constexpr auto kSearchPerPage = 50;
 
 MessagesSearch::MessagesSearch(not_null<History*> history)
 : _history(history) {
+	if (history->peer->isSelf()) {
+		_localSearch = std::make_unique<Data::LocalSavedTagsSearch>(&history->session());
+		_localSearch->pages() | rpl::on_next([=](Data::LocalSavedTagsSearchPage page) {
+			if (page.start) {
+				++_localToken;
+			}
+			_localFailed = !page.error.isEmpty();
+			_messagesFounds.fire({
+				page.total,
+				std::move(page.messages),
+				u"local:"_q + QString::number(_localToken),
+				page.complete,
+				std::move(page.error),
+				true,
+			});
+		}, _lifetime);
+	}
 }
 
 MessagesSearch::~MessagesSearch() {
@@ -87,19 +105,48 @@ MessagesSearch::~MessagesSearch() {
 }
 
 void MessagesSearch::searchMessages(Request request) {
+	if (_localSearch) {
+		cancel();
+	}
+	_localFailed = false;
 	_request = std::move(request);
 	_offsetId = {};
 	searchRequest();
 }
 
 void MessagesSearch::searchMore() {
+	if (_localSearch && !_request.tags.empty()) {
+		if (!_localFailed) {
+			_localSearch->more();
+		}
+		return;
+	}
 	if (_searchInHistoryRequest || _requestId) {
 		return;
 	}
 	searchRequest();
 }
 
+void MessagesSearch::cancel() {
+	_history->owner().histories().cancelRequest(
+		base::take(_searchInHistoryRequest));
+	_history->session().api().request(base::take(_requestId)).cancel();
+	if (_localSearch) {
+		_localSearch->cancel();
+	}
+}
+
 void MessagesSearch::searchRequest() {
+	if (_localSearch && !_request.tags.empty()) {
+		_localSearch->search({
+			.text = _request.query,
+			.tags = _request.tags,
+			.savedPeer = _request.from ? _request.from->id : PeerId(),
+			.topMsgId = _request.topMsgId,
+			.pinned = (_request.filter == SearchFilter::Pinned),
+		});
+		return;
+	}
 	const auto nextToken = RequestToToken(_request);
 	if (!_offsetId) {
 		const auto it = _cacheOfStartByToken.find(nextToken);

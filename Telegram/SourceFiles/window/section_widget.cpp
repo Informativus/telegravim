@@ -619,11 +619,7 @@ bool ShowReactPremiumError(
 		not_null<HistoryItem*> item,
 		const Data::ReactionId &id) {
 	if (item->reactionsAreTags()) {
-		if (controller->session().premium()) {
-			return false;
-		}
-		ShowPremiumPreviewBox(controller, PremiumFeature::TagsForMessages);
-		return true;
+		return false;
 	} else if (!item->canReact()) {
 		ShowReactRestrictionToast(controller);
 		return true;
