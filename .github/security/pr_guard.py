@@ -822,6 +822,10 @@ def reviewed_finding(run: dict, result: dict, source: Path, reviews: list) -> bo
         "Telegram/SourceFiles/data/data_document.h": {
             "cpp/member-const-no-effect",
         },
+        "Telegram/SourceFiles/data/data_message_reactions.h": {
+            "cpp/ambiguously-signed-bit-field",
+            "cpp/member-const-no-effect",
+        },
         "Telegram/SourceFiles/editor/editor_paint.cpp": {
             "cpp/poorly-documented-function",
         },
@@ -867,6 +871,9 @@ def reviewed_finding(run: dict, result: dict, source: Path, reviews: list) -> bo
         "Telegram/SourceFiles/overview/overview_layout.h": {
             "cpp/ambiguously-signed-bit-field",
             "cpp/virtual-destructor",
+        },
+        "Telegram/SourceFiles/settings/sections/settings_advanced.cpp": {
+            "cpp/poorly-documented-function",
         },
         "Telegram/SourceFiles/settings/settings_experimental.cpp": {
             "cpp/ambiguously-signed-bit-field",
