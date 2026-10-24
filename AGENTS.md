@@ -28,6 +28,21 @@ These rules supersede the old `vim-keymap` branch and rebase workflow in
 historical fork plans. The separate `ai-tdesktop` task repository retains its
 own branch rules.
 
+## Native Telegram behavior for local features
+
+Local equivalents of Telegram features must preserve Telegram's native user
+interface and behavior. Change the storage and execution backend to local data
+and remove the dependency on Telegram Premium for that local feature; do not
+replace the native flow with a separate management dialog, settings-only tool,
+or reduced substitute.
+
+For Saved Messages tags, use the existing reaction/tag picker, inline message
+tags, tag naming and management actions, tag filter bar, search, and keyboard
+navigation. Local operations must persist through the local-data contract and
+must not call Premium-only Telegram APIs. A separate `Local saved tags` dialog
+does not satisfy this requirement. Apply the same native-behavior requirement
+to other local analogues unless the user explicitly approves a deviation.
+
 ## Local project layout
 
 Keep auxiliary Telegravim data inside the primary checkout's ignored `.local/`
