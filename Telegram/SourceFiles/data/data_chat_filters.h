@@ -213,8 +213,7 @@ public:
 
 	void requestSuggested();
 	[[nodiscard]] bool suggestedLoaded() const;
-	[[nodiscard]] auto suggestedFilters() const
-		-> const std::vector<SuggestedFilter> &;
+	[[nodiscard]] const std::vector<SuggestedFilter> &suggestedFilters() const;
 	[[nodiscard]] rpl::producer<> suggestedUpdated() const;
 
 	ChatFilterLink add(

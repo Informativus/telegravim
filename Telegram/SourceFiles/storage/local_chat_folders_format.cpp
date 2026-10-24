@@ -140,6 +140,11 @@ QString MemberId(
 }
 
 Result Validate(const QJsonObject &module, const Account &account) {
+	// Account-scoped UUIDs bind members, settings and color overrides to their
+	// logical records. Tombstones still need valid identities, but do not consume
+	// live folder or member limits. Unknown record kinds and rule operators are
+	// retained for forward-compatible transfer; execution is handled separately,
+	// so validating this envelope must not interpret unknown rules.
 	if (module.value(u"module_id"_q).toString() != u"chat_folders"_q
 		|| module.value(u"schema_version"_q).toInt() != 1
 		|| !module.value(u"records"_q).isArray()) {

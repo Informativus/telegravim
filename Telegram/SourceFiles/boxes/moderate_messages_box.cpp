@@ -224,7 +224,7 @@ ModerateOptions CalculateModerateOptions(const ModerateReactionEntry &reaction) 
 			search->searchMessages({ .from = peer });
 		};
 		consumer.put_next({});
-		send(send);
+		std::invoke(send, send);
 
 		return lifetime;
 	};
