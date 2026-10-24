@@ -1255,5 +1255,127 @@
         "reason": "The comment-percentage metric reports no execution or security defect. The reviewed function expresses its operation in named code and assertions; adding filler comments would conflict with repository style. This exception applies only to this exact diagnostic and source digest."
       }
     ]
+  },
+  {
+    "path": "Telegram/SourceFiles/data/data_message_reactions.h",
+    "source_sha256": [
+      "55155c1d930c45672524280ce0916b0039918ef905f6ccfb2e452cc86cf95cc8"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/member-const-no-effect",
+        "level": "warning",
+        "line_hash": "9ddc4e52d01baa18:1",
+        "message_sha256": "dc2cb9240322c1efe5fe9182c19e33c8f4abe06c2c0d70b3d60ab3bb6afec682",
+        "reason": "MessageReactions::recent returns a const reference to base::flat_map, not a const value. The trailing return declaration and its definition retain the reference. No-build extraction lacks the submodule template definition and misclassifies the return type; removing const would change the API. The declaration is unchanged from the PR base and the native Release build passed."
+      },
+      {
+        "rule": "cpp/ambiguously-signed-bit-field",
+        "level": "warning",
+        "line_hash": "332c95be329666ea:1",
+        "message_sha256": "961e62eea5d97d0d573936e33461c7504ee11cc4b3424b9152b945967d18a590",
+        "reason": "These unchanged paid-reaction bitfields use uint32. base/basic_types.h defines uint32 as quint32, and Qt qtypes.h defines quint32 as unsigned int. The no-build export omits those submodule and dependency headers and recovers the type as int. The actual fields are explicitly unsigned through the alias; the native Release build passed."
+      },
+      {
+        "rule": "cpp/ambiguously-signed-bit-field",
+        "level": "warning",
+        "line_hash": "db425f7f24694fcc:1",
+        "message_sha256": "2de063521bd31e0d3b3f8c3f3d5bdb76520f1a3c4b27ab9ae4af0420e43f4d45",
+        "reason": "These unchanged paid-reaction bitfields use uint32. base/basic_types.h defines uint32 as quint32, and Qt qtypes.h defines quint32 as unsigned int. The no-build export omits those submodule and dependency headers and recovers the type as int. The actual fields are explicitly unsigned through the alias; the native Release build passed."
+      },
+      {
+        "rule": "cpp/ambiguously-signed-bit-field",
+        "level": "warning",
+        "line_hash": "7f12b2e9364c57de:1",
+        "message_sha256": "8a2c9035807eeabc302eabfff36863b5ed55b591bf18fb3b44f506e320ba1af6",
+        "reason": "These unchanged paid-reaction bitfields use uint32. base/basic_types.h defines uint32 as quint32, and Qt qtypes.h defines quint32 as unsigned int. The no-build export omits those submodule and dependency headers and recovers the type as int. The actual fields are explicitly unsigned through the alias; the native Release build passed."
+      },
+      {
+        "rule": "cpp/ambiguously-signed-bit-field",
+        "level": "warning",
+        "line_hash": "a037bcd64028c14d:1",
+        "message_sha256": "c5160484f90c22ecf05e021b6dffa2c0e5fb4e4105e63a2ff0def548d501030a",
+        "reason": "These unchanged paid-reaction bitfields use uint32. base/basic_types.h defines uint32 as quint32, and Qt qtypes.h defines quint32 as unsigned int. The no-build export omits those submodule and dependency headers and recovers the type as int. The actual fields are explicitly unsigned through the alias; the native Release build passed."
+      },
+      {
+        "rule": "cpp/ambiguously-signed-bit-field",
+        "level": "warning",
+        "line_hash": "e7f34f018199161b:1",
+        "message_sha256": "5198cf90af8410f0fdfa2ec8fb2e843bee62390f818b0e22d6fe4cd8d102041e",
+        "reason": "These unchanged paid-reaction bitfields use uint32. base/basic_types.h defines uint32 as quint32, and Qt qtypes.h defines quint32 as unsigned int. The no-build export omits those submodule and dependency headers and recovers the type as int. The actual fields are explicitly unsigned through the alias; the native Release build passed."
+      },
+      {
+        "rule": "cpp/ambiguously-signed-bit-field",
+        "level": "warning",
+        "line_hash": "74578bb96e0eb2c8:1",
+        "message_sha256": "0ab4cd24ac9ccfc0c1c8330fbb8acb2629aa15a7ed557aa846441230c2a50ce4",
+        "reason": "These unchanged paid-reaction bitfields use uint32. base/basic_types.h defines uint32 as quint32, and Qt qtypes.h defines quint32 as unsigned int. The no-build export omits those submodule and dependency headers and recovers the type as int. The actual fields are explicitly unsigned through the alias; the native Release build passed."
+      },
+      {
+        "rule": "cpp/ambiguously-signed-bit-field",
+        "level": "warning",
+        "line_hash": "a04f74feac1d06a1:1",
+        "message_sha256": "0e0a31b21de303593b871fdce19b6b4d3e0ee9259bc5edb1db273761d485bae7",
+        "reason": "These unchanged paid-reaction bitfields use uint32. base/basic_types.h defines uint32 as quint32, and Qt qtypes.h defines quint32 as unsigned int. The no-build export omits those submodule and dependency headers and recovers the type as int. The actual fields are explicitly unsigned through the alias; the native Release build passed."
+      },
+      {
+        "rule": "cpp/ambiguously-signed-bit-field",
+        "level": "warning",
+        "line_hash": "e505408a1d65ca0a:1",
+        "message_sha256": "547e5974db2fa6cefebc2bce2beab0607f7ad2200be54e44aa035d2a7d3d366d",
+        "reason": "These unchanged paid-reaction bitfields use uint32. base/basic_types.h defines uint32 as quint32, and Qt qtypes.h defines quint32 as unsigned int. The no-build export omits those submodule and dependency headers and recovers the type as int. The actual fields are explicitly unsigned through the alias; the native Release build passed."
+      },
+      {
+        "rule": "cpp/ambiguously-signed-bit-field",
+        "level": "warning",
+        "line_hash": "8495f253a0e6d873:1",
+        "message_sha256": "df407359e516a9b312eaba26c49aa021d960ce6c9ca895678ff035d24bb45b23",
+        "reason": "These unchanged paid-reaction bitfields use uint32. base/basic_types.h defines uint32 as quint32, and Qt qtypes.h defines quint32 as unsigned int. The no-build export omits those submodule and dependency headers and recovers the type as int. The actual fields are explicitly unsigned through the alias; the native Release build passed."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/history/view/history_view_element.cpp",
+    "source_sha256": [
+      "30120d3ad6e6806df8ac44c9781d8956e287889ac6031e37f2a51324af74f12a"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "21e77fd901c348e6:1",
+        "message_sha256": "16553ee0cc00d87e99ec11a3ca5072f6940e6f377bb5735da1e1768c52e20a82",
+        "reason": "KeyboardStyle::minButtonWidth is unchanged from the PR base. Generated st::msgBotKb*Icon and historySendingInvertedIcon widths can be positive, but their generated style definitions are absent from no-build extraction. The condition is necessary to distinguish icon-free buttons; the native Release build passed."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/settings/sections/settings_advanced.cpp",
+    "source_sha256": [
+      "515e6ab8e44785b8608408c4b28d58b9a26ddd8faa4635f8e50095f4d164f2c2"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "162cd0fc1d330204:1",
+        "message_sha256": "4589fddab8e8f03942cb7ab968afc51a00cae9908e448648d8ce0ed9e518da6c",
+        "reason": "BuildDataStorageSection, BuildSystemIntegrationSection and BuildUpdateSection are byte-for-byte unchanged from the PR base. This diagnostic only measures comment percentage in the declarative settings builders and identifies no execution or security defect. The project forbids filler comments; the local transfer button is added in the separate BuildExportSection function."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "37c027c464ec4fd5:1",
+        "message_sha256": "755e04c696d8069be49e54fe6c15c4d533f1166d77cfba764b02f79e82e8ae5b",
+        "reason": "BuildDataStorageSection, BuildSystemIntegrationSection and BuildUpdateSection are byte-for-byte unchanged from the PR base. This diagnostic only measures comment percentage in the declarative settings builders and identifies no execution or security defect. The project forbids filler comments; the local transfer button is added in the separate BuildExportSection function."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "262e7ae1ee542000:1",
+        "message_sha256": "690390a7a169988778235691cdab695973fefe18ce91f03518f26f0aa7ed7802",
+        "reason": "BuildDataStorageSection, BuildSystemIntegrationSection and BuildUpdateSection are byte-for-byte unchanged from the PR base. This diagnostic only measures comment percentage in the declarative settings builders and identifies no execution or security defect. The project forbids filler comments; the local transfer button is added in the separate BuildExportSection function."
+      }
+    ]
   }
 ]
