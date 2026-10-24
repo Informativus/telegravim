@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_peer.h"
 #include "data/data_session.h"
 #include "data/data_user.h"
+#include "dialogs/dialogs_key.h"
 #include "history/history.h"
 #include "lang/lang_keys.h"
 #include "main/main_app_config.h"
@@ -213,7 +214,10 @@ void Communities::toggleCollapsedInDialogs(
 	const auto was = (community->flags()
 		& ChannelDataFlag::CommunityCollapsed) != 0;
 	const auto wasPinned = history->folderKnown()
-		&& history->isPinnedDialog(FilterId());
+		&& ranges::contains(
+			history->owner().cloudPinnedChatsOrder(history->folder()),
+			history.get(),
+			&Dialogs::Key::history);
 	const auto apply = [=](bool value) {
 		if (value) {
 			community->addFlags(ChannelDataFlag::CommunityCollapsed);

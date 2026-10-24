@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_saved_messages.h"
 
+#include "data/local_pinned_dialogs.h"
 #include "apiwrap.h"
 #include "core/application.h"
 #include "data/components/recent_peers.h"
@@ -60,7 +61,7 @@ void SavedMessages::clear() {
 		}
 	}
 	if (const auto requestId = base::take(_staleRequestId)) {
-		session().api().request(requestId).cancel();
+		owner().histories().cancelRequest(requestId);
 	}
 
 	auto &storage = session().storage();
@@ -128,6 +129,9 @@ Main::Session &SavedMessages::session() const {
 }
 
 not_null<Dialogs::MainList*> SavedMessages::chatsList() {
+	if (const auto local = owner().localPinnedDialogsLoaded()) {
+		local->attach(_chatsList.pinned(), this);
+	}
 	return &_chatsList;
 }
 
@@ -148,8 +152,7 @@ SavedSublist *SavedMessages::sublistLoaded(not_null<PeerData*> peer) {
 void SavedMessages::requestSomeStale() {
 	if (_staleRequestId
 		|| (!_offset.id && _loadMoreRequestId)
-		|| _stalePeers.empty()
-		|| !_parentChat) {
+		|| _stalePeers.empty()) {
 		return;
 	}
 	const auto type = Histories::RequestType::History;
@@ -170,9 +173,12 @@ void SavedMessages::requestSomeStale() {
 	if (peerIds.empty()) {
 		return;
 	}
-	const auto call = [=] {
+	const auto call = [=](bool received) {
 		for (const auto &peer : peers) {
 			finishSublistRequest(peer);
+		}
+		if (!received) {
+			return;
 		}
 		for (const auto &peer : peers) {
 			if (const auto sublist = sublistLoaded(peer)) {
@@ -184,23 +190,24 @@ void SavedMessages::requestSomeStale() {
 		}
 	};
 	auto &histories = owner().histories();
-	_staleRequestId = histories.sendRequest(_owningHistory, type, [=](
+	_staleRequestId = histories.sendRequest(owningHistory(), type, [=](
 			Fn<void()> finish) {
 		using Flag = MTPmessages_GetSavedDialogsByID::Flag;
 		return session().api().request(
 			MTPmessages_GetSavedDialogsByID(
-				MTP_flags(Flag::f_parent_peer),
-				_parentChat->input(),
+				MTP_flags(_parentChat ? Flag::f_parent_peer : Flag()),
+				_parentChat ? _parentChat->input() : MTP_inputPeerEmpty(),
 				MTP_vector<MTPInputPeer>(peerIds))
 		).done([=](const MTPmessages_SavedDialogs &result) {
 			_staleRequestId = 0;
 			applyReceivedSublists(result);
-			call();
+			call(true);
 			finish();
 		}).fail([=] {
 			_staleRequestId = 0;
-			call();
+			call(false);
 			finish();
+			requestSomeStale();
 		}).send();
 	});
 	for (const auto &peer : peers) {
@@ -219,9 +226,6 @@ void SavedMessages::finishSublistRequest(not_null<PeerData*> peer) {
 void SavedMessages::requestSublist(
 		not_null<PeerData*> peer,
 		Fn<void()> done) {
-	if (!_parentChat) {
-		return;
-	}
 	auto &request = _sublistRequests[peer];
 	if (done) {
 		request.callbacks.push_back(std::move(done));
@@ -229,8 +233,10 @@ void SavedMessages::requestSublist(
 	if (!request.id
 		&& _stalePeers.emplace(peer).second
 		&& (_stalePeers.size() == 1)) {
-		crl::on_main(&session(), [peer = _parentChat] {
-			if (const auto monoforum = peer->monoforum()) {
+		crl::on_main(&session(), [peer = _parentChat, session = &session()] {
+			if (!peer) {
+				session->data().savedMessages().requestSomeStale();
+			} else if (const auto monoforum = peer->monoforum()) {
 				monoforum->requestSomeStale();
 			}
 		});
@@ -315,9 +321,11 @@ void SavedMessages::sendLoadMore() {
 	}).fail([=](const MTP::Error &error) {
 		if (error.type() == u"SAVED_DIALOGS_UNSUPPORTED"_q) {
 			markUnsupported();
+			_chatsList.setLoaded();
 		}
-		_chatsList.setLoaded();
 		_loadMoreRequestId = 0;
+		requestSomeStale();
+		_chatsListChanges.fire({});
 	}).send();
 }
 
@@ -423,7 +431,9 @@ SavedMessages::ApplyResult SavedMessages::applyReceivedSublists(
 	if (pinned) {
 		for (const auto &[peer, holder] : _sublists) {
 			const auto entry = holder.get();
-			if (entry->isPinnedDialog(FilterId())
+			if (ranges::contains(
+					_chatsList.pinned()->cloudOrder(),
+					Dialogs::Key(entry))
 				&& !serverPinnedPeers.contains(peer)) {
 				if (!entry->parentChat() && !entry->chatListMessage()) {
 					entry->setRestorePinnedWhenNonEmpty(true);
@@ -506,6 +516,7 @@ void SavedMessages::applySublistDeleted(not_null<PeerData*> sublistPeer) {
 		return;
 	}
 	const auto raw = i->second.get();
+	_chatsList.pinned()->removeEntry(raw);
 	Core::App().notifications().clearFromSublist(raw);
 	owner().removeChatListEntry(raw);
 

@@ -47,6 +47,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_forum.h"
 #include "data/data_forum_icons.h"
 #include "data/data_session.h"
+#include "data/local_pinned_dialogs.h"
 #include "data/data_channel.h"
 #include "data/data_community.h"
 #include "data/data_forum_topic.h"
@@ -2771,14 +2772,15 @@ void InnerWidget::savePinnedOrder() {
 			return; // Something has changed in the set of pinned chats.
 		}
 	}
+	auto &localPins = session().data().localPinnedDialogs();
 	if (_savedSublists) {
-		session().api().savePinnedOrder(&session().data().savedMessages());
+		localPins.saveOrder(_savedSublists);
 	} else if (_openedForum) {
 		session().api().savePinnedOrder(_openedForum);
 	} else if (_filterId) {
-		Api::SaveNewFilterPinned(&session(), _filterId);
+		localPins.saveOrder(_filterId);
 	} else {
-		session().api().savePinnedOrder(_openedFolder);
+		localPins.saveOrder(_openedFolder);
 	}
 }
 

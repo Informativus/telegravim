@@ -405,7 +405,7 @@ void ApiWrap::checkFilterInvite(
 }
 
 void ApiWrap::savePinnedOrder(Data::Folder *folder) {
-	const auto &order = _session->data().pinnedChatsOrder(folder);
+	const auto &order = _session->data().cloudPinnedChatsOrder(folder);
 	const auto input = [](Dialogs::Key key) {
 		if (const auto history = key.history()) {
 			if (const auto channel = history->peer->asChannel()
@@ -458,7 +458,7 @@ void ApiWrap::savePinnedOrder(not_null<Data::SavedMessages*> saved) {
 	if (saved->parentChat()) {
 		return;
 	}
-	const auto &order = _session->data().pinnedChatsOrder(saved);
+	const auto &order = _session->data().cloudPinnedChatsOrder(saved);
 	const auto input = [](Dialogs::Key key) {
 		if (const auto sublist = key.sublist()) {
 			return MTP_inputDialogPeer(sublist->sublistPeer()->input());

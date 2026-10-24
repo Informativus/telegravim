@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "storage/local_data_store.h"
 #include "storage/local_transfer_format.h"
+#include "storage/local_pinned_items_format.h"
 
 #include "mtproto/mtproto_auth_key.h"
 #include <crl/crl_on_main.h>
@@ -393,6 +394,12 @@ void SetRecords(QJsonObject &module, const QMap<QString, QJsonObject> &records) 
 
 [[nodiscard]] QMap<QString, ModuleDefinition> &Registry() {
 	static auto result = QMap<QString, ModuleDefinition>{
+		{ u"pinned_items"_q, ModuleDefinition{
+			u"pinned_items"_q,
+			1,
+			PinnedItems::Validate,
+			[](const QJsonObject &) { return QStringList(); },
+		} },
 		{ u"saved_tags"_q, ModuleDefinition{
 			u"saved_tags"_q,
 			2,
