@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_session.h"
 
+#include "data/local_pinned_dialogs.h"
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
 #include "main/main_app_config.h"
@@ -351,6 +352,7 @@ Session::Session(not_null<Main::Session*> session)
 , _chatbots(std::make_unique<Chatbots>(this))
 , _businessInfo(std::make_unique<BusinessInfo>(this))
 , _shortcutMessages(std::make_unique<ShortcutMessages>(this)) {
+	_localPinnedDialogs = std::make_unique<LocalPinnedDialogs>(this);
 	_cache->open(_session->local().cacheKey());
 	_bigFileCache->open(_session->local().cacheBigFileKey());
 
@@ -496,6 +498,7 @@ void Session::subscribeForTopicRepliesLists() {
 
 void Session::clear() {
 	_sessionDataAboutToBeCleared.fire({});
+	_localPinnedDialogs->stop();
 
 	// Optimization: clear notifications before destroying items.
 	Core::App().notifications().clearFromSession(_session);
@@ -1695,6 +1698,7 @@ History *Session::historyLoaded(const PeerData *peer) {
 }
 
 void Session::deleteConversationLocally(not_null<PeerData*> peer) {
+	_localPinnedDialogs->remove(peer->id);
 	const auto markLeft = [&] {
 		if (const auto channel = peer->asMegagroup()) {
 			channel->addFlags(ChannelDataFlag::Left);
@@ -3021,6 +3025,29 @@ const std::vector<Dialogs::Key> &Session::pinnedChatsOrder(
 const std::vector<Dialogs::Key> &Session::pinnedChatsOrder(
 		not_null<Data::SavedMessages*> saved) const {
 	return saved->chatsList()->pinned()->order();
+}
+
+LocalPinnedDialogs &Session::localPinnedDialogs() const {
+	return *_localPinnedDialogs;
+}
+
+LocalPinnedDialogs *Session::localPinnedDialogsLoaded() const {
+	return _localPinnedDialogs.get();
+}
+
+const std::vector<Dialogs::Key> &Session::cloudPinnedChatsOrder(
+		Data::Folder *folder) const {
+	return chatsList(folder)->pinned()->cloudOrder();
+}
+
+const std::vector<Dialogs::Key> &Session::cloudPinnedChatsOrder(
+		FilterId filterId) const {
+	return chatsFilters().chatsList(filterId)->pinned()->cloudOrder();
+}
+
+const std::vector<Dialogs::Key> &Session::cloudPinnedChatsOrder(
+		not_null<Data::SavedMessages*> saved) const {
+	return saved->chatsList()->pinned()->cloudOrder();
 }
 
 void Session::clearPinnedChats(Data::Folder *folder) {
@@ -5643,12 +5670,18 @@ not_null<Dialogs::MainList*> Session::chatsListFor(
 }
 
 not_null<Dialogs::MainList*> Session::chatsList(Data::Folder *folder) {
-	return folder ? folder->chatsList().get() : &_chatsList;
+	if (folder) {
+		return folder->chatsList();
+	}
+	if (_localPinnedDialogs) {
+		_localPinnedDialogs->attach(_chatsList.pinned(), folder);
+	}
+	return &_chatsList;
 }
 
 not_null<const Dialogs::MainList*> Session::chatsList(
 		Data::Folder *folder) const {
-	return folder ? folder->chatsList() : &_chatsList;
+	return const_cast<Session*>(this)->chatsList(folder);
 }
 
 not_null<Dialogs::IndexedList*> Session::contactsList() {

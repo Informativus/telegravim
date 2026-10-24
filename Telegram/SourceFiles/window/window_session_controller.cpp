@@ -48,6 +48,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_saved_messages.h"
 #include "data/data_saved_sublist.h"
 #include "data/data_session.h"
+#include "data/local_pinned_dialogs.h"
 #include "data/data_thread.h"
 #include "data/data_file_origin.h"
 #include "data/data_flags.h"
@@ -1583,6 +1584,11 @@ SessionController::SessionController(
 , _defaultChatTheme(std::make_shared<Ui::ChatTheme>())
 , _chatStyle(std::make_unique<Ui::ChatStyle>(session->colorIndicesValue())) {
 	init();
+
+	session->data().localPinnedDialogs().errors(
+	) | rpl::on_next([=](const QString &error) {
+		showToast(error);
+	}, lifetime());
 
 	session->data().reactions().localTagErrors(
 	) | rpl::on_next([=](const QString &error) {

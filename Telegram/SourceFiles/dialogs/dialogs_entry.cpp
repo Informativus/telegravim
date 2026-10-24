@@ -467,8 +467,8 @@ not_null<Row*> Entry::addToChatList(
 void Entry::removeFromChatList(
 		FilterId filterId,
 		not_null<MainList*> list) {
-	if (isPinnedDialog(filterId)) {
-		list->pinned()->setPinned(this, false);
+	if (isPinnedDialog(filterId) || list->pinned()->hasProjection()) {
+		list->pinned()->removeEntry(this);
 		owner().notifyPinnedDialogsOrderUpdated();
 	}
 	if (filterId) {

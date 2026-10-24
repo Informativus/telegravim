@@ -62,6 +62,7 @@ class EmojiStatuses;
 class ForumIcons;
 class AiComposeTones;
 class ChatFilters;
+class LocalPinnedDialogs;
 class CloudThemes;
 class Streaming;
 class MediaRotation;
@@ -190,6 +191,8 @@ public:
 	[[nodiscard]] AiComposeTones &aiComposeTones() const {
 		return *_aiComposeTones;
 	}
+	[[nodiscard]] LocalPinnedDialogs &localPinnedDialogs() const;
+	[[nodiscard]] LocalPinnedDialogs *localPinnedDialogsLoaded() const;
 	[[nodiscard]] ChatFilters &chatsFilters() const {
 		return *_chatsFilters;
 	}
@@ -313,8 +316,8 @@ public:
 		not_null<UserData*> user) const;
 	void clearSharingDisabledTime(not_null<UserData*> user);
 
-	[[nodiscard]] auto invitedToCallUsers(CallId callId) const
-		-> const base::flat_map<not_null<UserData*>, bool> &;
+	[[nodiscard]] const base::flat_map<not_null<UserData*>, bool> &
+		invitedToCallUsers(CallId callId) const;
 	void registerInvitedToCallUser(
 		CallId callId,
 		not_null<PeerData*> peer,
@@ -556,6 +559,12 @@ public:
 	[[nodiscard]] const std::vector<Dialogs::Key> &pinnedChatsOrder(
 		FilterId filterId) const;
 	[[nodiscard]] const std::vector<Dialogs::Key> &pinnedChatsOrder(
+		not_null<SavedMessages*> saved) const;
+	[[nodiscard]] const std::vector<Dialogs::Key> &cloudPinnedChatsOrder(
+		Folder *folder) const;
+	[[nodiscard]] const std::vector<Dialogs::Key> &cloudPinnedChatsOrder(
+		FilterId filterId) const;
+	[[nodiscard]] const std::vector<Dialogs::Key> &cloudPinnedChatsOrder(
 		not_null<SavedMessages*> saved) const;
 	void setChatPinned(Dialogs::Key key, FilterId filterId, bool pinned);
 	void setPinnedFromEntryList(Dialogs::Key key, bool pinned);
@@ -1428,6 +1437,7 @@ private:
 
 	Groups _groups;
 	const std::unique_ptr<AiComposeTones> _aiComposeTones;
+	std::unique_ptr<LocalPinnedDialogs> _localPinnedDialogs;
 	const std::unique_ptr<ChatFilters> _chatsFilters;
 	const std::unique_ptr<CloudThemes> _cloudThemes;
 	const std::unique_ptr<SendActionManager> _sendActionManager;

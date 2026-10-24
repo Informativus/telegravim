@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_chat_filters.h"
 
+#include "data/local_pinned_dialogs.h"
 #include "api/api_text_entities.h"
 #include "history/history.h"
 #include "data/data_peer.h"
@@ -339,6 +340,10 @@ const base::flat_set<not_null<History*>> &ChatFilter::never() const {
 bool ChatFilter::contains(
 		not_null<History*> history,
 		bool ignoreFakeUnread) const {
+	if (const auto local = history->owner().localPinnedDialogsLoaded()
+		; local && local->includes(_id, history)) {
+		return true;
+	}
 	const auto flag = [&] {
 		const auto peer = history->peer;
 		if (const auto user = peer->asUser()) {
@@ -408,6 +413,9 @@ not_null<Dialogs::MainList*> ChatFilters::chatsList(FilterId filterId) {
 			&_owner->session(),
 			filterId,
 			_owner->maxPinnedChatsLimitValue(filterId));
+	}
+	if (const auto local = _owner->localPinnedDialogsLoaded()) {
+		local->attach(pointer->pinned(), filterId);
 	}
 	return pointer.get();
 }

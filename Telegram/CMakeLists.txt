@@ -112,12 +112,18 @@ PRIVATE
 
     boxes/local_transfer_box.cpp
     boxes/local_transfer_box.h
+    data/local_pinned_dialogs.cpp
+    data/local_pinned_dialogs.h
+    data/local_pinned_items.cpp
+    data/local_pinned_items.h
     data/local_saved_tags.cpp
     data/local_saved_tags.h
     data/local_saved_tags_search.cpp
     data/local_saved_tags_search.h
     storage/local_data_store.cpp
     storage/local_data_store.h
+    storage/local_pinned_items_format.cpp
+    storage/local_pinned_items_format.h
     storage/local_transfer.cpp
     storage/local_transfer.h
     storage/local_transfer_format.cpp
