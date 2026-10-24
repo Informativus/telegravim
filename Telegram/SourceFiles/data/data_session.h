@@ -316,8 +316,8 @@ public:
 		not_null<UserData*> user) const;
 	void clearSharingDisabledTime(not_null<UserData*> user);
 
-	[[nodiscard]] auto invitedToCallUsers(CallId callId) const
-		-> const base::flat_map<not_null<UserData*>, bool> &;
+	[[nodiscard]] const base::flat_map<not_null<UserData*>, bool> &
+		invitedToCallUsers(CallId callId) const;
 	void registerInvitedToCallUser(
 		CallId callId,
 		not_null<PeerData*> peer,
