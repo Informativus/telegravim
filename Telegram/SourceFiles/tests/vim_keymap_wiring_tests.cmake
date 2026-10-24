@@ -199,8 +199,8 @@ expect(storage/file_download.cpp
     "_data.left[(]_loadSize[)]"
     "Image reads must be bounded by the available byte array")
 expect(core/vim_keymap.cpp
-    "UpdateKeyboardScope[(]scope[)];[\n\t ]*if [(]!scope && HandlePreLayerKey[(]e[)][)] [^{]*[{][^}]*}[\n\t ]*const auto focus"
-    "Active message text must receive keys before global focus and chat commands")
+    "UpdateKeyboardScope[(]scope[)];[\n\t ]*if [(]!scope[^}]*TextInputPassthroughRequested[(]e[)][^}]*return false;[\n\t ]*}[\n\t ]*if [(]!scope && HandlePreLayerKey[(]e[)][)] [^{]*[{][^}]*}[\n\t ]*const auto focus"
+    "Search input must precede message text, global focus and chat commands")
 expect(history/history_inner_widget.cpp
     "RegisterPreLayerKeyHandler[(]this,[^{]*[{][^}]*vimKeymapHandleMessageSelectionKey[(]e[)][^}]*}[^}]*_vimKeymapTextCursorItem[^}]*_vimKeymapTextVisualMode[^}]*_vimKeymapHintMode == VimKeymapHintMode::None[^}]*}[\n\t ]*return [(]e->type[(][)] == QEvent::ShortcutOverride[)][\n\t ]*\\|\\| vimKeymapHandleHintKey[(]e[)][\n\t ]*\\|\\| vimKeymapHandleTextSelectionKey"
     "Active message hints and text must own keys before Qt and chat commands")
