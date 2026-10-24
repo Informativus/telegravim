@@ -816,8 +816,10 @@ HistoryWidget::HistoryWidget(
 					&& window()->isActiveWindow()
 					&& chat
 					&& this->controller()->activeChatEntryCurrent().key == chat) {
-					Core::VimKeymap::InvokeAction(
+					const auto handled = Core::VimKeymap::InvokeAction(
 						Core::VimKeymap::Action::SelectMessageText);
+					Core::VimKeymap::TraceCommand(u"Select message text"_q,
+						handled ? u"chat: choose a message by its hint"_q : u"chat: no matching message visible"_q);
 				}
 			});
 		}
@@ -9866,6 +9868,17 @@ bool HistoryWidget::vimKeymapJumpToBottom() {
 }
 
 bool HistoryWidget::vimKeymapHandleScrollKey(not_null<QKeyEvent*> e) {
+	const auto page = Core::VimKeymap::NormalMode()
+		? Core::VimKeymap::Bindings::PageNavigationDelta(e)
+		: 0;
+	if (page && _scroll) {
+		vimKeymapStopScroll();
+		vimKeymapScrollBy(page, _scroll->height(), !e->isAutoRepeat());
+		Core::VimKeymap::TraceCommand(u"Page scroll"_q, page > 0
+			? u"chat: one screen down"_q
+			: u"chat: one screen up"_q);
+		return true;
+	}
 	const auto navigation = Core::VimKeymap::NavigationKey(e);
 	if (!navigation) {
 		return false;

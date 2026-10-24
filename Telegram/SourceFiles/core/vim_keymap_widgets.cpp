@@ -101,6 +101,7 @@ namespace {
 constexpr auto kExcludedFocusTarget = "vim-keymap-excluded-focus-target";
 constexpr auto kCircleFocusFrame = "vim-keymap-circle-focus-frame";
 constexpr auto kCloseHintTarget = "vim-keymap-close-hint-target";
+constexpr auto kKeyboardPane = "vim-keymap-keyboard-pane";
 
 std::vector<QPointer<QWidget>> GlobalHintRoots;
 
@@ -388,12 +389,19 @@ std::vector<QPointer<QWidget>> VisibleKeyboardHintTargets(
 	return targets;
 }
 
-void RegisterGlobalFocusRoot(not_null<QWidget*> root) {
+void RegisterGlobalFocusRoot(
+		not_null<QWidget*> root,
+		KeyboardFocusRootKind kind) {
+	root->setProperty(kKeyboardPane, kind == KeyboardFocusRootKind::Pane);
 	std::erase_if(GlobalHintRoots, [](const auto &entry) { return !entry; });
 	if (std::find(GlobalHintRoots.begin(), GlobalHintRoots.end(), root.get())
 		== GlobalHintRoots.end()) {
 		GlobalHintRoots.push_back(root.get());
 	}
+}
+
+bool IsKeyboardPane(QWidget *widget) {
+	return widget && widget->property(kKeyboardPane).toBool();
 }
 
 std::vector<QPointer<QWidget>> GlobalFocusRoots(not_null<QWidget*> window) {
@@ -605,25 +613,30 @@ void KeyboardNavigation::activateHint(not_null<QWidget*> target) {
 	}
 }
 
-bool KeyboardNavigation::scroll(int delta, bool autoRepeat, int duration) {
+bool KeyboardNavigation::scroll(
+		int delta,
+		bool autoRepeat,
+		int duration,
+		bool byPage) {
 	struct Target {
 		QPointer<QWidget> widget;
 		int position = 0;
 		int maximum = 0;
+		int page = 0;
 		Fn<void(int)> move;
 	};
 	const auto inspect = [&](QWidget *widget) -> Target {
 		if (!widget || !Available(widget, _scope)) {
 			return {};
 		} else if (const auto area = dynamic_cast<Ui::ElasticScroll*>(widget)) {
-			return { area, area->scrollTop(), area->scrollTopMax(),
+			return { area, area->scrollTop(), area->scrollTopMax(), area->height(),
 				[=](int value) { area->scrollToY(value); } };
 		} else if (const auto area = dynamic_cast<Ui::ScrollArea*>(widget)) {
-			return { area, area->scrollTop(), area->scrollTopMax(),
+			return { area, area->scrollTop(), area->scrollTopMax(), area->height(),
 				[=](int value) { area->scrollToY(value); } };
 		} else if (const auto area = qobject_cast<QAbstractScrollArea*>(widget)) {
 			const auto bar = area->verticalScrollBar();
-			return { area, bar->value(), bar->maximum(),
+			return { area, bar->value(), bar->maximum(), area->viewport()->height(),
 				[=](int value) { bar->setValue(value); } };
 		}
 		return {};
@@ -653,7 +666,10 @@ bool KeyboardNavigation::scroll(int delta, bool autoRepeat, int duration) {
 		&& autoRepeat && _scrollAnimation.animating()) ? _scrollTarget : from;
 	_scrollAnimation.stop();
 	_scrollArea = target.widget;
-	_scrollTarget = std::clamp(base + delta, 0, target.maximum);
+	_scrollTarget = std::clamp(
+		base + delta * (byPage ? target.page : 1),
+		0,
+		target.maximum);
 	if (duration <= 0) {
 		target.move(_scrollTarget);
 		return true;
@@ -695,7 +711,9 @@ bool KeyboardNavigation::handleMenuNavigation(
 void KeyboardNavigation::focusNext(bool next) {
 	clearHints();
 	_editingControl = nullptr;
-	const auto targets = (GlobalFocusRoot(_scope) == _scope)
+	const auto visibleOnly = (GlobalFocusRoot(_scope) == _scope)
+		&& !IsKeyboardPane(_scope);
+	const auto targets = visibleOnly
 		? VisibleKeyboardHintTargets(_scope)
 		: KeyboardFocusTargets(_scope);
 	if (targets.empty()) {

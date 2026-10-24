@@ -152,6 +152,7 @@ void RegisterModeIndicatorWidget(not_null<QWidget*> widget);
 void UnregisterModeIndicatorWidget(not_null<QWidget*> widget);
 void RefreshForcedNormalMode();
 void TraceKey(not_null<QKeyEvent*> e, const QString &status);
+void TraceCommand(const QString &command, const QString &status);
 [[nodiscard]] QString RecentKeyLogText();
 [[nodiscard]] std::optional<ChatNavigation> ChatNavigationKey(
 	not_null<QKeyEvent*> e);
