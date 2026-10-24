@@ -24,6 +24,13 @@ public:
 	PinnedList(FilterId filterId, int limit);
 
 	void setLimit(int limit);
+	void setProjection(
+		Fn<std::vector<Key>(const std::vector<Key>&)> project,
+		Fn<bool(Key)> owns = nullptr);
+	void removeEntry(Key key);
+	void refreshProjection();
+	[[nodiscard]] bool hasProjection() const;
+	[[nodiscard]] const std::vector<Key> &cloudOrder() const;
 
 	// Places on the last place in the list otherwise.
 	// Does nothing if already pinned.
@@ -52,11 +59,18 @@ public:
 
 private:
 	int addPinnedGetPosition(Key key);
+	void applyCloudOrder(std::vector<Key> order);
+	void applyVisibleOrder(std::vector<Key> order);
 	void applyLimit(int limit);
 
 	FilterId _filterId = 0;
 	int _limit = 0;
 	std::vector<Key> _data;
+	std::vector<Key> _cloudData;
+	Fn<std::vector<Key>(const std::vector<Key>&)> _projection;
+	Fn<bool(Key)> _owns;
+	bool _refreshing = false;
+	bool _refreshAgain = false;
 
 };
 

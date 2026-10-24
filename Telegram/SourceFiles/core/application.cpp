@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_forum.h"
 #include "data/data_message_reactions.h"
 #include "data/data_session.h"
+#include "data/local_pinned_dialogs.h"
 #include "data/data_download_manager.h"
 #include "base/battery_saving.h"
 #include "base/event_filter.h"
@@ -2000,6 +2001,9 @@ bool Application::readyToQuit() {
 				if (session->data().stories().isQuitPrevent()) {
 					prevented = true;
 				}
+				if (session->data().localPinnedDialogs().busy()) {
+					prevented = true;
+				}
 				if (session->data().reactions().isQuitPrevent()) {
 					prevented = true;
 				}
@@ -2024,7 +2028,19 @@ void Application::quitDelayed() {
 		controller->widget()->hide();
 	}
 	if (!_private->quitTimer.isActive()) {
-		_private->quitTimer.setCallback([] { Sandbox::QuitWhenStarted(); });
+		_private->quitTimer.setCallback([=] {
+			if (_domain->started()) {
+				for (const auto &[index, account] : _domain->accounts()) {
+					if (const auto session = account->maybeSession()) {
+						if (session->data().localPinnedDialogs().busy()) {
+							quitDelayed();
+							return;
+						}
+					}
+				}
+			}
+			Sandbox::QuitWhenStarted();
+		});
 		_private->quitTimer.callOnce(kQuitPreventTimeoutMs);
 	}
 }
