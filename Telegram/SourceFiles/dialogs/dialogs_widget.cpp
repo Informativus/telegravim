@@ -78,6 +78,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/components/recent_peers.h"
 #include "data/components/sponsored_messages.h"
 #include "data/data_session.h"
+#include "data/data_message_reactions.h"
+#include "data/local_saved_tags.h"
+#include "data/local_saved_tags_search.h"
 #include "data/data_channel.h"
 #include "data/data_chat.h"
 #include "data/stickers/data_custom_emoji.h"
@@ -3223,6 +3226,11 @@ void Widget::escape() {
 }
 
 void Widget::submit() {
+	if (_localTagsSearchActive && _localTagsSearchFailed) {
+		_localTagsSearchFailed = false;
+		_localTagsSearch->more();
+		return;
+	}
 	const auto vimSearchOpen = vimKeymapSearchOpen();
 	const auto weak = base::make_weak(this);
 	const auto returnToVimViewMode = [=] {
@@ -3320,7 +3328,33 @@ bool Widget::search(bool inCache, SearchRequestDelay delay) {
 		.start = true,
 		.peer = (inPeer != nullptr),
 	};
-	if (trimmed.isEmpty() && !fromPeer && inTags.empty()) {
+	if (inPeer && inPeer->isSelf() && !inTags.empty()) {
+		if (inCache) {
+			return false;
+		}
+		if (!_localTagsSearchActive || _localTagsSearchFailed
+			|| _searchQuery != query || _searchQueryTags != inTags) {
+			setupLocalTagsSearch();
+			cancelSearchRequest();
+			_localTagsSearchActive = true;
+			_localTagsSearchFailed = false;
+			_searchQuery = query;
+			_searchQueryTags = inTags;
+			_searchProcess.full = false;
+			const auto sublist = _searchState.inChat.sublist();
+			_inner->searchRequested(true);
+			_localTagsSearch->search({
+				.text = query,
+				.tags = inTags,
+				.savedPeer = sublist
+					? sublist->sublistPeer()->id
+					: _searchState.fromPeer
+					? _searchState.fromPeer->id
+					: PeerId(),
+			});
+		}
+		return true;
+	} else if (trimmed.isEmpty() && !fromPeer && inTags.empty()) {
 		cancelSearchRequest();
 
 		// Otherwise inside first searchApplyEmpty we call searchMode(),
@@ -3598,6 +3632,12 @@ void Widget::searchTopics() {
 }
 
 void Widget::searchMore() {
+	if (_localTagsSearchActive) {
+		if (!_localTagsSearchFailed) {
+			_localTagsSearch->more();
+		}
+		return;
+	}
 	const auto process = currentSearchProcess();
 	if (process->requestId
 		|| _historiesRequest
@@ -4284,6 +4324,21 @@ void Widget::closeChildList(anim::type animated) {
 }
 
 bool Widget::applySearchState(SearchState state) {
+	const auto selfSearch = state.inChat.peer() && state.inChat.peer()->isSelf();
+	const auto wasSelfSearch = _searchState.inChat.peer()
+		&& _searchState.inChat.peer()->isSelf();
+	if (selfSearch && !wasSelfSearch && state.query.isEmpty() && state.tags.empty()) {
+		setupLocalTagsSearch();
+		auto &model = session().data().reactions().localSavedTags();
+		_localTagsRestorePending = !model.loaded();
+		if (model.loaded()) {
+			state.tags = model.filterReactions();
+			state.query = model.filter().text;
+		}
+	} else if (!selfSearch || state.query != _searchState.query
+		|| state.tags != _searchState.tags) {
+		_localTagsRestorePending = false;
+	}
 	if (_searchState == state) {
 		return true;
 	} else if (_childList) {
@@ -4348,7 +4403,8 @@ bool Widget::applySearchState(SearchState state) {
 			? ChatSearchTab::ThisCommunity
 			: ChatSearchTab::MyMessages;
 	}
-	if (!state.tags.empty()) {
+	if (!state.tags.empty()
+		&& (!state.inChat.peer() || !state.inChat.peer()->isSelf())) {
 		state.inChat = session().data().history(session().user());
 	}
 
@@ -4474,6 +4530,12 @@ bool Widget::applySearchState(SearchState state) {
 
 	if (_searchState.query != currentSearchQuery()) {
 		setSearchQuery(_searchState.query);
+	}
+	const auto searchPeer = _searchState.inChat.peer();
+	if (searchPeer && searchPeer->isSelf() && !_localTagsRestorePending) {
+		session().data().reactions().localSavedTags().rememberFilter(
+			_searchState.tags,
+			_searchState.query);
 	}
 	_inner->applySearchState(_searchState);
 	updateCommunityOverlaysVisibility();
@@ -5121,11 +5183,67 @@ void Widget::scrollToEntry(const RowDescriptor &entry) {
 }
 
 void Widget::cancelSearchRequest() {
+	_localTagsSearchActive = false;
+	if (_localTagsSearch) {
+		_localTagsSearch->cancel();
+	}
 	session().api().request(base::take(_searchProcess.requestId)).cancel();
 	session().api().request(base::take(_migratedProcess.requestId)).cancel();
 	session().api().request(base::take(_postsProcess.requestId)).cancel();
 	session().data().histories().cancelRequest(
 		base::take(_historiesRequest));
+}
+
+void Widget::setupLocalTagsSearch() {
+	if (_localTagsSearch) {
+		return;
+	}
+	_localTagsSearch = std::make_unique<Data::LocalSavedTagsSearch>(&session());
+	_localTagsSearch->pages() | rpl::on_next([=](Data::LocalSavedTagsSearchPage page) {
+		if (!_localTagsSearchActive) {
+			return;
+		}
+		if (page.start) {
+			_localTagsResultCount = 0;
+		}
+		auto items = std::vector<not_null<HistoryItem*>>();
+		for (const auto id : page.messages) {
+			if (const auto item = session().data().message(id)) {
+				items.push_back(item);
+			}
+		}
+		_localTagsResultCount += items.size();
+		_searchProcess.full = page.complete;
+		_localTagsSearchFailed = !page.error.isEmpty();
+		const auto weak = base::make_weak(this);
+		_inner->searchReceived(std::move(items), nullptr, {
+			.start = page.start,
+			.peer = true,
+		}, page.total >= 0 ? page.total : _localTagsResultCount);
+		if (!weak) {
+			return;
+		}
+		if (_localTagsSearchFailed) {
+			controller()->showToast(page.error);
+		} else {
+			listScrollUpdated();
+		}
+		update();
+	}, lifetime());
+	auto &model = session().data().reactions().localSavedTags();
+	model.changes() | rpl::on_next([=, &model] {
+		if (!_localTagsRestorePending || !model.loaded()) {
+			return;
+		}
+		_localTagsRestorePending = false;
+		const auto peer = _searchState.inChat.peer();
+		if (peer && peer->isSelf()) {
+			auto state = _searchState;
+			state.tags = model.filterReactions();
+			state.query = model.filter().text;
+			applySearchState(std::move(state));
+		}
+	}, lifetime());
 }
 
 PeerData *Widget::searchInPeer() const {

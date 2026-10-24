@@ -20,6 +20,10 @@ class Domain;
 
 namespace Storage {
 
+namespace LocalData {
+class Store;
+} // namespace LocalData
+
 enum class StartResult : uchar {
 	Success,
 	IncorrectPasscode,
@@ -46,6 +50,7 @@ public:
 
 	[[nodiscard]] rpl::producer<> localPasscodeChanged() const;
 	[[nodiscard]] bool hasLocalPasscode() const;
+	[[nodiscard]] std::shared_ptr<LocalData::Store> localData();
 
 private:
 	enum class StartModernResult {
@@ -66,6 +71,7 @@ private:
 	const QString _dataName;
 
 	MTP::AuthKeyPtr _localKey;
+	std::shared_ptr<LocalData::Store> _localData;
 	MTP::AuthKeyPtr _passcodeKey;
 	QByteArray _passcodeKeySalt;
 	QByteArray _passcodeKeyEncrypted;

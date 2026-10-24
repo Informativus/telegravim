@@ -29,7 +29,7 @@ MessagesSearchMerged::MessagesSearchMerged(not_null<History*> history)
 	};
 
 	const auto checkFull = [=](const FoundMessages &data) {
-		if (data.total == int(_concatedFound.messages.size())) {
+		if (data.complete || data.total == int(_concatedFound.messages.size())) {
 			_isFull = true;
 			addFound(_migratedFirstFound);
 		}
@@ -37,7 +37,8 @@ MessagesSearchMerged::MessagesSearchMerged(not_null<History*> history)
 
 	_apiSearch.messagesFounds(
 	) | rpl::on_next([=](const FoundMessages &data) {
-		if (data.nextToken == _concatedFound.nextToken) {
+		if (data.local == _concatedFound.local
+			&& data.nextToken == _concatedFound.nextToken) {
 			addFound(data);
 			checkFull(data);
 			_nextFounds.fire({});
@@ -71,6 +72,13 @@ void MessagesSearchMerged::disableMigrated() {
 }
 
 void MessagesSearchMerged::addFound(const FoundMessages &data) {
+	if (data.local) {
+		if (data.total >= 0) {
+			_concatedFound.total = data.total;
+		}
+		_concatedFound.complete = data.complete;
+		_concatedFound.error = data.error;
+	}
 	for (const auto &message : data.messages) {
 		_concatedFound.messages.push_back(message);
 	}
@@ -102,6 +110,9 @@ void MessagesSearchMerged::search(const Request &search) {
 }
 
 void MessagesSearchMerged::searchMore() {
+	if (_concatedFound.complete) {
+		return;
+	}
 	if (_migratedSearch && _isFull) {
 		_migratedSearch->searchMore();
 	} else {
@@ -111,6 +122,16 @@ void MessagesSearchMerged::searchMore() {
 
 rpl::producer<> MessagesSearchMerged::newFounds() const {
 	return _newFounds.events();
+}
+
+void MessagesSearchMerged::cancel() {
+	_apiSearch.cancel();
+	if (_migratedSearch) {
+		_migratedSearch->cancel();
+	}
+	clear();
+	_concatedFound.total = 0;
+	_concatedFound.complete = true;
 }
 
 rpl::producer<> MessagesSearchMerged::nextFounds() const {

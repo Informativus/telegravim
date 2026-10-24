@@ -92,6 +92,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_chat.h"
 #include "data/data_file_click_handler.h"
 #include "data/data_message_reactions.h"
+#include "data/local_saved_tags.h"
 #include "data/data_user.h"
 #include "data/stickers/data_custom_emoji.h"
 #include "chat_helpers/message_field.h" // FactcheckFieldIniter.
@@ -1467,6 +1468,7 @@ void EditTagBox(
 	struct State {
 		std::unique_ptr<Ui::Text::CustomEmoji> custom;
 		QImage image;
+		bool saving = false;
 	};
 	const auto state = field->lifetime().make_state<State>();
 
@@ -1504,16 +1506,29 @@ void EditTagBox(
 	Ui::AddLengthLimitLabel(field, kTagNameLimit);
 
 	const auto save = [=] {
+		if (state->saving) {
+			return;
+		}
 		const auto text = field->getLastText();
 		if (text.size() > kTagNameLimit) {
 			field->showError();
 			return;
 		}
-		const auto weak = base::make_weak(box);
-		controller->session().data().reactions().renameTag(id, text);
-		if (const auto strong = weak.get()) {
-			strong->closeBox();
-		}
+		state->saving = true;
+		field->setEnabled(false);
+		controller->session().data().reactions().renameTag(
+			id,
+			text,
+			crl::guard(box, [=](bool success) {
+				state->saving = false;
+				field->setEnabled(true);
+				if (success) {
+					box->closeBox();
+				} else {
+					field->showError();
+					field->setFocusFast();
+				}
+			}));
 	};
 
 	field->submits(
@@ -2666,6 +2681,21 @@ void ShowTagInListMenu(
 		st::popupMenuExpandedSeparator);
 
 	AddEditTagAction(menu->get(), id, controller);
+	(*menu)->addAction(tr::lng_context_remove_tag(tr::now), [=] {
+		controller->show(Ui::MakeConfirmBox({
+			.text = tr::lng_local_saved_tags_delete_confirm(),
+			.confirmed = crl::guard(controller, [=](Fn<void()> close) {
+				controller->session().data().reactions().localSavedTags().removeReaction(
+					id,
+					[close = std::move(close)](bool success) {
+						if (success) {
+							close();
+						}
+					});
+			}),
+			.confirmText = tr::lng_box_delete(),
+		}), Ui::LayerOption::KeepOther);
+	}, &st::menuIconTagRemoveAttention);
 	AddTagPackAction(menu->get(), id, controller);
 
 	(*menu)->popup(position);
