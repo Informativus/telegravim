@@ -24,6 +24,7 @@ struct MoreChatsBarContent;
 namespace Data {
 
 class LocalChatFolders;
+class LocalNavigationPreferences;
 
 class Session;
 
@@ -194,6 +195,8 @@ public:
 
 	[[nodiscard]] FilterId defaultId() const;
 	[[nodiscard]] FilterId lookupId(int index) const;
+	[[nodiscard]] LocalNavigationPreferences &navigationPreferences() const;
+	[[nodiscard]] QString stableReference(FilterId id) const;
 
 	bool loadNextExceptions(bool chatsListLoaded);
 
@@ -262,7 +265,9 @@ private:
 
 	const not_null<Session*> _owner;
 	const std::unique_ptr<LocalChatFolders> _localFolders;
+	const std::unique_ptr<LocalNavigationPreferences> _navigationPreferences;
 	rpl::lifetime _localFoldersLifetime;
+	rpl::lifetime _navigationPreferencesLifetime;
 	base::flat_map<QString, FilterId> _localFilterIds;
 	rpl::event_stream<QString> _localErrors;
 	QString _lastLocalError;
