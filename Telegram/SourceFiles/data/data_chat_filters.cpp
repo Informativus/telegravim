@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_chat_filters.h"
 
 #include "data/local_chat_folders.h"
+#include "data/local_navigation_preferences.h"
 #include "data/local_pinned_dialogs.h"
 #include "api/api_text_entities.h"
 #include "history/history.h"
@@ -430,6 +431,9 @@ bool ChatFilter::contains(
 ChatFilters::ChatFilters(not_null<Session*> owner)
 : _owner(owner)
 , _localFolders(std::make_unique<LocalChatFolders>(nullptr, &owner->session()))
+, _navigationPreferences(std::make_unique<LocalNavigationPreferences>(
+	nullptr,
+	&owner->session()))
 , _moreChatsTimer([=] { checkLoadMoreChatsLists(); }) {
 	_list.emplace_back();
 	_localFolders->changes() | rpl::on_next([=] {
@@ -447,6 +451,9 @@ ChatFilters::ChatFilters(not_null<Session*> owner)
 			}
 		});
 	}, _localFoldersLifetime);
+	_navigationPreferences->changes() | rpl::on_next([=] {
+		rebuildLocal();
+	}, _navigationPreferencesLifetime);
 	crl::on_main(&owner->session(), [=] {
 		load();
 	});
@@ -575,6 +582,39 @@ bool ChatFilters::rebuildLocal(bool notify) {
 			changed = true;
 		}
 	}
+	if (_navigationPreferences->loaded()
+		&& !_navigationPreferences->state().visibleOrder.empty()) {
+		auto resolved = std::vector<FilterId>();
+		const auto &preferences = _navigationPreferences->state();
+		for (const auto &reference : preferences.visibleOrder) {
+			if (reference == u"all"_q) {
+				if (ranges::contains(_list, FilterId(), &ChatFilter::id)) {
+					resolved.push_back(FilterId());
+				}
+				continue;
+			}
+			if (!reference.startsWith(u"local:"_q)) {
+				continue;
+			}
+			const auto id = reference.mid(6);
+			const auto i = ranges::find(_list, id, &ChatFilter::localId);
+			if (i != end(_list)) {
+				resolved.push_back(i->id());
+			}
+		}
+		for (const auto &filter : _list) {
+			if (!ranges::contains(resolved, filter.id())) {
+				resolved.push_back(filter.id());
+			}
+		}
+		for (auto position = 0; position != resolved.size(); ++position) {
+			const auto i = ranges::find(_list, resolved[position], &ChatFilter::id);
+			if (i != end(_list) && i != begin(_list) + position) {
+				std::iter_swap(i, begin(_list) + position);
+				changed = true;
+			}
+		}
+	}
 	if (changed && notify) {
 		_listChanged.fire({});
 	}
@@ -584,6 +624,8 @@ bool ChatFilters::rebuildLocal(bool notify) {
 void ChatFilters::clear() {
 	_localFoldersLifetime.destroy();
 	_localFolders->stop();
+	_navigationPreferencesLifetime.destroy();
+	_navigationPreferences->stop();
 	_chatsLists.clear();
 	_list.clear();
 }
@@ -1043,6 +1085,18 @@ void ChatFilters::saveOrder(
 		}) | ranges::views::transform(&ChatFilter::id) | ranges::to_vector;
 	if (hasLocal) {
 		reorderLocal(order);
+		auto references = std::vector<QString>();
+		for (const auto id : order) {
+			if (const auto reference = stableReference(id); !reference.isEmpty()) {
+				references.push_back(reference);
+			}
+		}
+		for (const auto &reference : _navigationPreferences->state().visibleOrder) {
+			if (!ranges::contains(references, reference)) {
+				references.push_back(reference);
+			}
+		}
+		_navigationPreferences->setVisibleOrder(std::move(references));
 		crl::on_main(&_owner->session(), [=] {
 			_listChanged.fire({});
 		});
@@ -1083,7 +1137,40 @@ const std::vector<ChatFilter> &ChatFilters::list() const {
 }
 
 FilterId ChatFilters::defaultId() const {
+	if (_navigationPreferences->loaded()) {
+		const auto &state = _navigationPreferences->state();
+		const auto reference = state.restoreLastSection
+			? state.lastSectionRef
+			: state.startupRef;
+		if (!reference.isEmpty()) {
+			for (const auto &filter : _list) {
+				if (stableReference(filter.id()) == reference) {
+					return filter.id();
+				}
+			}
+			return FilterId();
+		}
+	}
 	return lookupId(0);
+}
+
+LocalNavigationPreferences &ChatFilters::navigationPreferences() const {
+	return *_navigationPreferences;
+}
+
+QString ChatFilters::stableReference(FilterId id) const {
+	if (!id) {
+		return u"all"_q;
+	}
+	const auto i = ranges::find(_list, id, &ChatFilter::id);
+	if (i != end(_list) && i->isLocal()) {
+		return u"local:"_q + i->localId();
+	}
+	if (const auto scope = _owner->localPinnedDialogs().filterScope(id);
+		!scope.isEmpty()) {
+		return scope;
+	}
+	return {};
 }
 
 FilterId ChatFilters::lookupId(int index) const {

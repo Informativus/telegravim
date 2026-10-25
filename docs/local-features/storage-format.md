@@ -83,6 +83,13 @@ register its explicit migration and validation before replacing this policy.
 Unknown record kinds remain stored but inactive. Unknown fields on known
 objects remain part of the stored object.
 
+The `navigation_preferences` module is version 1 and stores one account-scoped
+settings record: `startup_ref`, `last_section_ref`, `restore_last_section`, and
+`visible_order`. References are `all`, `local:<folder UUID>`, or
+`filter:<numeric id>:<incarnation UUID>`; transient negative `FilterId` values
+are never serialized. The module is additive, keeps unknown fields, and leaves
+`chat_folders` as the sole source of folder membership, title, color, and rules.
+
 ## Merge and retained alternatives
 
 Import first validates and prepares a snapshot without modifying active data.

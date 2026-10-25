@@ -65,6 +65,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_forum.h"
 #include "data/data_forum_topic.h"
 #include "data/data_chat_filters.h"
+#include "data/local_navigation_preferences.h"
 #include "data/data_replies_list.h"
 #include "data/data_peer_values.h"
 #include "data/data_premium_limits.h"
@@ -1699,6 +1700,12 @@ SessionController::SessionController(
 		checkOpenedFilter();
 		crl::on_main(this, processFiltersMenu);
 	}, lifetime());
+	session->data().chatsFilters().navigationPreferences().changes(
+	) | rpl::on_next([=] {
+		if (!_filtersActivated) {
+			activateFirstChatsFilter();
+		}
+	}, lifetime());
 
 	session->data().itemIdChanged(
 	) | rpl::on_next([=](Data::Session::IdChange change) {
@@ -2071,7 +2078,8 @@ void SessionController::checkOpenedFilter() {
 void SessionController::activateFirstChatsFilter() {
 	if (_filtersActivated
 		|| !isPrimary()
-		|| !session().data().chatsFilters().loaded()) {
+		|| !session().data().chatsFilters().loaded()
+		|| !session().data().chatsFilters().navigationPreferences().loaded()) {
 		return;
 	}
 	_filtersActivated = true;
@@ -3342,6 +3350,15 @@ void SessionController::setActiveChatsFilter(
 		resetFakeUnreadWhileOpened();
 	}
 	_activeChatsFilter.force_assign(id);
+	if (changed) {
+		if (const auto reference = session().data().chatsFilters().stableReference(id);
+			!reference.isEmpty()) {
+			session().data().chatsFilters().navigationPreferences().setStartupRef(
+				reference);
+			session().data().chatsFilters().navigationPreferences().setLastSectionRef(
+				reference);
+		}
+	}
 	if (id || !changed) {
 		closeForum();
 		closeFolder();

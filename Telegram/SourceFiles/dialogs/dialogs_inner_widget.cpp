@@ -128,7 +128,7 @@ constexpr auto kVimKeymapSearchNavigationRetryLimit = 50;
 
 [[nodiscard]] InnerWidget::ChatsFilterTagsKey SerializeFilterTagsKey(
 		FilterId filterId,
-		uint8 more,
+		int more,
 		bool active) {
 	return (filterId & 0xFFFFFFFF)
 		| (static_cast<int64_t>(more) << 32)
@@ -1136,7 +1136,7 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 				- context.st->padding.right()
 				- st::dialogsUnreadPadding
 				- context.st->nameLeft;
-			auto more = uint8(0);
+			auto more = 0;
 			const auto &list = session().data().chatsFilters().list();
 			for (const auto &filter : list) {
 				if (!row->entry()->inChatList(filter.id())
@@ -2170,6 +2170,8 @@ void InnerWidget::clearIrrelevantState() {
 		setSearchedPressed(-1);
 	} else if (_state == WidgetState::Filtered) {
 		_collapsedSelected = -1;
+		_selectedChatFilterTagsOverflow = false;
+		_pressedChatFilterTagsOverflow = false;
 		setCollapsedPressed(-1);
 		_selected = nullptr;
 		_communitySelected = -1;
@@ -2260,6 +2262,10 @@ void InnerWidget::selectByMouse(QPoint globalPosition) {
 			&& selected->lookupIsInTopicJump(local.x(), mappedY);
 		const auto selectedRightButton = selected
 			&& lookupIsInBotAppButton(selected, QPoint(local.x(), mappedY));
+		const auto selectedChatFilterTagsOverflow = selected
+			&& lookupChatsFilterTagsOverflow(
+				selected,
+				QPoint(local.x(), mappedY));
 		auto communitySelected = -1;
 		if (communityModeShown() && !selected && collapsedSelected < 0) {
 			const auto pick = [&](
@@ -2282,17 +2288,20 @@ void InnerWidget::selectByMouse(QPoint globalPosition) {
 			|| _selected != selected
 			|| _communitySelected != communitySelected
 			|| _selectedTopicJump != selectedTopicJump
-			|| _selectedRightButton != selectedRightButton) {
+			|| _selectedRightButton != selectedRightButton
+			|| _selectedChatFilterTagsOverflow != selectedChatFilterTagsOverflow) {
 			updateSelectedRow();
 			_selected = selected;
 			_communitySelected = communitySelected;
 			_selectedTopicJump = selectedTopicJump;
 			_selectedRightButton = selectedRightButton;
+			_selectedChatFilterTagsOverflow = selectedChatFilterTagsOverflow;
 			_collapsedSelected = collapsedSelected;
 			updateSelectedRow();
 			setCursor((_selected
 				|| _collapsedSelected >= 0
-				|| _communitySelected >= 0)
+				|| _communitySelected >= 0
+				|| _selectedChatFilterTagsOverflow)
 				? style::cur_pointer
 				: style::cur_default);
 		}
@@ -2467,6 +2476,7 @@ void InnerWidget::mousePressEvent(QMouseEvent *e) {
 	setPreviewPressed(_previewSelected);
 	setSearchedPressed(_searchedSelected);
 	setCommunityPressed(_communitySelected);
+	_pressedChatFilterTagsOverflow = _selectedChatFilterTagsOverflow;
 	_pressedMorePosts = _selectedMorePosts;
 	_pressedChatTypeFilter = _selectedChatTypeFilter;
 
@@ -3029,6 +3039,8 @@ void InnerWidget::mousePressReleased(
 	_pressedMorePosts = false;
 	const auto pressedChatTypeFilter = _pressedChatTypeFilter;
 	_pressedChatTypeFilter = false;
+	const auto pressedChatFilterTagsOverflow = _pressedChatFilterTagsOverflow;
+	_pressedChatFilterTagsOverflow = false;
 	if (wasDragging) {
 		selectByMouse(globalPosition);
 	}
@@ -3060,6 +3072,12 @@ void InnerWidget::mousePressReleased(
 	}
 	updateSelectedRow();
 	if (!wasDragging && button == Qt::LeftButton) {
+		if (pressedChatFilterTagsOverflow
+			&& pressed
+			&& pressed == _selected) {
+			showChatsFilterTagsMenu(pressed);
+			return;
+		}
 		if ((collapsedPressed >= 0 && collapsedPressed == _collapsedSelected)
 			|| (pressed
 				&& pressed == _selected
@@ -5766,7 +5784,7 @@ void InnerWidget::restoreChatsFilterScrollState(FilterId filterId) {
 
 QImage *InnerWidget::cacheChatsFilterTag(
 		const Data::ChatFilter &filter,
-		uint8 more,
+		int more,
 		bool active) {
 	if (!filter.id() && !more) {
 		return nullptr;
@@ -5804,6 +5822,91 @@ QImage *InnerWidget::cacheChatsFilterTag(
 	entry.context.textContext = Core::TextContext({ .session = &session() });
 	entry.frame = Ui::ChatsFilterTag(roundedText, entry.context);
 	return &entry.frame;
+}
+
+bool InnerWidget::lookupChatsFilterTagsOverflow(
+		Row *row,
+		QPoint localPosition) {
+	if (!row || width() < st::columnMinimalWidthLeft / 2
+		|| !row->entry()->hasChatsFilterTags(_filterId)) {
+		return false;
+	}
+	const auto &rowStyle = Row::ComputeSt(row->entry(), _filterId);
+	auto availableWidth = width()
+		- rowStyle.padding.right()
+		- st::dialogsUnreadPadding
+		- rowStyle.nameLeft;
+	auto more = 0;
+	auto tagsWidth = 0;
+	const auto active = (row == _selected);
+	const auto &filters = session().data().chatsFilters().list();
+	for (const auto id : row->entry()->chatsFilterTagIds(_filterId)) {
+		const auto i = ranges::find(filters, id, &Data::ChatFilter::id);
+		if (i == end(filters)) {
+			continue;
+		}
+		if (active
+			&& (i->flags() & Data::ChatFilter::Flag::NoRead)
+			&& !i->contains(row->history(), true)) {
+			continue;
+		}
+		const auto tag = cacheChatsFilterTag(*i, 0, active);
+		if (!tag) {
+			continue;
+		}
+		const auto tagWidth = tag->width() / style::DevicePixelRatio();
+		if (more || availableWidth < tagWidth) {
+			++more;
+		} else {
+			availableWidth -= tagWidth + st::dialogRowFilterTagSkip;
+			tagsWidth += tagWidth + st::dialogRowFilterTagSkip;
+		}
+	}
+	if (!more) {
+		return false;
+	}
+	auto tag = cacheChatsFilterTag({}, more, active);
+	if (!tag) {
+		return false;
+	}
+	auto tagWidth = tag->width() / style::DevicePixelRatio();
+	if (availableWidth < tagWidth) {
+		++more;
+		if (more > 1) {
+			tag = cacheChatsFilterTag({}, more, active);
+			tagWidth = tag ? tag->width() / style::DevicePixelRatio() : 0;
+		}
+	}
+	if (!tag || !tagWidth) {
+		return false;
+	}
+	const auto top = st::taggedDialogRow.tagTop;
+	const auto x = rowStyle.nameLeft + tagsWidth;
+	return QRect(x, top, tagWidth, tag->height() / style::DevicePixelRatio())
+		.contains(localPosition);
+}
+
+void InnerWidget::showChatsFilterTagsMenu(not_null<Row*> row) {
+	_menu = base::make_unique_q<Ui::PopupMenu>(this, st::popupMenuWithIcons);
+	const auto &filters = session().data().chatsFilters().list();
+	for (const auto id : row->entry()->chatsFilterTagIds(_filterId)) {
+		const auto i = ranges::find(filters, id, &Data::ChatFilter::id);
+		if (i == end(filters)) {
+			continue;
+		}
+		const auto title = i->title();
+		const auto text = title.text.text.isEmpty()
+			? tr::lng_filters_all_short(tr::now)
+			: title.text.text;
+		_menu->addAction(text, [=] {
+			_controller->setActiveChatsFilter(i->id());
+		});
+	}
+	if (_menu->empty()) {
+		_menu = nullptr;
+		return;
+	}
+	_menu->popup(QCursor::pos());
 }
 
 bool InnerWidget::chooseHashtag() {

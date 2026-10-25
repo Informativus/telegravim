@@ -181,6 +181,8 @@ public:
 	}
 
 	[[nodiscard]] bool hasChatsFilterTags(FilterId exclude) const;
+	[[nodiscard]] std::vector<FilterId> chatsFilterTagIds(
+		FilterId exclude) const;
 protected:
 	void notifyUnreadStateChange(const UnreadState &wasState);
 	inline auto unreadStateChangeNotifier(bool required);

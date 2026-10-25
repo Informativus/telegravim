@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/local_data_store.h"
 #include "storage/local_transfer_format.h"
 #include "storage/local_chat_folders_format.h"
+#include "storage/local_navigation_preferences_format.h"
 #include "storage/local_pinned_items_format.h"
 
 #include "mtproto/mtproto_auth_key.h"
@@ -411,6 +412,12 @@ void SetRecords(QJsonObject &module, const QMap<QString, QJsonObject> &records) 
 			u"saved_tags"_q,
 			2,
 			[](const QJsonObject &, const Account &) { return Result(); },
+			[](const QJsonObject &) { return QStringList(); },
+		} },
+		{ u"navigation_preferences"_q, ModuleDefinition{
+			u"navigation_preferences"_q,
+			1,
+			NavigationPreferences::Validate,
 			[](const QJsonObject &) { return QStringList(); },
 		} },
 	};
