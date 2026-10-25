@@ -68,6 +68,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_poll.h"
 #include "data/data_replies_list.h"
 #include "data/data_chat_filters.h"
+#include "storage/local_chat_folders_format.h"
 #include "dialogs/dialogs_entry.h"
 #include "dialogs/dialogs_row.h"
 #include "base/options.h"
@@ -2937,6 +2938,9 @@ int Session::pinnedChatsLimit(Data::Folder *folder) const {
 }
 
 int Session::pinnedChatsLimit(FilterId filterId) const {
+	if (chatsFilters().isLocal(filterId)) {
+		return Storage::LocalData::ChatFolders::kMaximumMembers;
+	}
 	const auto limits = Data::PremiumLimits(_session);
 	return limits.dialogFiltersChatsCurrent();
 }
@@ -2970,6 +2974,9 @@ rpl::producer<int> Session::maxPinnedChatsLimitValue(
 
 rpl::producer<int> Session::maxPinnedChatsLimitValue(
 		FilterId filterId) const {
+	if (chatsFilters().isLocal(filterId)) {
+		return rpl::single(pinnedChatsLimit(filterId));
+	}
 	// Premium limit from appconfig.
 	// We always use premium limit in the MainList limit producer,
 	// because it slices the list to that limit. We don't want to slice

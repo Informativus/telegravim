@@ -4899,7 +4899,7 @@ bool InnerWidget::needCollapsedRowsRefresh() const {
 }
 
 void InnerWidget::editOpenedFilter() {
-	if (_filterId > 0) {
+	if (_filterId != 0) {
 		EditExistingFilter(_controller, _filterId);
 	}
 }
@@ -5013,7 +5013,7 @@ void InnerWidget::refreshEmpty() {
 			: EmptyState::None)
 		: (!_filterId && data->contactsLoaded().current())
 		? EmptyState::NoContacts
-		: (_filterId > 0) && data->chatsList()->loaded()
+		: (_filterId != 0) && data->chatsList()->loaded()
 		? EmptyState::EmptyFolder
 		: EmptyState::Loading;
 	if (state == EmptyState::None) {

@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "storage/local_data_store.h"
 #include "storage/local_transfer_format.h"
+#include "storage/local_chat_folders_format.h"
 #include "storage/local_pinned_items_format.h"
 
 #include "mtproto/mtproto_auth_key.h"
@@ -394,6 +395,12 @@ void SetRecords(QJsonObject &module, const QMap<QString, QJsonObject> &records) 
 
 [[nodiscard]] QMap<QString, ModuleDefinition> &Registry() {
 	static auto result = QMap<QString, ModuleDefinition>{
+		{ u"chat_folders"_q, ModuleDefinition{
+			u"chat_folders"_q,
+			1,
+			ChatFolders::Validate,
+			[](const QJsonObject &) { return QStringList(); },
+		} },
 		{ u"pinned_items"_q, ModuleDefinition{
 			u"pinned_items"_q,
 			1,

@@ -27,6 +27,15 @@
       "required": ["records"],
       "properties": {"records": {"type": "array", "maxItems": 1000000, "items": {"$ref": "#/$defs/pinnedRecord"}}}
     }
+  }, {
+    "if": {
+      "properties": {"module_id": {"const": "chat_folders"}, "schema_version": {"const": 1}},
+      "required": ["module_id", "schema_version"]
+    },
+    "then": {
+      "required": ["records"],
+      "properties": {"records": {"type": "array", "maxItems": 1000000, "items": {"$ref": "#/$defs/chatFolderRecord"}}}
+    }
   }],
   "$defs": {
     "uuid": {"type": "string", "format": "uuid", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
@@ -138,6 +147,76 @@
             "properties": {
               "filter_id": {"type": "string", "pattern": "^[1-9][0-9]{0,9}$"},
               "scope_id": {"$ref": "#/$defs/uuid"}
+            }
+          }
+        }
+      ],
+      "additionalProperties": true
+    },
+    "folderRule": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "chatFolderRecord": {
+      "allOf": [
+        {"$ref": "#/$defs/record"},
+        {
+          "if": {"properties": {"kind": {"const": "folder"}}, "required": ["kind"]},
+          "then": {
+            "required": ["folder_id", "title", "position", "rules"],
+            "properties": {
+              "folder_id": {"$ref": "#/$defs/uuid"},
+              "title": {"type": "string", "minLength": 1, "maxLength": 100},
+              "title_entities": {
+                "type": "array", "maxItems": 128,
+                "items": {
+                  "type": "object",
+                  "required": ["type", "offset", "length"],
+                  "properties": {
+                    "type": {"type": "string", "minLength": 1},
+                    "offset": {"type": "integer", "minimum": 0, "maximum": 2147483647},
+                    "length": {"type": "integer", "minimum": 1, "maximum": 2147483647},
+                    "data": {"type": "string", "maxLength": 1024}
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "static_title": {"type": "boolean"},
+              "icon": {"type": "string", "maxLength": 32},
+              "color": {"type": "integer", "minimum": 0, "maximum": 255},
+              "position": {"type": "integer", "minimum": 0, "maximum": 2147483647},
+              "rules": {"type": "array", "maxItems": 128, "items": {"$ref": "#/$defs/folderRule"}}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "member"}}, "required": ["kind"]},
+          "then": {
+            "required": ["folder_id", "peer", "mode"],
+            "properties": {
+              "folder_id": {"$ref": "#/$defs/uuid"},
+              "peer": {"$ref": "#/$defs/savedPeer"},
+              "mode": {"enum": ["include", "exclude"]}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "settings"}}, "required": ["kind"]},
+          "then": {
+            "required": ["scope", "tags_enabled"],
+            "properties": {
+              "scope": {"const": "account"},
+              "tags_enabled": {"type": "boolean"}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "cloud_color"}}, "required": ["kind"]},
+          "then": {
+            "required": ["scope", "color_index"],
+            "properties": {
+              "scope": {"allOf": [{"$ref": "#/$defs/pinnedScope"}, {"pattern": "^filter:"}]},
+              "color_index": {"type": ["integer", "null"], "minimum": 0, "maximum": 255}
             }
           }
         }

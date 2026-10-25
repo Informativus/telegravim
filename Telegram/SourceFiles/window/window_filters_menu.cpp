@@ -28,6 +28,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_unread_value.h"
 #include "lang/lang_keys.h"
 #include "ui/filter_icons.h"
+#include "ui/empty_userpic.h"
+#include "ui/style/style_core_palette.h"
 #include "ui/wrap/vertical_layout.h"
 #include "ui/wrap/vertical_layout_reorder.h"
 #include "ui/wrap/slide_wrap.h"
@@ -52,6 +54,32 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace Window {
 namespace {
+
+struct ColoredFilterButtonStyle {
+	style::palette palette;
+	style::SideBarButton button;
+	const style::color color;
+
+	ColoredFilterButtonStyle(
+		const style::SideBarButton &original,
+		const Ui::FilterIcons &icons,
+		uint8 colorIndex)
+	: button(original)
+	, color(Ui::EmptyUserpic::UserpicColor(colorIndex).color2) {
+		palette.finalize();
+		button.textFg = button.textFgActive = color;
+		button.icon = icons.normal->withPalette(palette);
+		button.iconActive = icons.active->withPalette(palette);
+		refreshPalette();
+	}
+
+	void refreshPalette() {
+		palette.setColor(QLatin1String("sideBarIconFg"), color->c);
+		palette.setColor(QLatin1String("sideBarIconFgActive"), color->c);
+		button.icon.reset();
+		button.iconActive.reset();
+	}
+};
 
 // The folder tabs container, exposed as a list to screen readers.
 class TabListLayout final : public Ui::VerticalLayout {
@@ -108,7 +136,7 @@ FiltersMenu::FiltersMenu(
 		object_ptr<Ui::VerticalLayout>(&_scroll))) {
 
 	_drag.timer.setCallback([=] {
-		if (_drag.filterId >= 0) {
+		if (_drag.filterId != -1) {
 			_session->setActiveChatsFilter(_drag.filterId);
 		}
 	});
@@ -356,15 +384,9 @@ void FiltersMenu::refresh() {
 	_reorder->cancel();
 
 	_reorder->clearPinnedIntervals();
-	const auto maxLimit = (reorderAll ? 1 : 0)
-		+ Data::PremiumLimits(&_session->session()).dialogFiltersCurrent();
-	const auto premiumFrom = (reorderAll ? 0 : 1) + maxLimit;
 	if (!reorderAll) {
 		_reorder->addPinnedInterval(0, 1);
 	}
-	_reorder->addPinnedInterval(
-		premiumFrom,
-		std::max(1, int(filters->list().size()) - maxLimit));
 
 	// Remember which folder holds keyboard focus so the roving Tab-stop can be
 	// re-established on its replacement after the rebuild: the new buttons are
@@ -381,7 +403,7 @@ void FiltersMenu::refresh() {
 	auto now = base::flat_map<int, base::unique_qptr<Ui::SideBarButton>>();
 	const auto &currentFilter = _session->activeChatsFilterCurrent();
 	for (const auto &filter : filters->list()) {
-		const auto nextIsLocked = (now.size() >= premiumFrom);
+		const auto nextIsLocked = filters->isLocked(filter.id());
 		if (nextIsLocked && (currentFilter == filter.id())) {
 			_session->setActiveChatsFilter(FilterId(0));
 		}
@@ -390,6 +412,7 @@ void FiltersMenu::refresh() {
 			filter.id(),
 			filter.title(),
 			Ui::ComputeFilterIcon(filter),
+			filter.colorIndex(),
 			nextIsLocked);
 		now.emplace(filter.id(), std::move(button));
 	}
@@ -544,6 +567,7 @@ base::unique_qptr<Ui::SideBarButton> FiltersMenu::prepareAll() {
 		0,
 		{},
 		Ui::FilterIcon::All,
+		std::nullopt,
 		false,
 		true);
 }
@@ -553,6 +577,7 @@ base::unique_qptr<Ui::SideBarButton> FiltersMenu::prepareButton(
 		FilterId id,
 		Data::ChatFilterTitle title,
 		Ui::FilterIcon icon,
+		std::optional<uint8> colorIndex,
 		bool locked,
 		bool toBeginning) {
 	const auto isStatic = title.isStatic;
@@ -560,17 +585,27 @@ base::unique_qptr<Ui::SideBarButton> FiltersMenu::prepareButton(
 		return On(PowerSaving::kEmojiChat)
 			|| _session->isGifPausedAtLeastFor(Window::GifPauseReason::Any);
 	};
-	// A real folder (id >= 0), locked or not, is a selectable list item; only
-	// the "Edit" button (id < 0) stays a plain button. Establish this before
+	// A real folder, locked or not, is a selectable list item; only
+	// the "Edit" button (id == -1) stays a plain button. Establish this before
 	// inserting the widget - insertion shows the child immediately, so
 	// configuring the role up front avoids a transient or separately-announced
 	// role change.
-	const auto listItem = (id >= 0);
+	const auto listItem = (id != -1);
 	const auto mode = tabsMode();
+	const auto &icons = Ui::LookupFilterIcon(id
+		? icon
+		: Ui::FilterIcon::All);
+	const auto colored = (id != 0
+		&& id != -1
+		&& colorIndex
+		&& *colorIndex < 7)
+		? std::make_shared<ColoredFilterButtonStyle>(
+			buttonStyle(), icons, *colorIndex)
+		: nullptr;
 	auto prepared = object_ptr<Ui::SideBarButton>(
 		container,
 		id ? title.text : TextWithEntities{ tr::lng_filters_all(tr::now) },
-		buttonStyle(),
+		colored ? colored->button : buttonStyle(),
 		Core::TextContext({
 			.session = &_session->session(),
 			.customEmojiLoopLimit = isStatic ? -1 : 0,
@@ -588,11 +623,16 @@ base::unique_qptr<Ui::SideBarButton> FiltersMenu::prepareButton(
 	const auto nameText = id
 		? title.text.text
 		: tr::lng_filters_all(tr::now);
-	const auto &icons = Ui::LookupFilterIcon(id
-		? icon
-		: Ui::FilterIcon::All);
-	raw->setIconOverride(icons.normal, icons.active);
-	if (id >= 0) {
+	if (colored) {
+		style::PaletteChanged(
+		) | rpl::on_next([=] {
+			colored->refreshPalette();
+			raw->update();
+		}, raw->lifetime());
+	} else {
+		raw->setIconOverride(icons.normal, icons.active);
+	}
+	if (id != -1) {
 		if (locked) {
 			// Surface a locked folder's premium-gated status and what pressing
 			// it does, which the visual lock glyph alone can't convey to a
@@ -686,17 +726,17 @@ base::unique_qptr<Ui::SideBarButton> FiltersMenu::prepareButton(
 				FiltersLimitBox,
 				&_session->session(),
 				std::nullopt));
-		} else if (id >= 0) {
+		} else if (id != -1) {
 			_session->setActiveChatsFilter(id);
 		} else {
 			openFiltersSettings();
 		}
 	});
-	if (id >= 0) {
+	if (id != -1) {
 		raw->setAcceptDrops(true);
 		raw->events(
 		) | rpl::filter([=](not_null<QEvent*> e) {
-			return ((e->type() == QEvent::ContextMenu) && (id >= 0))
+			return ((e->type() == QEvent::ContextMenu) && (id != -1))
 				|| e->type() == QEvent::DragEnter
 				|| e->type() == QEvent::DragMove
 				|| e->type() == QEvent::DragLeave;

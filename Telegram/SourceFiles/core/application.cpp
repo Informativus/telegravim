@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_forum.h"
 #include "data/data_message_reactions.h"
 #include "data/data_session.h"
+#include "data/data_chat_filters.h"
 #include "data/local_pinned_dialogs.h"
 #include "data/data_download_manager.h"
 #include "base/battery_saving.h"
@@ -2004,6 +2005,9 @@ bool Application::readyToQuit() {
 				if (session->data().localPinnedDialogs().busy()) {
 					prevented = true;
 				}
+				if (session->data().chatsFilters().localBusy()) {
+					prevented = true;
+				}
 				if (session->data().reactions().isQuitPrevent()) {
 					prevented = true;
 				}
@@ -2033,6 +2037,10 @@ void Application::quitDelayed() {
 				for (const auto &[index, account] : _domain->accounts()) {
 					if (const auto session = account->maybeSession()) {
 						if (session->data().localPinnedDialogs().busy()) {
+							quitDelayed();
+							return;
+						}
+						if (session->data().chatsFilters().localBusy()) {
 							quitDelayed();
 							return;
 						}

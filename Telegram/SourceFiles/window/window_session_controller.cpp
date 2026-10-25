@@ -1589,6 +1589,10 @@ SessionController::SessionController(
 	) | rpl::on_next([=](const QString &error) {
 		showToast(error);
 	}, lifetime());
+	session->data().chatsFilters().localErrors(
+	) | rpl::on_next([=](const QString &error) {
+		showToast(error);
+	}, lifetime());
 
 	session->data().reactions().localTagErrors(
 	) | rpl::on_next([=](const QString &error) {
@@ -4170,11 +4174,12 @@ bool CheckAndJumpToNearChatsFilter(
 	if (index == list->size() && id != 0) {
 		return false;
 	}
-	const auto changed = index + (isNext ? 1 : -1);
-	if (changed >= int(list->size()) || changed < 0) {
-		return false;
+	auto changed = index + (isNext ? 1 : -1);
+	while (changed >= 0 && changed < int(list->size())
+		&& session->data().chatsFilters().isLocked((*list)[changed].id())) {
+		changed += isNext ? 1 : -1;
 	}
-	if (changed > Data::PremiumLimits(session).dialogFiltersCurrent()) {
+	if (changed >= int(list->size()) || changed < 0) {
 		return false;
 	}
 	if (jump) {
