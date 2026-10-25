@@ -5838,6 +5838,7 @@ bool InnerWidget::lookupChatsFilterTagsOverflow(
 		- rowStyle.nameLeft;
 	auto more = 0;
 	auto tagsWidth = 0;
+	auto lastTagWidth = 0;
 	const auto active = (row == _selected);
 	const auto &filters = session().data().chatsFilters().list();
 	for (const auto id : row->entry()->chatsFilterTagIds(_filterId)) {
@@ -5860,6 +5861,7 @@ bool InnerWidget::lookupChatsFilterTagsOverflow(
 		} else {
 			availableWidth -= tagWidth + st::dialogRowFilterTagSkip;
 			tagsWidth += tagWidth + st::dialogRowFilterTagSkip;
+			lastTagWidth = tagWidth;
 		}
 	}
 	if (!more) {
@@ -5870,17 +5872,23 @@ bool InnerWidget::lookupChatsFilterTagsOverflow(
 		return false;
 	}
 	auto tagWidth = tag->width() / style::DevicePixelRatio();
+	auto indicatorVisible = true;
 	if (availableWidth < tagWidth) {
+		indicatorVisible = bool(lastTagWidth);
+		if (!indicatorVisible) {
+			return false;
+		}
 		++more;
+		tagsWidth -= lastTagWidth + st::dialogRowFilterTagSkip;
 		if (more > 1) {
 			tag = cacheChatsFilterTag({}, more, active);
 			tagWidth = tag ? tag->width() / style::DevicePixelRatio() : 0;
 		}
 	}
-	if (!tag || !tagWidth) {
+	if (!indicatorVisible || !tag || !tagWidth) {
 		return false;
 	}
-	const auto top = st::taggedDialogRow.tagTop;
+	const auto top = rowStyle.tagTop;
 	const auto x = rowStyle.nameLeft + tagsWidth;
 	return QRect(x, top, tagWidth, tag->height() / style::DevicePixelRatio())
 		.contains(localPosition);
@@ -5894,12 +5902,13 @@ void InnerWidget::showChatsFilterTagsMenu(not_null<Row*> row) {
 		if (i == end(filters)) {
 			continue;
 		}
+		const auto filterId = i->id();
 		const auto title = i->title();
 		const auto text = title.text.text.isEmpty()
 			? tr::lng_filters_all_short(tr::now)
 			: title.text.text;
 		_menu->addAction(text, [=] {
-			_controller->setActiveChatsFilter(i->id());
+			_controller->setActiveChatsFilter(filterId);
 		});
 	}
 	if (_menu->empty()) {

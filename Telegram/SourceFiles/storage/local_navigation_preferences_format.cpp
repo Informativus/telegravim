@@ -93,7 +93,7 @@ Result Validate(const QJsonObject &module, const Account &account) {
 			}
 			references.insert(entry.toString());
 		}
-		for (const auto key : { u"startup_ref"_q, u"last_section_ref"_q }) {
+		for (const auto &key : { u"startup_ref"_q, u"last_section_ref"_q }) {
 			const auto ref = record.value(key);
 			if (!ref.isNull() && !ref.isUndefined()
 				&& (!ref.isString() || !ValidReference(ref.toString()))) {
