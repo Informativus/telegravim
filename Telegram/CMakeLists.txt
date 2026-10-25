@@ -116,6 +116,8 @@ PRIVATE
     data/local_pinned_dialogs.h
     data/local_chat_folders.cpp
     data/local_chat_folders.h
+    data/local_navigation_preferences.cpp
+    data/local_navigation_preferences.h
     data/local_pinned_items.cpp
     data/local_pinned_items.h
     data/local_saved_tags.cpp
@@ -126,6 +128,8 @@ PRIVATE
     storage/local_data_store.h
     storage/local_chat_folders_format.cpp
     storage/local_chat_folders_format.h
+    storage/local_navigation_preferences_format.cpp
+    storage/local_navigation_preferences_format.h
     storage/local_pinned_items_format.cpp
     storage/local_pinned_items_format.h
     storage/local_transfer.cpp

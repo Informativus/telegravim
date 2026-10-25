@@ -20,6 +20,15 @@
     }
   }, {
     "if": {
+      "properties": {"module_id": {"const": "navigation_preferences"}, "schema_version": {"const": 1}},
+      "required": ["module_id", "schema_version"]
+    },
+    "then": {
+      "required": ["records"],
+      "properties": {"records": {"type": "array", "maxItems": 1000000, "items": {"$ref": "#/$defs/navigationRecord"}}}
+    }
+  }, {
+    "if": {
       "properties": {"module_id": {"const": "pinned_items"}, "schema_version": {"const": 1}},
       "required": ["module_id", "schema_version"]
     },
@@ -217,6 +226,29 @@
             "properties": {
               "scope": {"allOf": [{"$ref": "#/$defs/pinnedScope"}, {"pattern": "^filter:"}]},
               "color_index": {"type": ["integer", "null"], "minimum": 0, "maximum": 255}
+            }
+          }
+        }
+      ],
+      "additionalProperties": true
+    },
+    "navigationReference": {
+      "type": "string",
+      "pattern": "^(all|local:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|filter:[1-9][0-9]{0,9}:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$"
+    },
+    "navigationRecord": {
+      "allOf": [
+        {"$ref": "#/$defs/record"},
+        {
+          "if": {"properties": {"kind": {"const": "settings"}}, "required": ["kind"]},
+          "then": {
+            "required": ["scope", "restore_last_section", "visible_order"],
+            "properties": {
+              "scope": {"const": "account"},
+              "startup_ref": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/navigationReference"}]},
+              "last_section_ref": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/navigationReference"}]},
+              "restore_last_section": {"type": "boolean"},
+              "visible_order": {"type": "array", "maxItems": 4096, "uniqueItems": true, "items": {"$ref": "#/$defs/navigationReference"}}
             }
           }
         }
