@@ -6231,6 +6231,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_formatting_code_auto" = "Auto-Detect";
 
 "lng_text_copied" = "Text copied to clipboard.";
+"lng_vim_copy_album" = "All photos";
+"lng_vim_copy_album_loading" = "Loading photos…";
+"lng_vim_copy_album_done" = "Photos copied to clipboard.";
+"lng_vim_copy_album_failed" = "Could not copy all photos. Please try again.";
 "lng_code_copied" = "Code copied to clipboard.";
 "lng_date_copied" = "Date copied to clipboard.";
 
@@ -8850,3 +8854,96 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_local_transfer_scope_resource" = "Local resource metadata";
 
 // Keys finished
+
+"lng_local_replies_about" = "Create replies with rich text and attachments. Type / in a chat to insert a reply, review it, and send when ready.";
+"lng_local_replies_edit" = "Edit Quick Reply";
+"lng_local_replies_search" = "Search replies or categories";
+"lng_local_replies_name" = "Title";
+"lng_local_replies_category" = "Category";
+"lng_local_replies_variables_help" = "Use {text} for a variable. You can fill in variables and preview the result before inserting. Click an attachment to remove it.";
+"lng_local_replies_attach" = "Add Attachments";
+"lng_local_replies_too_many" = "A quick reply can have up to 10 attachments.";
+"lng_local_replies_up" = "Move Up";
+"lng_local_replies_down" = "Move Down";
+"lng_local_replies_insert" = "Insert";
+"lng_local_replies_too_long" = "The expanded reply is too long.";
+"lng_local_replies_draft_changed" = "The draft changed. Choose the quick reply again to insert it.";
+"lng_local_replies_unavailable" = "Attachments cannot be inserted in this editor.";
+"lng_local_replies_button_unavailable" = "Bot buttons need the original chat and cannot run from a local template preview.";
+"lng_local_replies_newer" = "This reply uses formatting from a newer client. Update to insert it.";
+"lng_local_replies_recovery" = "Recover messages from a deleted reply";
+"lng_local_replies_restore" = "Restore Reply";
+"lng_local_replies_remove_recovery" = "Delete Retained Messages";
+"lng_local_replies_reply_draft_missing" = "The message you were replying to was deleted. Your draft text was kept.";
+"lng_local_replies_edit_draft_missing" = "The original message was deleted, changed, or cannot safely be resumed. Save your draft text as a new message in this quick reply? Cancel keeps the draft for later recovery.";
+"lng_local_replies_save_draft_text" = "Save Draft Text";
+
+"lng_local_replies_save_failed" = "Could not save the prepared message";
+"lng_local_replies_media_deleted" = "The original message was deleted. Save your edited content as a new message in this quick reply? Cancel keeps this editor open.";
+
+"lng_business_features_about" = "Local tools and connected bots are available without Premium. A subscription unlocks the Premium features below.";
+"lng_business_local_features" = "Free on this device";
+"lng_business_connected_features" = "Without Premium in Telegram";
+"lng_business_premium_features" = "Telegram Premium";
+"lng_business_local_replies_about" = "Save replies with formatted text and media on this device. Preview them before sending.";
+"lng_business_local_tags_about" = "Show folder labels beside your chats, with the preference saved on this device.";
+"lng_business_connected_bots_about" = "Connect bots through Telegram without Premium. Bot providers may charge for their services.";
+"lng_business_premium_subscribe" = "Get Telegram Premium";
+"lng_business_premium_subscribe_button" = "Premium for {cost} per month";
+"lng_local_replies_empty" = "No quick replies yet. Add a reply to reuse formatted text and media in your chats.";
+"lng_local_replies_no_results" = "No matching replies. Try another title, shortcut, category or message.";
+"lng_local_replies_recovery_title" = "Deleted replies";
+"lng_local_replies_how_it_works" = "How Quick Replies work";
+"lng_local_replies_guide_intro" = "Saved on this device, without Premium. Inserting a reply does not send it.";
+"lng_local_replies_guide_create" = "1. Name and save your reply";
+"lng_local_replies_guide_compose" = "2. Write a message with a variable";
+"lng_local_replies_guide_insert" = "3. Choose /hello in a chat and fill in the name";
+"lng_local_replies_guide_send" = "4. Edit the draft, then press Send";
+"lng_local_replies_guide_example" = "Hello, {text}!";
+"lng_local_replies_title_help" = "Title";
+"lng_local_replies_title_help_text" = "Required personal descriptive name for this template. Example: Greeting.";
+"lng_local_replies_title_help_button" = "Help for Title";
+"lng_local_replies_shortcut_help" = "Shortcut";
+"lng_local_replies_shortcut_help_text" = "Type the shortcut without a leading slash. Use letters, numbers, or underscores without spaces. Example: hello, invoked in a chat as /hello. It is limited to 32 characters.";
+"lng_local_replies_shortcut_help_button" = "Help for Shortcut";
+"lng_local_replies_category_help" = "Category";
+"lng_local_replies_category_help_text" = "Optional grouping label for organizing and searching templates. Example: Work.";
+"lng_local_replies_category_help_button" = "Help for Category";
+"lng_local_replies_search_help" = "Search Quick Replies";
+"lng_local_replies_search_help_text" = "Search titles, shortcuts, categories, and message text. Clear the field to show all replies; Deleted replies remain available for recovery.";
+"lng_local_replies_search_help_button" = "Help for Quick Reply search";
+"lng_local_replies_guide_title" = "Greeting";
+"lng_local_replies_guide_category" = "Work";
+"lng_local_replies_guide_message" = "Message";
+"lng_local_replies_guide_person" = "Alex";
+"lng_local_replies_guide_draft" = "Editable draft";
+"lng_local_replies_variable_help" = "Fill in a variable";
+"lng_local_replies_variable_help_text" = "Enter the text that replaces this variable in the template. Review the preview, then press Insert to put it in your draft. You can still edit the draft before pressing Send.";
+"lng_local_replies_variable_help_button" = "Help for variable {text}";
+
+"lng_local_transcribe_download" = "Transcribe voice and video messages for free on this device. Download the speech model once (465 MB)? Audio and transcripts stay on your device. The model is downloaded from Hugging Face. You can also enable this later in Settings > Advanced > Local transcription.";
+"lng_local_transcribe_download_button" = "Download model";
+"lng_local_transcribe_waiting" = "Waiting for local transcription…";
+"lng_local_transcribe_audio_loading" = "Downloading audio…";
+"lng_local_transcribe_model_loading" = "Downloading speech model: {percent}%";
+"lng_local_transcribe_recognizing" = "Transcribing · {percent}%";
+"lng_local_transcribe_preparing" = "Preparing transcription…";
+"lng_local_transcribe_language" = "Recognition language";
+"lng_local_transcribe_language_system" = "System ({language})";
+"lng_local_transcribe_language_auto" = "Detect automatically";
+"lng_local_transcribe_model_failed" = "Could not download or verify the speech model. Click the transcription button to retry.";
+"lng_local_transcribe_too_large" = "Local transcription supports recordings up to one hour and 64 MB.";
+"lng_local_transcribe_no_speech" = "No speech recognized. Click the transcription button to retry.";
+"lng_local_transcribe_failed" = "Could not transcribe this recording. Click the transcription button to retry.";
+
+"lng_local_transcribe_title" = "Local transcription";
+"lng_local_transcribe_enable" = "Use local transcription without Premium";
+"lng_local_transcribe_dont_show" = "Don't show this offer again";
+"lng_local_transcribe_settings_about" = "Transcribe voice and video messages on this device for free, without uploading them. Download the speech model once (465 MB) from Hugging Face. These preferences apply to this account on this device. Premium accounts always use Telegram's standard transcription. With local transcription off, Telegram's usual limits apply.";
+"lng_local_transcribe_offer_ready" = "Enable free local transcription of voice and video messages? The speech model is already downloaded. Audio and transcripts stay on your device. You can change this later in Settings > Advanced > Local transcription.";
+"lng_local_transcribe_download_enable" = "Download and enable";
+"lng_local_transcribe_enable_button" = "Enable";
+"lng_local_transcribe_cancel_download" = "Cancel download";
+"lng_local_transcribe_model_missing" = "Speech model not downloaded (465 MB).";
+"lng_local_transcribe_model_ready" = "Speech model downloaded. Ready for local transcription.";
+"lng_local_transcribe_download_failed" = "Could not download or verify the speech model. You can retry the download.";

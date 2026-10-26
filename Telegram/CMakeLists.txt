@@ -26,6 +26,7 @@ get_filename_component(res_loc Resources REALPATH)
 
 include(cmake/telegram_options.cmake)
 include(cmake/lib_ffmpeg.cmake)
+include(cmake/lib_transcription.cmake)
 include(cmake/lib_stripe.cmake)
 include(cmake/lib_tgcalls.cmake)
 include(cmake/lib_prisma.cmake)
@@ -87,6 +88,7 @@ PRIVATE
     desktop-app::lib_translate
     desktop-app::lib_webview
     desktop-app::lib_ffmpeg
+    tdesktop::lib_transcription
     desktop-app::lib_stripe
     desktop-app::external_zlib
     desktop-app::external_minizip
@@ -120,6 +122,16 @@ PRIVATE
     data/local_navigation_preferences.h
     data/local_pinned_items.cpp
     data/local_pinned_items.h
+    data/local_quick_replies.cpp
+    data/local_quick_replies.h
+    data/local_quick_reply_view.cpp
+    data/local_quick_reply_view.h
+    api/api_local_quick_reply_sending.cpp
+    api/api_local_quick_reply_sending.h
+    data/local_quick_reply_media.cpp
+    data/local_quick_reply_media.h
+    data/local_quick_reply_rich_codec.cpp
+    data/local_quick_reply_rich_codec.h
     data/local_saved_tags.cpp
     data/local_saved_tags.h
     data/local_saved_tags_search.cpp
@@ -132,6 +144,8 @@ PRIVATE
     storage/local_navigation_preferences_format.h
     storage/local_pinned_items_format.cpp
     storage/local_pinned_items_format.h
+    storage/local_quick_replies_format.cpp
+    storage/local_quick_replies_format.h
     storage/local_transfer.cpp
     storage/local_transfer.h
     storage/local_transfer_format.cpp
@@ -236,6 +250,8 @@ PRIVATE
     api/api_todo_lists.h
     api/api_toggling_media.cpp
     api/api_toggling_media.h
+    api/api_local_transcription.cpp
+    api/api_local_transcription.h
     api/api_transcribes.cpp
     api/api_transcribes.h
     api/api_unread_things.cpp
@@ -637,6 +653,8 @@ PRIVATE
     core/update_verify.cpp
     core/update_verify.h
     core/vim_keymap.cpp
+    core/vim_keymap_compose.cpp
+    core/vim_keymap_compose.h
     core/vim_keymap_options.cpp
     core/vim_keymap_options.h
     core/vim_keymap_config.cpp
@@ -977,6 +995,7 @@ PRIVATE
     history/view/controls/history_view_compose_ai_tooltip.h
     history/view/controls/history_view_compose_controls.cpp
     history/view/controls/history_view_compose_controls.h
+    history/view/controls/history_view_local_quick_reply_drafts.cpp
     history/view/controls/history_view_top_controls.cpp
     history/view/controls/history_view_top_controls.h
     history/view/controls/history_view_compose_media_edit_manager.cpp
@@ -1472,6 +1491,8 @@ PRIVATE
     iv/editor/iv_editor_button_box.h
     iv/editor/iv_editor_session.cpp
     iv/editor/iv_editor_session.h
+    iv/editor/iv_local_quick_reply_send.cpp
+    iv/editor/iv_local_quick_reply_send.h
     iv/iv_delegate_impl.cpp
     iv/iv_delegate_impl.h
     iv/iv_instance.cpp
@@ -1907,6 +1928,8 @@ PRIVATE
     settings/settings_credits_graphics.h
     settings/settings_experimental.cpp
     settings/settings_experimental.h
+    settings/settings_local_transcription.cpp
+    settings/settings_local_transcription.h
     settings/settings_vim_editor.cpp
     settings/settings_vim_editor.h
     settings/sections/settings_folders.cpp

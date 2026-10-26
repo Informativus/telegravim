@@ -74,6 +74,7 @@ enum class Action {
 	LinkHints,
 	ShareMessage,
 	SelectMessages,
+	SelectMessageRange,
 };
 
 [[nodiscard]] constexpr bool ActionUsesMessageHints(Action action) {
@@ -152,6 +153,7 @@ void RegisterModeIndicatorWidget(not_null<QWidget*> widget);
 void UnregisterModeIndicatorWidget(not_null<QWidget*> widget);
 void RefreshForcedNormalMode();
 void TraceKey(not_null<QKeyEvent*> e, const QString &status);
+void TraceCommand(const QString &command, const QString &status);
 [[nodiscard]] QString RecentKeyLogText();
 [[nodiscard]] std::optional<ChatNavigation> ChatNavigationKey(
 	not_null<QKeyEvent*> e);
@@ -176,7 +178,9 @@ void TraceKey(not_null<QKeyEvent*> e, const QString &status);
 	bool &pendingStart);
 [[nodiscard]] bool TextVisualKey(not_null<QKeyEvent*> e);
 [[nodiscard]] bool IsJumpToBottomKey(not_null<QKeyEvent*> e);
+[[nodiscard]] QString MessageHintLabel(int index, int photoIndex = -1);
 [[nodiscard]] QString HintLabel(int index, int total);
+[[nodiscard]] QString SelectionHintLabel(int index, int total);
 [[nodiscard]] QString HintInput(not_null<QKeyEvent*> e);
 
 void ShowHelp();

@@ -62,6 +62,30 @@ void TestVimKeyLogPrivacy() {
 	log.record(&key, u"focus changed while handling input"_q);
 	Check(log.text().isEmpty(), "input stays private after a handler moves focus");
 	log.setSuppressed(false);
+	log.recordCommand(u"Copy selection"_q, u"text copied to clipboard"_q);
+	Check(log.text().contains(u"Copy selection"_q),
+		"named command diagnostics do not depend on recording typed characters");
+	log.clear();
+
+#ifdef Q_OS_MAC
+	auto command = QKeyEvent(QEvent::KeyPress, Qt::Key_V,
+		Qt::ControlModifier | Qt::ShiftModifier, 0, 9, 0, u"V"_q);
+	log.record(&command, u"select message text"_q);
+	Check(log.text().contains(u"Cmd+Shift+V -> select message text"_q),
+		"macOS Command is labeled using its physical modifier");
+	log.clear();
+	auto prefix = QKeyEvent(QEvent::KeyPress, Qt::Key_A,
+		Qt::MetaModifier, 0, 0, 0, u"a"_q);
+	log.record(&prefix, u"pane prefix"_q);
+	Check(log.text().contains(u"Ctrl+A -> pane prefix"_q),
+		"macOS Control is distinct from Command in diagnostics");
+	log.clear();
+#endif // Q_OS_MAC
+	auto tab = QKeyEvent(QEvent::KeyPress, Qt::Key_Tab, Qt::NoModifier);
+	log.record(&tab, u"focus next"_q);
+	Check(log.text().contains(u"Tab -> focus next"_q),
+		"synthetic special keys do not become the macOS A key");
+	log.clear();
 	auto injected = QKeyEvent(QEvent::KeyPress, Qt::Key_unknown,
 		Qt::NoModifier, u"private multi-character payload\nforged log entry"_q);
 	log.record(&injected, u"navigation"_q);

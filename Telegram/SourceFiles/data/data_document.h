@@ -280,6 +280,7 @@ public:
 	void setWebLocation(const WebFileLocation &location);
 	[[nodiscard]] bool hasRemoteLocation() const;
 	[[nodiscard]] bool hasWebLocation() const;
+	[[nodiscard]] DownloadLocation downloadLocation() const;
 	[[nodiscard]] bool isNull() const;
 	[[nodiscard]] MTPInputDocument mtpInput() const;
 	[[nodiscard]] QByteArray fileReference() const;

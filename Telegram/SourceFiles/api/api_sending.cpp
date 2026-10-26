@@ -68,17 +68,25 @@ void InnerFillMessagePostFlags(
 	}
 }
 
-void SendSimpleMedia(SendAction action, MTPInputMedia inputMedia) {
+void SendSimpleMedia(
+		SendAction action,
+		MTPInputMedia inputMedia,
+		TextWithEntities caption = {},
+		std::optional<MTPMessageMedia> localMedia = std::nullopt) {
+	if (IsLocalQuickReplyContext(action.options)) {
+		return;
+	}
 	const auto history = action.history;
 	const auto peer = history->peer;
 	const auto session = &history->session();
 	const auto api = &session->api();
 
 	action.clearDraft = false;
-	action.generateLocal = false;
+	action.generateLocal = localMedia.has_value();
 	api->sendAction(action);
 
-	if (!action.options.scheduled
+	if (!localMedia
+		&& !action.options.scheduled
 		&& !action.options.shortcutId
 		&& session->ephemeralMessages().sendSimpleMedia(
 			history,
@@ -101,9 +109,16 @@ void SendSimpleMedia(SendAction action, MTPInputMedia inputMedia) {
 	}
 
 	const auto randomId = base::RandomValue<uint64>();
+	const auto sentEntities = EntitiesToMTP(
+		session,
+		caption.entities,
+		ConvertOption::SkipLocal);
 
 	auto flags = NewMessageFlags(peer);
 	auto sendFlags = MTPmessages_SendMedia::Flags(0);
+	if (!sentEntities.v.isEmpty()) {
+		sendFlags |= MTPmessages_SendMedia::Flag::f_entities;
+	}
 	if (action.replyTo) {
 		flags |= MessageFlag::HasReplyInfo;
 		sendFlags |= MTPmessages_SendMedia::Flag::f_reply_to;
@@ -149,6 +164,29 @@ void SendSimpleMedia(SendAction action, MTPInputMedia inputMedia) {
 		sendFlags |= MTPmessages_SendMedia::Flag::f_allow_paid_stars;
 	}
 
+	auto newId = FullMsgId();
+	if (localMedia) {
+		newId = { peer->id, session->data().nextLocalMessageId() };
+		const auto item = history->addNewLocalMessage({
+			.id = newId.msg,
+			.flags = flags,
+			.from = NewMessageFromId(action),
+			.replyTo = action.replyTo,
+			.date = NewMessageDate(action.options),
+			.scheduleRepeatPeriod = action.options.scheduleRepeatPeriod,
+			.shortcutId = action.options.shortcutId,
+			.starsPaid = starsPaid,
+			.postAuthor = messagePostAuthor,
+			.effectId = action.options.effectId,
+			.suggest = HistoryMessageSuggestInfo(action.options),
+		}, caption, *localMedia);
+		session->data().registerMessageRandomId(randomId, newId);
+		if (session->ephemeralMessages().sendMedia(item, inputMedia)) {
+			api->finishForwarding(action);
+			return;
+		}
+	}
+
 	auto &histories = history->owner().histories();
 	histories.sendPreparedMessage(
 		history,
@@ -159,10 +197,10 @@ void SendSimpleMedia(SendAction action, MTPInputMedia inputMedia) {
 			peer->input(),
 			Data::Histories::ReplyToPlaceholder(),
 			std::move(inputMedia),
-			MTPstring(),
+			MTP_string(caption.text),
 			MTP_long(randomId),
 			MTPReplyMarkup(),
-			MTPvector<MTPMessageEntity>(),
+			sentEntities,
 			MTP_int(action.options.scheduled),
 			MTP_int(action.options.scheduleRepeatPeriod),
 			(sendAs ? sendAs->input() : MTP_inputPeerEmpty()),
@@ -172,7 +210,7 @@ void SendSimpleMedia(SendAction action, MTPInputMedia inputMedia) {
 			SuggestToMTP(action.options.suggest)
 		), [=](const MTPUpdates &result, const MTP::Response &response) {
 	}, [=](const MTP::Error &error, const MTP::Response &response) {
-		api->sendMessageFail(error, peer, randomId);
+		api->sendMessageFail(error, peer, randomId, newId);
 	});
 
 	api->finishForwarding(action);
@@ -185,6 +223,9 @@ void SendExistingMedia(
 		Fn<MTPInputMedia()> inputMedia,
 		Data::FileOrigin origin,
 		std::optional<MsgId> localMessageId) {
+	if (IsLocalQuickReplyContext(message.action.options)) {
+		return;
+	}
 	const auto history = message.action.history;
 	const auto peer = history->peer;
 	const auto session = &history->session();
@@ -420,6 +461,9 @@ void SendMusicSelectionBatch(
 		std::vector<MusicSelectionItem> items,
 		TextWithEntities caption,
 		Fn<void()> done) {
+	if (IsLocalQuickReplyContext(action.options)) {
+		return;
+	}
 	Expects(!items.empty());
 
 	const auto history = action.history;
@@ -702,6 +746,9 @@ void SendExistingDocument(
 		MessageToSend &&message,
 		not_null<DocumentData*> document,
 		std::optional<MsgId> localMessageId) {
+	if (IsLocalQuickReplyContext(message.action.options)) {
+		return;
+	}
 	const auto inputMedia = [=] {
 		return MTP_inputMediaDocument(
 			MTP_flags(message.action.options.mediaSpoiler
@@ -728,6 +775,9 @@ void SendExistingDocument(
 void SendMusicSelection(
 		MessageToSend &&message,
 		std::vector<MusicSelectionItem> items) {
+	if (IsLocalQuickReplyContext(message.action.options)) {
+		return;
+	}
 	if (items.empty()) {
 		return;
 	}
@@ -784,6 +834,9 @@ void SendExistingPhoto(
 		MessageToSend &&message,
 		not_null<PhotoData*> photo,
 		std::optional<MsgId> localMessageId) {
+	if (IsLocalQuickReplyContext(message.action.options)) {
+		return;
+	}
 	const auto inputMedia = [=] {
 		return MTP_inputMediaPhoto(
 			MTP_flags(0),
@@ -799,7 +852,22 @@ void SendExistingPhoto(
 		std::move(localMessageId));
 }
 
+void SendPreparedMedia(
+		MessageToSend &&message,
+		MTPInputMedia inputMedia,
+		MTPMessageMedia localMedia) {
+	SendSimpleMedia(
+		message.action,
+		std::move(inputMedia),
+		{ message.textWithTags.text,
+			TextUtilities::ConvertTextTagsToEntities(message.textWithTags.tags) },
+		std::move(localMedia));
+}
+
 bool SendDice(MessageToSend &message) {
+	if (IsLocalQuickReplyContext(message.action.options)) {
+		return true;
+	}
 	const auto full = QStringView(message.textWithTags.text).trimmed();
 	auto length = 0;
 	if (!Ui::Emoji::Find(full.data(), full.data() + full.size(), &length)
@@ -1077,6 +1145,8 @@ struct ConfirmedLocalFile {
 
 [[nodiscard]] MTPMessageMedia PrepareConfirmedFileMedia(
 		const std::shared_ptr<FilePrepareResult> &file) {
+	const auto metadata = file->to.options.localQuickReplyOutgoingMedia;
+	const auto timestamp = metadata ? metadata->videoTimestamp : TimeId();
 	const auto mediaTtlSeconds = (file->to.options.scheduled
 		|| (file->type != SendMediaType::Photo
 			&& file->type != SendMediaType::File))
@@ -1096,39 +1166,42 @@ struct ConfirmedLocalFile {
 			using Flag = MTPDmessageMediaDocument::Flag;
 			return MTP_messageMediaDocument(
 				MTP_flags(Flag::f_document
+					| (timestamp ? Flag::f_video_timestamp : Flag())
 					| (file->spoiler ? Flag::f_spoiler : Flag())
 					| (file->videoCover ? Flag::f_video_cover : Flag())
 					| (mediaTtlSeconds ? Flag::f_ttl_seconds : Flag())),
 				file->document,
 				MTPVector<MTPDocument>(), // alt_documents
 				file->videoCover ? file->videoCover->photo : MTPPhoto(),
-				MTPint(), // video_timestamp
+				MTP_int(timestamp),
 				MTP_int(mediaTtlSeconds));
 		} else if (file->type == SendMediaType::Audio) {
 			const auto ttlSeconds = file->to.options.ttlSeconds;
 			using Flag = MTPDmessageMediaDocument::Flag;
 			return MTP_messageMediaDocument(
 				MTP_flags(Flag::f_document
+					| (timestamp ? Flag::f_video_timestamp : Flag())
 					| Flag::f_voice
 					| (ttlSeconds ? Flag::f_ttl_seconds : Flag())
 					| (file->videoCover ? Flag::f_video_cover : Flag())),
 				file->document,
 				MTPVector<MTPDocument>(), // alt_documents
 				file->videoCover ? file->videoCover->photo : MTPPhoto(),
-				MTPint(), // video_timestamp
+				MTP_int(timestamp),
 				MTP_int(ttlSeconds));
 		} else if (file->type == SendMediaType::Round) {
 			using Flag = MTPDmessageMediaDocument::Flag;
 			const auto ttlSeconds = file->to.options.ttlSeconds;
 			return MTP_messageMediaDocument(
 				MTP_flags(Flag::f_document
+					| (timestamp ? Flag::f_video_timestamp : Flag())
 					| Flag::f_round
 					| (ttlSeconds ? Flag::f_ttl_seconds : Flag())
 					| (file->spoiler ? Flag::f_spoiler : Flag())),
 				file->document,
 				MTPVector<MTPDocument>(), // alt_documents
 				MTPPhoto(), // video_cover
-				MTPint(), // video_timestamp
+				MTP_int(timestamp),
 				MTP_int(ttlSeconds));
 		}
 		Unexpected("Type in sendFilesConfirmed.");
@@ -1299,6 +1372,9 @@ void AddConfirmedLocalPlaceholder(const ConfirmedLocalFile &local) {
 void SendConfirmedFile(
 		not_null<Main::Session*> session,
 		const std::shared_ptr<FilePrepareResult> &file) {
+	if (!file || IsLocalQuickReplyContext(file->to.options)) {
+		return;
+	}
 	const auto welcomeTemplate = file->to.options.welcomeTemplate;
 	if (welcomeTemplate && file->to.replaceMediaOf) {
 		return;

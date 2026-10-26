@@ -19,6 +19,7 @@ struct MessageGroupId;
 struct SendingAlbum;
 enum class SendMediaType;
 struct FileLoadTo;
+struct FilePrepareResult;
 struct ChatRestrictionsInfo;
 
 namespace Main {
@@ -363,6 +364,8 @@ public:
 		crl::time duration,
 		bool video,
 		const SendAction &action);
+	void sendPreparedFiles(
+		const std::vector<std::shared_ptr<FilePrepareResult>> &files);
 	void sendFiles(
 		Ui::PreparedList &&list,
 		SendMediaType type,
@@ -783,6 +786,7 @@ private:
 
 	std::unique_ptr<TaskQueue> _fileLoader;
 	base::flat_map<uint64, std::shared_ptr<SendingAlbum>> _sendingAlbums;
+	base::flat_set<QString> _localQuickReplySends;
 
 	base::flat_set<not_null<const Data::ForumTopic*>> _updateNotifyTopics;
 	base::flat_set<not_null<const PeerData*>> _updateNotifyPeers;

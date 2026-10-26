@@ -175,7 +175,7 @@ foreach(history IN ITEMS history/history_inner_widget.cpp history/view/history_v
         "A changed message must not copy its old photo after download")
 endforeach()
 expect(history/history_inner_widget.cpp
-    "void HistoryInner::viewRemoved[^{]*[{][^}]*}[^{]*[{][^}]*vimKeymapClearHints"
+    "void HistoryInner::viewRemoved[^{]*[{][^}]*}[^{]*[{][^}]*vimKeymapInvalidateHints"
     "Destroyed message views must invalidate captured hint actions")
 expect(core/external_control.cpp
     "App\\(\\).passcodeLocked\\(\\)[^{]*\\{[^}]*application is locked"
@@ -199,8 +199,8 @@ expect(storage/file_download.cpp
     "_data.left[(]_loadSize[)]"
     "Image reads must be bounded by the available byte array")
 expect(core/vim_keymap.cpp
-    "UpdateKeyboardScope[(]scope[)];[\n\t ]*if [(]!scope && HandlePreLayerKey[(]e[)][)] [^{]*[{][^}]*}[\n\t ]*const auto focus"
-    "Active message text must receive keys before global focus and chat commands")
+    "TextInputPassthroughRequested[(]e[)][^}]*return false;[\n\t ]*}[^}]*if [(]!scope && HandlePreLayerKey[(]e, pane[)][)] [^{]*[{][^}]*}[^}]*}[\n\t ]*if [(]pane && KeyboardScopeHasTextInput[(]pane, object[)][)] [^{]*[{][^}]*}[\n\t ]*if [(]!scope && HandleChatClipboardKey[(]e, pane[)][)] [^{]*[{][^}]*}[\n\t ]*const auto hintScope"
+    "Search input must precede message text, global focus and chat commands")
 expect(history/history_inner_widget.cpp
     "RegisterPreLayerKeyHandler[(]this,[^{]*[{][^}]*vimKeymapHandleMessageSelectionKey[(]e[)][^}]*}[^}]*_vimKeymapTextCursorItem[^}]*_vimKeymapTextVisualMode[^}]*_vimKeymapHintMode == VimKeymapHintMode::None[^}]*}[\n\t ]*return [(]e->type[(][)] == QEvent::ShortcutOverride[)][\n\t ]*\\|\\| vimKeymapHandleHintKey[(]e[)][\n\t ]*\\|\\| vimKeymapHandleTextSelectionKey"
     "Active message hints and text must own keys before Qt and chat commands")

@@ -20,6 +20,10 @@ class HistoryItem;
 class PeerData;
 class PhotoData;
 
+namespace Data {
+struct LocalQuickReplyMessage;
+} // namespace Data
+
 namespace Api {
 struct SendAction;
 } // namespace Api
@@ -64,6 +68,8 @@ struct ComposeBoxOptions {
 	SubmitPolicy submitPolicy = SubmitPolicy::Immediate;
 	Fn<void(TextWithTags)> returnText;
 	bool welcomeTemplates = false;
+	Fn<void()> localSaved;
+	std::shared_ptr<const ::Data::LocalQuickReplyMessage> localSource;
 };
 
 [[nodiscard]] std::shared_ptr<ChatHelpers::Show> ActiveWindowShow(
@@ -119,7 +125,8 @@ void ShowEditFromFieldBox(
 	not_null<HistoryItem*> item,
 	Api::SendAction action,
 	std::optional<TextWithTags> fieldTextOverride = std::nullopt,
-	Fn<void()> fieldMigratedOverride = nullptr);
+	Fn<void()> fieldMigratedOverride = nullptr,
+	std::shared_ptr<const ::Data::LocalQuickReplyMessage> localSource = nullptr);
 [[nodiscard]] bool HasEditWindowFor(
 	not_null<Main::Session*> session,
 	FullMsgId itemId);

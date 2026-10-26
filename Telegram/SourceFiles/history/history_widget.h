@@ -348,7 +348,6 @@ public:
 protected:
 	void resizeEvent(QResizeEvent *e) override;
 	void keyPressEvent(QKeyEvent *e) override;
-	void keyReleaseEvent(QKeyEvent *e) override;
 	void mousePressEvent(QMouseEvent *e) override;
 	void paintEvent(QPaintEvent *e) override;
 	void leaveEventHook(QEvent *e) override;
@@ -421,6 +420,7 @@ private:
 	void fieldResized();
 
 	void initFieldAutocomplete();
+	void cancelLocalQuickReplyInsertion();
 	void cancelInlineBot();
 	void saveDraft(bool delayed = false);
 	void saveCloudDraft();
@@ -728,12 +728,12 @@ private:
 	void migrateSupportFieldToRichEditor();
 	void offerRichPaste(not_null<const QMimeData*> data);
 	void showRichEditorWithPaste(std::shared_ptr<QMimeData> data);
-	void vimKeymapStartScroll(int direction);
 	void vimKeymapStopScroll();
 	void vimKeymapScrollTick();
 	bool vimKeymapHandleEscapeFieldState(not_null<QKeyEvent*> e);
 	bool vimKeymapJumpToBottom();
 	bool vimKeymapHandleScrollKey(not_null<QKeyEvent*> e);
+	bool vimKeymapHandleBotKey(not_null<QKeyEvent*> e);
 	bool vimKeymapScrollBy(int direction, int delta, bool animated = false);
 	void vimKeymapRefreshComposeCursor();
 	bool vimKeymapPasteIntoComposer(not_null<QKeyEvent*> e);
@@ -908,6 +908,8 @@ private:
 	Ui::Animations::Simple _scrollToAnimation;
 	base::Timer _vimKeymapScrollTimer;
 	int _vimKeymapScrollDirection = 0;
+	int _vimKeymapScrollKey = 0;
+	quint32 _vimKeymapScrollNativeKey = 0;
 	bool _vimKeymapScrollRepeating = false;
 
 	HistoryView::CornerButtons _cornerButtons;
@@ -949,6 +951,7 @@ private:
 		QString text;
 		bool small = false;
 	} _botMenu;
+	bool _vimKeymapBotMenuActive = false;
 	object_ptr<Ui::IconButton> _attachToggle;
 	object_ptr<Ui::IconButton> _replaceMedia = { nullptr };
 	object_ptr<Ui::SendAsButton> _sendAs = { nullptr };
@@ -963,12 +966,15 @@ private:
 	std::unique_ptr<HistoryView::Controls::TTLButton> _ttlInfo;
 	const std::unique_ptr<VoiceRecordBar> _voiceRecordBar;
 	const std::unique_ptr<ForwardPanel> _forwardPanel;
+	rpl::lifetime _localQuickReplyInsertionLifetime;
+	uint64 _localQuickReplyInsertionGeneration = 0;
 	std::unique_ptr<HistoryView::ComposeSearch> _composeSearch;
 	bool _vimKeymapSearchInputMode = false;
 	int _vimKeymapComposeOperator = 0;
 	int _vimKeymapComposeVisualMode = 0;
 	int _vimKeymapComposeVisualAnchor = -1;
 	int _vimKeymapComposePending = 0;
+	base::Timer _vimKeymapComposeDeleteTimer;
 	std::unique_ptr<HistoryView::SubsectionTabs> _subsectionTabs;
 	rpl::lifetime _subsectionTabsLifetime;
 	rpl::lifetime _subsectionCheckLifetime;

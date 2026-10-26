@@ -23,6 +23,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_saved_sublist.h"
 #include "data/data_session.h"
 #include "data/data_user.h"
+#include "data/local_quick_replies.h"
+#include "data/local_quick_reply_view.h"
 #include "base/unixtime.h"
 #include "base/random.h"
 #include "main/main_session.h"
@@ -946,10 +948,15 @@ void Histories::deleteMessages(const MessageIdsList &ids, bool revoke) {
 	base::flat_map<not_null<PeerData*>, QVector<MTPint>> scheduledIdsByPeer;
 	base::flat_map<BusinessShortcutId, QVector<MTPint>> quickIdsByShortcut;
 	base::flat_set<not_null<DocumentData*>> savedMusic;
+	auto localQuickReplies = QMap<QString, QStringList>();
 	for (const auto &itemId : ids) {
 		if (const auto item = _owner->message(itemId)) {
 			const auto history = item->history();
-			if (item->isSavedMusicItem()) {
+			if (item->isLocalQuickReply()) {
+				const auto message = _owner->localQuickReplyView().message(item);
+				if (message) localQuickReplies[message->replyRef].push_back(message->id);
+				continue;
+			} else if (item->isSavedMusicItem()) {
 				savedMusic.emplace(item->media()->document());
 				continue;
 			} else if (item->isScheduled()) {
@@ -992,6 +999,9 @@ void Histories::deleteMessages(const MessageIdsList &ids, bool revoke) {
 		}
 	}
 
+	for (auto i = localQuickReplies.begin(); i != localQuickReplies.end(); ++i) {
+		_owner->localQuickReplies().removeMessages(i.key(), i.value(), nullptr);
+	}
 	for (const auto &[history, ids] : idsByPeer) {
 		history->owner().histories().deleteMessages(history, ids, revoke);
 	}

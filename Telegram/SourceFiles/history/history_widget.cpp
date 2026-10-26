@@ -98,6 +98,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_histories.h"
 #include "data/data_group_call.h"
 #include "data/data_message_reactions.h"
+#include "data/local_quick_reply_view.h"
 #include "data/data_peer_values.h" // Data::AmPremiumValue.
 #include "data/data_premium_limits.h" // Data::PremiumLimits.
 #include "data/stickers/data_stickers.h"
@@ -151,6 +152,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "iv/iv_rich_page.h"
 #include "core/click_handler_types.h"
 #include "core/vim_keymap.h"
+#include "core/vim_keymap_compose.h"
 #include "core/vim_keymap_widgets.h"
 #include "core/vim_keymap_geometry.h"
 #include "chat_helpers/field_autocomplete.h"
@@ -225,10 +227,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QMimeData>
 #include <QtCore/QStringList>
 #include <QtCore/QTimer>
+#include <QtCore/QUuid>
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QTextEdit>
 
 namespace {
+
+constexpr auto kVimKeymapDeleteTimeout = crl::time(500);
 
 constexpr auto kMessagesPerPageFirst = 30;
 constexpr auto kMessagesPerPage = 50;
@@ -275,317 +280,9 @@ const auto kPsaAboutPrefix = "cloud_lng_about_psa_";
 		& ~(Qt::KeypadModifier | Qt::GroupSwitchModifier);
 }
 
-[[nodiscard]] bool VimKeymapMacVirtualKeyIs(
-		not_null<QKeyEvent*> e,
-		Qt::Key key) {
-#ifdef Q_OS_MAC
-	switch (key) {
-	case Qt::Key_A: return e->nativeVirtualKey() == 0;
-	case Qt::Key_B: return e->nativeVirtualKey() == 11;
-	case Qt::Key_C: return e->nativeVirtualKey() == 8;
-	case Qt::Key_D: return e->nativeVirtualKey() == 2;
-	case Qt::Key_E: return e->nativeVirtualKey() == 14;
-	case Qt::Key_G: return e->nativeVirtualKey() == 5;
-	case Qt::Key_H: return e->nativeVirtualKey() == 4;
-	case Qt::Key_I: return e->nativeVirtualKey() == 34;
-	case Qt::Key_J: return e->nativeVirtualKey() == 38;
-	case Qt::Key_K: return e->nativeVirtualKey() == 40;
-	case Qt::Key_L: return e->nativeVirtualKey() == 37;
-	case Qt::Key_O: return e->nativeVirtualKey() == 31;
-	case Qt::Key_P: return e->nativeVirtualKey() == 35;
-	case Qt::Key_R: return e->nativeVirtualKey() == 15;
-	case Qt::Key_S: return e->nativeVirtualKey() == 1;
-	case Qt::Key_V: return e->nativeVirtualKey() == 9;
-	case Qt::Key_W: return e->nativeVirtualKey() == 13;
-	case Qt::Key_X: return e->nativeVirtualKey() == 7;
-	case Qt::Key_Y: return e->nativeVirtualKey() == 16;
-	default: return false;
-	}
-#else // Q_OS_MAC
-	return false;
-#endif // Q_OS_MAC
-}
-
-[[nodiscard]] bool VimKeymapTextKey(
-		not_null<QKeyEvent*> e,
-		Qt::Key key,
-		const QString &latin,
-		const QString &cyrillic) {
-	const auto text = e->text().toCaseFolded();
-	return (e->key() == key)
-		|| VimKeymapMacVirtualKeyIs(e, key)
-		|| (!cyrillic.isEmpty()
-			&& (e->key() == cyrillic.front().unicode()
-				|| e->key() == cyrillic.front().toUpper().unicode()))
-		|| text == latin
-		|| text == cyrillic;
-}
-
-[[nodiscard]] bool VimKeymapPlainTextKey(
-		not_null<QKeyEvent*> e,
-		Qt::Key key,
-		const QString &latin,
-		const QString &cyrillic) {
-	return VimKeymapCleanModifiers(e) == Qt::NoModifier
-		&& VimKeymapTextKey(e, key, latin, cyrillic);
-}
-
-[[nodiscard]] bool VimKeymapPlainOrShiftTextKey(
-		not_null<QKeyEvent*> e,
-		Qt::Key key,
-		const QString &latin,
-		const QString &cyrillic) {
-	const auto modifiers = VimKeymapCleanModifiers(e);
-	return (modifiers == Qt::NoModifier || modifiers == Qt::ShiftModifier)
-		&& VimKeymapTextKey(e, key, latin, cyrillic);
-}
-
-[[nodiscard]] bool VimKeymapShiftTextKey(
-		not_null<QKeyEvent*> e,
-		Qt::Key key,
-		const QString &latin,
-		const QString &cyrillic) {
-	return VimKeymapCleanModifiers(e) == Qt::ShiftModifier
-		&& VimKeymapTextKey(e, key, latin, cyrillic);
-}
-
-[[nodiscard]] bool VimKeymapTypedText(
-		not_null<QKeyEvent*> e,
-		const QString &text) {
-	const auto modifiers = VimKeymapCleanModifiers(e);
-	return (modifiers == Qt::NoModifier || modifiers == Qt::ShiftModifier)
-		&& e->text() == text;
-}
-
-[[nodiscard]] bool VimKeymapOptionTextKey(
-		not_null<QKeyEvent*> e,
-		Qt::Key key,
-		const QString &latin,
-		const QString &cyrillic) {
-	return VimKeymapCleanModifiers(e) == Qt::AltModifier
-		&& VimKeymapTextKey(e, key, latin, cyrillic);
-}
-
 [[nodiscard]] QColor VimKeymapVisualModeColor() {
 	return QColor(218, 91, 166);
 }
-
-bool VimKeymapNormalizeComposeCursor(QTextCursor &cursor) {
-	if (cursor.hasSelection()) {
-		return false;
-	}
-	const auto block = cursor.block();
-	const auto textSize = int(block.text().size());
-	const auto endPosition = block.position() + textSize;
-	if (textSize <= 0 || cursor.position() != endPosition) {
-		return false;
-	}
-	cursor.setPosition(endPosition - 1);
-	return true;
-}
-
-[[nodiscard]] QTextCursor VimKeymapComposePaintCursor(
-		not_null<QTextEdit*> edit,
-		bool visualMode) {
-	auto cursor = edit->textCursor();
-	if (visualMode
-		&& cursor.hasSelection()
-		&& cursor.position() > cursor.anchor()) {
-		cursor.setPosition(std::max(0, cursor.position() - 1));
-	} else if (!visualMode) {
-		VimKeymapNormalizeComposeCursor(cursor);
-	}
-	return cursor;
-}
-
-[[nodiscard]] QString VimKeymapComposeCursorText(
-		not_null<QTextEdit*> edit,
-		QTextCursor cursor) {
-	const auto document = edit->document();
-	const auto maximum = std::max(0, document->characterCount() - 1);
-	if (cursor.position() >= maximum) {
-		return QString();
-	}
-	cursor.clearSelection();
-	cursor.movePosition(QTextCursor::Right, QTextCursor::KeepAnchor);
-	const auto result = cursor.selectedText();
-	if (result == u"\u2028"_q
-		|| result == u"\u2029"_q
-		|| result == u"\uFFFC"_q) {
-		return QString();
-	}
-	return result;
-}
-
-class VimKeymapComposeCursorOverlay final : public QWidget {
-public:
-	explicit VimKeymapComposeCursorOverlay(not_null<QTextEdit*> edit)
-	: QWidget(edit->viewport())
-	, _edit(edit) {
-		setObjectName(u"TelegraVimComposeCursorOverlay"_q);
-		setAttribute(Qt::WA_TransparentForMouseEvents);
-		setAttribute(Qt::WA_NoSystemBackground);
-		setFocusPolicy(Qt::NoFocus);
-		edit->viewport()->installEventFilter(this);
-		QObject::connect(
-			edit,
-			&QTextEdit::cursorPositionChanged,
-			this,
-			[=] { resetBlink(); });
-		QObject::connect(
-			edit,
-			&QTextEdit::textChanged,
-			this,
-			[=] { resetBlink(); });
-		_blinkTimer.setTimerType(Qt::PreciseTimer);
-		QObject::connect(&_blinkTimer, &QTimer::timeout, this, [=] {
-			_blinkVisible = !_blinkVisible;
-			update();
-		});
-		rpl::merge(
-			base::options::lookup<QString>(
-				Core::VimKeymap::kOptionVimKeymapComposeCursorStyle
-			).changes(),
-			base::options::lookup<int>(
-				Core::VimKeymap::kOptionVimKeymapComposeCursorWidth
-			).changes(),
-			base::options::lookup<int>(
-				Core::VimKeymap::kOptionVimKeymapComposeCursorHeight
-			).changes(),
-			base::options::lookup<int>(
-				Core::VimKeymap::kOptionVimKeymapComposeCursorBlink
-			).changes()
-		) | rpl::on_next([=] {
-			resetBlink();
-		}, _lifetime);
-		refreshGeometry();
-		hide();
-	}
-
-	~VimKeymapComposeCursorOverlay() {
-		_lifetime.destroy();
-		if (_edit && _edit->viewport()) {
-			_edit->viewport()->removeEventFilter(this);
-		}
-	}
-
-	void setActive(bool active, bool visualMode) {
-		const auto changed = (_active != active)
-			|| (_visualMode != visualMode);
-		if (changed) {
-			_active = active;
-			_visualMode = visualMode;
-			_blinkVisible = true;
-			setVisible(active);
-		}
-		refreshGeometry();
-		refreshBlink();
-		if (active || changed) {
-			update();
-		}
-	}
-
-protected:
-	bool eventFilter(QObject *object, QEvent *event) override {
-		if (_edit
-			&& object == _edit->viewport()
-			&& (event->type() == QEvent::Resize
-				|| event->type() == QEvent::Move
-				|| event->type() == QEvent::Show
-				|| event->type() == QEvent::Hide)) {
-			refreshGeometry();
-			update();
-		}
-		return QWidget::eventFilter(object, event);
-	}
-
-	void paintEvent(QPaintEvent*) override {
-		if (!_active || !_blinkVisible || !_edit) {
-			return;
-		}
-		const auto paintCursor = VimKeymapComposePaintCursor(
-			_edit.data(),
-			_visualMode);
-		const auto cursor = _edit->cursorRect(paintCursor);
-		if (cursor.height() <= 0) {
-			return;
-		}
-		const auto lineHeight = std::max(1, cursor.height());
-		const auto metrics = _edit->fontMetrics();
-		const auto text = VimKeymapComposeCursorText(
-			_edit.data(),
-			paintCursor);
-			const auto requestedWidth = Core::VimKeymap::ComposeCursorWidth();
-			const auto characterWidth = std::max(
-				requestedWidth,
-				text.isEmpty() ? 0 : metrics.horizontalAdvance(text));
-			const auto requestedHeight = std::clamp(
-				lineHeight * Core::VimKeymap::ComposeCursorHeight() / 100,
-				1,
-				lineHeight);
-			const auto style = Core::VimKeymap::ComposeCursorStyle();
-			auto rect = Core::VimKeymap::CursorPaintRect(
-				QRect(cursor.topLeft(), QSize(characterWidth, lineHeight)),
-				style,
-				requestedWidth,
-				requestedHeight);
-		rect = rect.intersected(this->rect());
-		if (rect.isEmpty()) {
-			return;
-		}
-		auto painter = QPainter(this);
-		auto color = _visualMode
-			? VimKeymapVisualModeColor()
-			: _edit->palette().color(QPalette::Text);
-		if (style == u"block"_q) {
-			color.setAlpha(210);
-		}
-		painter.fillRect(rect, color);
-		if (style == u"block"_q && !text.isEmpty()) {
-			painter.save();
-			painter.setClipRect(rect);
-			painter.setFont(_edit->font());
-			painter.setPen(_edit->palette().color(QPalette::Base));
-			painter.drawText(
-				QRect(cursor.left(), cursor.top(), characterWidth, lineHeight),
-				Qt::AlignLeft | Qt::AlignVCenter,
-				text);
-			painter.restore();
-		}
-	}
-
-private:
-	void refreshGeometry() {
-		if (_edit && _edit->viewport()) {
-			setGeometry(_edit->viewport()->rect());
-			raise();
-		}
-	}
-
-	void refreshBlink() {
-		const auto blink = Core::VimKeymap::ComposeCursorBlink();
-		if (!_active || blink <= 0) {
-			_blinkTimer.stop();
-			_blinkVisible = true;
-		} else if (!_blinkTimer.isActive()
-			|| _blinkTimer.interval() != blink) {
-			_blinkTimer.start(blink);
-		}
-	}
-
-	void resetBlink() {
-		_blinkVisible = true;
-		refreshBlink();
-		update();
-	}
-
-	QPointer<QTextEdit> _edit;
-	QTimer _blinkTimer;
-	rpl::lifetime _lifetime;
-	bool _active = false;
-	bool _visualMode = false;
-	bool _blinkVisible = true;
-};
 
 [[nodiscard]] QRect VimKeymapModeIndicatorRect(QRect area) {
 	const auto diameter = 8;
@@ -737,7 +434,55 @@ HistoryWidget::HistoryWidget(
 	}))
 , _topShadow(this) {
 	setAcceptDrops(true);
+	base::install_event_filter(this, qApp, [=](not_null<QEvent*> event) {
+		if (!_vimKeymapComposeDeleteTimer.isActive()) {
+			return base::EventFilterResult::Continue;
+		}
+		const auto type = event->type();
+		if (type == QEvent::KeyPress) {
+			const auto key = static_cast<QKeyEvent*>(event.get());
+			if (!key->isAutoRepeat()
+				&& key->key() != Qt::Key_Shift
+				&& key->key() != Qt::Key_Control
+				&& key->key() != Qt::Key_Meta
+				&& key->key() != Qt::Key_Alt) {
+				_vimKeymapComposeDeleteTimer.cancel();
+			}
+		} else if (type == QEvent::FocusOut
+			|| type == QEvent::WindowDeactivate
+			|| type == QEvent::ApplicationDeactivate
+			|| type == QEvent::MouseButtonPress
+			|| type == QEvent::Wheel) {
+			_vimKeymapComposeDeleteTimer.cancel();
+			_vimKeymapComposeOperator = 0;
+		}
+		return base::EventFilterResult::Continue;
+	});
 	setVisualTabOrder(true);
+	base::install_event_filter(this, qApp, [=](not_null<QEvent*> event) {
+		if (!_vimKeymapScrollDirection) {
+			return base::EventFilterResult::Continue;
+		}
+		const auto type = event->type();
+		if (type == QEvent::KeyRelease || type == QEvent::KeyPress) {
+			const auto key = static_cast<QKeyEvent*>(event.get());
+			const auto nativeKey = key->nativeScanCode()
+				? key->nativeScanCode()
+				: key->nativeVirtualKey();
+			const auto matches = _vimKeymapScrollNativeKey && nativeKey
+				? _vimKeymapScrollNativeKey == nativeKey
+				: _vimKeymapScrollKey == key->key();
+			if (!key->isAutoRepeat()
+				&& (type == QEvent::KeyRelease ? matches : !matches)) {
+				vimKeymapStopScroll();
+			}
+		} else if (type == QEvent::FocusOut
+			|| type == QEvent::WindowDeactivate
+			|| type == QEvent::ApplicationDeactivate) {
+			vimKeymapStopScroll();
+		}
+		return base::EventFilterResult::Continue;
+	});
 
 	// The controls inside these are created in an order of their own - the
 	// top bar's selection buttons start with the one placed last, the bars
@@ -816,8 +561,10 @@ HistoryWidget::HistoryWidget(
 					&& window()->isActiveWindow()
 					&& chat
 					&& this->controller()->activeChatEntryCurrent().key == chat) {
-					Core::VimKeymap::InvokeAction(
+					const auto handled = Core::VimKeymap::InvokeAction(
 						Core::VimKeymap::Action::SelectMessageText);
+					Core::VimKeymap::TraceCommand(u"Select message text"_q,
+						handled ? u"chat: choose a message by its hint"_q : u"chat: no matching message visible"_q);
 				}
 			});
 		}
@@ -828,7 +575,7 @@ HistoryWidget::HistoryWidget(
 		if (!window() || !window()->isActiveWindow()) {
 			return false;
 		}
-		if (vimKeymapPasteIntoComposer(e)) {
+		if (vimKeymapHandleBotKey(e) || vimKeymapPasteIntoComposer(e)) {
 			return true;
 		}
 		const auto selector = controller->tabbedSelector();
@@ -852,6 +599,10 @@ HistoryWidget::HistoryWidget(
 			vimKeymapLeaveSearchInputMode();
 			_composeSearch->hideAnimated();
 			Core::VimKeymap::TraceKey(e, u"close chat search"_q);
+			return true;
+		} else if (VimKeymapCleanModifiers(e) == Qt::ShiftModifier
+			&& Core::VimKeymap::Bindings::IsLineStart(e)
+			&& vimKeymapHandleComposeTextKey(e)) {
 			return true;
 		} else if (Core::VimKeymap::HandleSearch(e)) {
 			if (_composeSearch) {
@@ -2477,7 +2228,13 @@ int HistoryWidget::itemTopForHighlight(
 	return itemTop;
 }
 
+void HistoryWidget::cancelLocalQuickReplyInsertion() {
+	++_localQuickReplyInsertionGeneration;
+	_localQuickReplyInsertionLifetime.destroy();
+}
+
 void HistoryWidget::initFieldAutocomplete() {
+	cancelLocalQuickReplyInsertion();
 	_emojiSuggestions = nullptr;
 	_autocomplete = nullptr;
 	if (!_peer) {
@@ -2487,15 +2244,157 @@ void HistoryWidget::initFieldAutocomplete() {
 		if (!_peer) {
 			return;
 		}
+		cancelLocalQuickReplyInsertion();
+		const auto generation = _localQuickReplyInsertionGeneration;
+		const auto localId = shortcut.startsWith(u"@local:"_q)
+			? shortcut.mid(7) : QString();
 		const auto messages = &_peer->owner().shortcutMessages();
-		const auto shortcutId = messages->lookupShortcutId(shortcut);
+		const auto localReplies = &session().data().localQuickReplies();
+		const auto local = ranges::find_if(localReplies->list(), [&](
+				const auto &reply) {
+			return localId.isEmpty()
+				? reply.shortcut.compare(shortcut, Qt::CaseInsensitive) == 0
+				: reply.id == localId;
+		});
 		if (shortcut.isEmpty()) {
 			controller()->showSettings(Settings::QuickRepliesId());
+		} else if (local != localReplies->list().end()) {
+			if (!_history || _editMsgId || shownRichMessage()) {
+				controller()->showToast(tr::lng_local_replies_draft_changed(tr::now));
+				return;
+			}
+			const auto reply = *local;
+			const auto targetHistory = _history;
+			const auto targetPeer = _peer;
+			const auto targetReply = replyTo();
+			const auto original = _field->getTextWithTags();
+			const auto cursor = _field->textCursor().position();
+			const auto anchor = _field->textCursor().anchor();
+			const auto forward = targetHistory->forwardDraft(MsgId(), PeerId());
+			const auto start = int(original.text.lastIndexOf(u'/', cursor - 1));
+			if (cursor <= 0 || start < 0 || start >= cursor) return;
+			const auto before = _field->getTextWithTagsPart(0, start);
+			const auto after = _field->getTextWithTagsPart(cursor);
+			const auto fieldUnchanged = [=] {
+				return generation == _localQuickReplyInsertionGeneration
+					&& _history == targetHistory
+					&& _peer == targetPeer
+					&& replyTo() == targetReply
+					&& !_editMsgId
+					&& !shownRichMessage()
+					&& _field->getTextWithTags().text == original.text
+					&& _field->getTextWithTags().tags == original.tags
+					&& _field->textCursor().position() == cursor
+					&& _field->textCursor().anchor() == anchor;
+			};
+			const auto unchanged = [=] {
+				return fieldUnchanged()
+					&& targetHistory->forwardDraft(MsgId(), PeerId()) == forward;
+			};
+			const auto replaceShortcut = [=](const TextWithTags &inserted) {
+				auto result = before;
+				for (const auto &part : { inserted, after }) {
+					const auto offset = int(result.text.size());
+					for (const auto &tag : part.tags) {
+						result.tags.push_back({ tag.offset + offset, tag.length, tag.id });
+					}
+					result.text += part.text;
+				}
+				setFieldText(result, TextUpdateEvent::SaveDraft, FieldHistoryAction::NewEntry);
+				_field->setCursorPosition(before.text.size() + inserted.text.size());
+			};
+			_field->changes() | rpl::on_next([=] {
+				cancelLocalQuickReplyInsertion();
+			}, _localQuickReplyInsertionLifetime);
+			Settings::PreviewLocalQuickReplyMessages(
+				controller()->uiShow(),
+				reply,
+				crl::guard(this, [=](std::vector<Data::LocalQuickReplyMessage> messages) {
+					if (generation != _localQuickReplyInsertionGeneration) return;
+					if (!unchanged()) {
+						cancelLocalQuickReplyInsertion();
+						controller()->showToast(tr::lng_local_replies_draft_changed(tr::now));
+						return;
+					}
+					if (messages.empty()) return;
+					const auto &first = messages.front();
+					const auto plain = messages.size() == 1
+						&& first.attachments.isEmpty()
+						&& first.sourcePaths.isEmpty()
+						&& first.groupRef.isEmpty()
+						&& first.replyToRef.isEmpty()
+						&& first.media == QJsonObject{ { u"kind"_q, u"text"_q } };
+					if (plain) {
+						const auto text = TextWithTags{
+							first.message.text,
+							TextUtilities::ConvertEntitiesToTextTags(first.message.entities),
+						};
+						cancelLocalQuickReplyInsertion();
+						replaceShortcut(text);
+						return;
+					}
+					if (!forward.ids.empty()) {
+						controller()->showToast(tr::lng_local_replies_draft_changed(tr::now));
+						return;
+					}
+					const auto view = &targetHistory->owner().localQuickReplyView();
+					const auto stageRef = QUuid::createUuid().toString(QUuid::WithoutBraces);
+					const auto stage = view->stage(reply.id, stageRef, std::move(messages));
+					if (!stage) {
+						controller()->showToast(tr::lng_local_replies_unavailable(tr::now));
+						return;
+					}
+					_localQuickReplyInsertionLifetime.add([weak = QPointer(view), stageRef] {
+						if (weak) weak->clearStage(stageRef);
+					});
+					const auto finish = [=] {
+						if (generation != _localQuickReplyInsertionGeneration) return;
+						if (!stage->valid() || !unchanged()) {
+							cancelLocalQuickReplyInsertion();
+							controller()->showToast(tr::lng_local_replies_draft_changed(tr::now));
+							return;
+						}
+						const auto error = view->error(stageRef);
+						if (!error.isEmpty()) {
+							cancelLocalQuickReplyInsertion();
+							controller()->showToast(error);
+							return;
+						}
+						auto ids = MessageIdsList();
+						ids.reserve(stage->messages().size());
+						for (const auto &message : stage->messages()) {
+							const auto id = view->resolve(stageRef, message.id);
+							if (!id) return;
+							ids.push_back(id);
+						}
+						targetHistory->setForwardDraft(MsgId(), PeerId(), {
+							.ids = ids,
+							.localQuickReplyStages = { stage },
+						});
+						if (!fieldUnchanged()) {
+							if (targetHistory->forwardDraft(MsgId(), PeerId()).ids == ids) {
+								targetHistory->setForwardDraft(MsgId(), PeerId(), {});
+							}
+							cancelLocalQuickReplyInsertion();
+							controller()->showToast(tr::lng_local_replies_draft_changed(tr::now));
+							return;
+						}
+						replaceShortcut({});
+						cancelLocalQuickReplyInsertion();
+					};
+					view->updates(stageRef) | rpl::on_next([=] {
+						const auto invoke = finish;
+						invoke();
+					}, _localQuickReplyInsertionLifetime);
+					finish();
+				}));
+		} else if (!localId.isEmpty()) {
+			controller()->showToast(tr::lng_local_replies_unavailable(tr::now));
 		} else if (!_peer->session().premium()) {
 			ShowPremiumPreviewToBuy(
 				controller(),
 				PremiumFeature::QuickReplies);
-		} else if (shortcutId) {
+		} else if (const auto shortcutId = messages->lookupShortcutId(shortcut)) {
 			session().api().sendShortcutMessages(_peer, shortcutId);
 			session().api().finishForwarding(prepareSendAction({}));
 			setFieldText(_field->getTextWithTagsPart(
@@ -2541,6 +2440,9 @@ void HistoryWidget::initFieldAutocomplete() {
 			}
 		},
 		.processShortcut = processShortcut,
+		.insertQuickReplyFiles = [=](QStringList paths) {
+			return confirmSendingFiles(paths);
+		},
 		.moderateKeyActivateCallback = [=](int key) {
 			const auto context = [=](FullMsgId itemId) {
 				return _list->prepareClickContext(Qt::LeftButton, itemId);
@@ -3385,6 +3287,7 @@ void HistoryWidget::fastShowAtEnd(not_null<History*> history) {
 
 	clearAllLoadRequests();
 	setMsgId(ShowAtUnreadMsgId);
+	_vimKeymapBotMenuActive = false;
 	_pinnedClickedId = FullMsgId();
 	_minPinnedId = std::nullopt;
 	if (_history->isReadyFor(_showAtMsgId)) {
@@ -3585,6 +3488,7 @@ void HistoryWidget::showHistory(
 		PeerId peerId,
 		MsgId showAtMsgId,
 		const Window::SectionShow &params) {
+	cancelLocalQuickReplyInsertion();
 	_pinnedClickedId = FullMsgId();
 	_minPinnedId = std::nullopt;
 	_showAtMsgParams = {};
@@ -6193,6 +6097,7 @@ void HistoryWidget::sendVoice(const VoiceToSend &data) {
 }
 
 void HistoryWidget::send(Api::SendOptions options) {
+	cancelLocalQuickReplyInsertion();
 	if (!_history) {
 		return;
 	} else if (_editMsgId) {
@@ -6540,6 +6445,78 @@ void HistoryWidget::unblockUser() {
 	} else {
 		updateControlsVisibility();
 	}
+}
+
+bool HistoryWidget::vimKeymapHandleBotKey(not_null<QKeyEvent*> e) {
+	using namespace Core::VimKeymap;
+	const auto focus = QApplication::focusWidget();
+	const auto user = _peer ? _peer->asUser() : nullptr;
+	if (!isVisible()
+		|| !user
+		|| !user->isBot()
+		|| !focus
+		|| (focus != this && !isAncestorOf(focus))) {
+		return false;
+	}
+	const auto modifiers = VimKeymapCleanModifiers(e);
+	const auto enterKey = (e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter);
+	const auto enter = enterKey && modifiers == Qt::NoModifier;
+	if (enterKey
+		&& !_botStart->isHidden()
+		&& _botStart->isEnabled()
+		&& _canSendMessages) {
+		if (enter && !e->isAutoRepeat()) {
+			sendBotStartCommand();
+		}
+		return true;
+	}
+	if (!NormalMode()) {
+		_vimKeymapBotMenuActive = false;
+		return false;
+	} else if (!_autocomplete || _autocomplete->isHidden()) {
+		_vimKeymapBotMenuActive = false;
+	}
+	if (_vimKeymapBotMenuActive) {
+		const auto tab = Bindings::TabNavigationDelta(e);
+		if (tab || (modifiers == Qt::NoModifier
+			&& (e->key() == Qt::Key_Up || e->key() == Qt::Key_Down))) {
+			_autocomplete->moveSelection(tab
+				? (tab > 0 ? Qt::Key_Down : Qt::Key_Up)
+				: Qt::Key(e->key()));
+			return true;
+		} else if (enter) {
+			if (!e->isAutoRepeat()) {
+				if (_autocomplete->chooseSelected(
+						ChatHelpers::FieldAutocomplete::ChooseMethod::ByEnter)) {
+					_vimKeymapBotMenuActive = false;
+				}
+			}
+			return true;
+		} else if (Bindings::IsPlainEscape(e)) {
+			if (!e->isAutoRepeat()) {
+				_autocomplete->hideAnimated();
+				_vimKeymapBotMenuActive = false;
+			}
+			return true;
+		}
+	}
+	if (modifiers != Qt::NoModifier
+		|| !Bindings::KeyIs(e, Qt::Key_M, u"m"_q, u"ь"_q)
+		|| !_botMenu.button
+		|| _botMenu.button->isHidden()
+		|| !_botMenu.button->isEnabled()
+		|| (!_field->empty()
+			&& (focus == _field.data() || _field->isAncestorOf(focus)))) {
+		return false;
+	}
+	if (!e->isAutoRepeat()) {
+		const auto wasOpen = _autocomplete && !_autocomplete->isHidden();
+		_botMenu.button->clicked(Qt::NoModifier, Qt::LeftButton);
+		_vimKeymapBotMenuActive = !wasOpen
+			&& _autocomplete
+			&& !_autocomplete->isHidden();
+	}
+	return true;
 }
 
 void HistoryWidget::sendBotStartCommand() {
@@ -7139,13 +7116,7 @@ void HistoryWidget::insertTextAtCursor(const QString &text) {
 }
 
 bool HistoryWidget::eventFilter(QObject *obj, QEvent *e) {
-	if (e->type() == QEvent::KeyRelease) {
-		const auto k = static_cast<QKeyEvent*>(e);
-		if (!k->isAutoRepeat() && Core::VimKeymap::NavigationKey(k)) {
-			vimKeymapStopScroll();
-			return true;
-		}
-	} else if (e->type() == QEvent::KeyPress) {
+	if (e->type() == QEvent::KeyPress) {
 		const auto k = static_cast<QKeyEvent*>(e);
 		const auto selector = controller()->tabbedSelector();
 		const auto selectorOpen = !selector->isHidden()
@@ -9766,28 +9737,11 @@ void HistoryWidget::keyPressEvent(QKeyEvent *e) {
 	}
 }
 
-void HistoryWidget::keyReleaseEvent(QKeyEvent *e) {
-	if (Core::VimKeymap::NavigationKey(e)) {
-		if (!e->isAutoRepeat()) {
-			vimKeymapStopScroll();
-		}
-		e->accept();
-	} else {
-		Window::AbstractSectionWidget::keyReleaseEvent(e);
-	}
-}
-
-void HistoryWidget::vimKeymapStartScroll(int direction) {
-	_vimKeymapScrollDirection = direction;
-	_vimKeymapScrollRepeating = false;
-	_vimKeymapScrollTimer.callOnce(
-		Core::VimKeymap::HoldScrollStartDelayMs(),
-		Qt::PreciseTimer);
-}
-
 void HistoryWidget::vimKeymapStopScroll() {
 	_vimKeymapScrollTimer.cancel();
 	_vimKeymapScrollDirection = 0;
+	_vimKeymapScrollKey = 0;
+	_vimKeymapScrollNativeKey = 0;
 	_vimKeymapScrollRepeating = false;
 }
 
@@ -9795,7 +9749,8 @@ void HistoryWidget::vimKeymapScrollTick() {
 	const auto direction = _vimKeymapScrollDirection;
 	if (!direction) {
 		return;
-	} else if (!vimKeymapScrollBy(
+	} else if (!Core::VimKeymap::NormalMode()
+		|| !vimKeymapScrollBy(
 			direction,
 			Core::VimKeymap::HoldScrollDelta(),
 			false)) {
@@ -9815,17 +9770,18 @@ bool HistoryWidget::vimKeymapHandleEscapeFieldState(not_null<QKeyEvent*> e) {
 		|| VimKeymapCleanModifiers(e) != Qt::NoModifier) {
 		return false;
 	}
+	const auto editingOrReplying = _editMsgId || _replyTo;
 	if (e->isAutoRepeat()) {
-		return bool(_editMsgId);
+		return editingOrReplying;
 	}
-	if (_editMsgId && !Core::VimKeymap::NormalMode()) {
+	if (editingOrReplying && !Core::VimKeymap::NormalMode()) {
 		Core::VimKeymap::SetNormalMode(true);
 		_field->setFocusFast();
 		vimKeymapRefreshComposeCursor();
-		Core::VimKeymap::TraceKey(e, u"edit insert to view mode"_q);
+		Core::VimKeymap::TraceKey(e, u"composer insert to view mode"_q);
 		return true;
 	}
-	if (_editMsgId
+	if (editingOrReplying
 		&& (_vimKeymapComposeVisualMode
 			|| _vimKeymapComposeOperator
 			|| _vimKeymapComposePending)
@@ -9866,21 +9822,30 @@ bool HistoryWidget::vimKeymapJumpToBottom() {
 }
 
 bool HistoryWidget::vimKeymapHandleScrollKey(not_null<QKeyEvent*> e) {
+	const auto page = Core::VimKeymap::NormalMode()
+		? Core::VimKeymap::Bindings::PageNavigationDelta(e)
+		: 0;
+	if (page && _scroll) {
+		vimKeymapStopScroll();
+		vimKeymapScrollBy(page, _scroll->height(), !e->isAutoRepeat());
+		Core::VimKeymap::TraceCommand(u"Page scroll"_q, page > 0
+			? u"chat: one screen down"_q
+			: u"chat: one screen up"_q);
+		return true;
+	}
 	const auto navigation = Core::VimKeymap::NavigationKey(e);
 	if (!navigation) {
 		return false;
 	}
 	const auto direction = (*navigation == Qt::Key_Down) ? 1 : -1;
-	if (e->isAutoRepeat()) {
-		if (!_vimKeymapScrollTimer.isActive()) {
-			vimKeymapStartScroll(direction);
-		} else {
-			_vimKeymapScrollDirection = direction;
-		}
-	} else {
+	if (!e->isAutoRepeat()) {
 		_vimKeymapScrollTimer.cancel();
 		_vimKeymapScrollRepeating = false;
 		_vimKeymapScrollDirection = direction;
+		_vimKeymapScrollKey = e->key();
+		_vimKeymapScrollNativeKey = e->nativeScanCode()
+			? e->nativeScanCode()
+			: e->nativeVirtualKey();
 		vimKeymapScrollBy(
 			direction,
 			Core::VimKeymap::ScrollStep(),
@@ -9922,29 +9887,8 @@ void HistoryWidget::vimKeymapRefreshComposeCursor() {
 	if (!_field) {
 		return;
 	}
-	const auto raw = _field->rawTextEdit();
-	const auto active = Core::VimKeymap::NormalMode()
-		&& !_field->isHidden()
-		&& _field->isVisible();
-	const auto visualMode = active && (_vimKeymapComposeVisualMode != 0);
-	const auto width = active ? 0 : 1;
-	if (raw->cursorWidth() != width) {
-		raw->setCursorWidth(width);
-	}
-	if (active && !visualMode) {
-		auto cursor = _field->textCursor();
-		if (VimKeymapNormalizeComposeCursor(cursor)) {
-			_field->setTextCursor(cursor);
-		}
-	}
-	const auto overlayWidget = raw->viewport()->findChild<QWidget*>(
-		u"TelegraVimComposeCursorOverlay"_q,
-		Qt::FindDirectChildrenOnly);
-	auto overlay = dynamic_cast<VimKeymapComposeCursorOverlay*>(overlayWidget);
-	if (!overlay) {
-		overlay = new VimKeymapComposeCursorOverlay(raw);
-	}
-	overlay->setActive(active, visualMode);
+	Core::VimKeymap::RefreshComposeCursor(
+		_field, _vimKeymapComposeVisualMode != 0);
 	update(VimKeymapModeIndicatorRect(_scroll->geometry()).adjusted(
 		-st::lineWidth,
 		-st::lineWidth,
@@ -9985,1027 +9929,34 @@ bool HistoryWidget::vimKeymapPasteIntoComposer(not_null<QKeyEvent*> e) {
 }
 
 bool HistoryWidget::vimKeymapHandleComposeTextKey(not_null<QKeyEvent*> e) {
-	constexpr auto kComposeOpDelete = 1;
-	constexpr auto kComposeOpDeleteInner = 2;
-	constexpr auto kComposeOpYank = 3;
-	constexpr auto kComposeOpChange = 4;
-	constexpr auto kComposeOpChangeInner = 5;
-	constexpr auto kComposeOpYankInner = 6;
-	constexpr auto kComposePendingGoto = 1;
-	constexpr auto kComposePendingReplace = 2;
-	constexpr auto kComposePendingVisualInner = 3;
-
-	if (!_field || _field->isHidden() || _vimKeymapSearchInputMode) {
-		_vimKeymapComposeOperator = 0;
-		_vimKeymapComposeVisualMode = 0;
-		_vimKeymapComposeVisualAnchor = -1;
-		_vimKeymapComposePending = 0;
-		vimKeymapRefreshComposeCursor();
-		return false;
-	}
-	const auto raw = _field->rawTextEdit();
+	const auto list = _list.get();
 	const auto selector = controller()->tabbedSelector();
-	const auto selectorOpen = !selector->isHidden() && selector->isVisible();
-	if (selectorOpen) {
-		_vimKeymapComposeOperator = 0;
-		_vimKeymapComposeVisualMode = 0;
-		_vimKeymapComposeVisualAnchor = -1;
-		_vimKeymapComposePending = 0;
-		vimKeymapRefreshComposeCursor();
-		return false;
-	}
-	const auto fieldFocused = _field->hasFocus() || raw->hasFocus();
-	const auto stateActive = _vimKeymapComposeOperator
-		|| _vimKeymapComposeVisualMode
-		|| _vimKeymapComposePending;
-#ifndef TDESKTOP_DISABLE_SPELLCHECK
-	if (!stateActive
-		&& Core::VimKeymap::NormalMode()
-		&& Core::VimKeymap::Bindings::SpellcheckKey(e)) {
-		if (!e->isAutoRepeat()) {
-			Spellchecker::ShowSuggestionsMenu(_field);
-		}
-		return true;
-	}
-#endif // !TDESKTOP_DISABLE_SPELLCHECK
-	if (!stateActive
-		&& Core::VimKeymap::NormalMode()
-		&& Core::VimKeymap::Bindings::IsMessageReaction(e)) {
-		return false;
-	}
-	const auto messageAction = Core::VimKeymap::ActionKey(e).has_value();
-	if (Core::VimKeymap::EmptyComposeDefersToMessageAction(
-			stateActive,
-			_field->empty(),
-			messageAction)) {
-		vimKeymapRefreshComposeCursor();
-		return false;
-	}
-	if (!stateActive && Core::VimKeymap::NavigationKey(e)) {
-		vimKeymapRefreshComposeCursor();
-		return false;
-	}
-	const auto optionLeft = VimKeymapOptionTextKey(
-		e,
-		Qt::Key_H,
-		u"h"_q,
-		u"\u0440"_q);
-	const auto optionRight = VimKeymapOptionTextKey(
-		e,
-		Qt::Key_L,
-		u"l"_q,
-		u"\u0434"_q);
-	const auto inputCursorMove = optionLeft || optionRight;
-	const auto plainLeft = VimKeymapPlainTextKey(
-		e,
-		Qt::Key_H,
-		u"h"_q,
-		u"\u0440"_q);
-	const auto plainRight = VimKeymapPlainTextKey(
-		e,
-		Qt::Key_L,
-		u"l"_q,
-		u"\u0434"_q);
-	const auto composeHorizontalMove = plainLeft || plainRight;
-	const auto escape = !e->isAutoRepeat()
-		&& VimKeymapCleanModifiers(e) == Qt::NoModifier
-		&& e->key() == Qt::Key_Escape;
-	if (escape && fieldFocused) {
-		_vimKeymapComposeOperator = 0;
-		_vimKeymapComposePending = 0;
-		if (_vimKeymapComposeVisualMode) {
-			auto cursor = _field->textCursor();
-			cursor.clearSelection();
-			_field->setTextCursor(cursor);
-			_vimKeymapComposeVisualMode = 0;
-			_vimKeymapComposeVisualAnchor = -1;
-			Core::VimKeymap::TraceKey(e, u"compose visual off"_q);
-		} else {
-			Core::VimKeymap::SetNormalMode(true);
-			Core::VimKeymap::TraceKey(e, u"compose normal mode"_q);
-		}
-		_field->setFocusFast();
-		vimKeymapRefreshComposeCursor();
-		return true;
-	}
-	if (!Core::VimKeymap::NormalMode() && !inputCursorMove) {
-		_vimKeymapComposeOperator = 0;
-		_vimKeymapComposeVisualMode = 0;
-		_vimKeymapComposeVisualAnchor = -1;
-		_vimKeymapComposePending = 0;
-		vimKeymapRefreshComposeCursor();
-		return false;
-	} else if (inputCursorMove
-		&& !fieldFocused) {
-		return false;
-	} else if (Core::VimKeymap::NormalMode()
-		&& !fieldFocused
-		&& !stateActive
-		&& !inputCursorMove
-		&& !composeHorizontalMove) {
-		vimKeymapRefreshComposeCursor();
-		return false;
-	}
-
-	const auto focusField = [&] {
-		_field->setFocusFast();
-		_field->ensureCursorVisible();
-		vimKeymapRefreshComposeCursor();
-	};
-	const auto clearVisual = [&] {
-		if (!_vimKeymapComposeVisualMode) {
-			return;
-		}
-		auto cursor = _field->textCursor();
-		cursor.clearSelection();
-		_field->setTextCursor(cursor);
-		_vimKeymapComposeVisualMode = 0;
-		_vimKeymapComposeVisualAnchor = -1;
-		vimKeymapRefreshComposeCursor();
-	};
-	const auto clearPending = [&] {
-		_vimKeymapComposePending = 0;
-	};
-	const auto moveMode = [&] {
-		return (_vimKeymapComposeVisualMode || _vimKeymapComposeOperator)
-			? QTextCursor::KeepAnchor
-			: QTextCursor::MoveAnchor;
-	};
-	const auto traceMotion = [&](bool changed, const QString &status) {
-		Core::VimKeymap::TraceKey(
-			e,
-			_vimKeymapComposeVisualMode
-				? (changed ? u"compose visual move"_q : u"compose visual edge"_q)
-				: (changed ? status : status + u" edge"_q));
-	};
-	const auto copyCursorSelection = [&](QTextCursor cursor) {
-		if (!cursor.hasSelection()) {
-			return false;
-		}
-		_field->setTextCursor(cursor);
-		raw->copy();
-		return true;
-	};
-	const auto copySelection = [&] {
-		return copyCursorSelection(_field->textCursor());
-	};
-	const auto finishOperatorWithSelection = [&](QTextCursor cursor) {
-		const auto op = _vimKeymapComposeOperator;
-		_vimKeymapComposeOperator = 0;
-		_vimKeymapComposeVisualMode = 0;
-		_vimKeymapComposeVisualAnchor = -1;
-		_vimKeymapComposePending = 0;
-		if (!cursor.hasSelection()) {
-			_field->setTextCursor(cursor);
-			focusField();
-			Core::VimKeymap::TraceKey(e, u"compose operator empty"_q);
-			return true;
-		}
-		if (op == kComposeOpYank) {
-			copyCursorSelection(cursor);
-			cursor = _field->textCursor();
-			cursor.clearSelection();
-			_field->setTextCursor(cursor);
-			focusField();
-			Core::VimKeymap::TraceKey(e, u"compose yank"_q);
-			return true;
-		}
-		const auto before = _field->getTextWithTags();
-		copyCursorSelection(cursor);
-		cursor = _field->textCursor();
-		cursor.removeSelectedText();
-		_field->setTextCursor(cursor);
-		if (_field->getTextWithTags() != before) {
-			saveDraftDelayed();
-		}
-		const auto change = (op == kComposeOpChange
-			|| op == kComposeOpChangeInner);
-		Core::VimKeymap::SetNormalMode(!change);
-		focusField();
-		Core::VimKeymap::TraceKey(
-			e,
-			change ? u"compose change motion"_q : u"compose delete motion"_q);
-		return true;
-	};
-	const auto maximumCursorPosition = [&] {
-		return std::max(0, raw->document()->characterCount() - 1);
-	};
-	const auto visualAnchor = [&] {
-		const auto maximum = maximumCursorPosition();
-		if (_vimKeymapComposeVisualAnchor < 0
-			|| _vimKeymapComposeVisualAnchor > maximum) {
-			const auto cursor = _field->textCursor();
-			_vimKeymapComposeVisualAnchor = std::clamp(
-				cursor.hasSelection()
-					? cursor.selectionStart()
-					: cursor.position(),
-				0,
-				maximum);
-		}
-		return _vimKeymapComposeVisualAnchor;
-	};
-	const auto setVisualSelection = [&](int position) {
-		const auto maximum = maximumCursorPosition();
-		const auto anchor = std::clamp(visualAnchor(), 0, maximum);
-		const auto endpoint = std::clamp(position, 0, maximum);
-		_vimKeymapComposeVisualAnchor = anchor;
-		auto cursor = _field->textCursor();
-		if (endpoint >= anchor) {
-			cursor.setPosition(anchor);
-			cursor.setPosition(
-				std::min(maximum, std::max(endpoint, anchor + 1)),
-				QTextCursor::KeepAnchor);
-		} else {
-			cursor.setPosition(std::min(maximum, anchor + 1));
-			cursor.setPosition(endpoint, QTextCursor::KeepAnchor);
-		}
-		_field->setTextCursor(cursor);
-	};
-	const auto visualCharacterPosition = [&] {
-		const auto cursor = _field->textCursor();
-		if (cursor.hasSelection()
-			&& cursor.position() > cursor.anchor()) {
-			return std::max(0, cursor.position() - 1);
-		}
-		return cursor.position();
-	};
-	const auto setVisualSelectionCharacter = [&](int position) {
-		const auto maximum = maximumCursorPosition();
-		const auto anchor = std::clamp(visualAnchor(), 0, maximum);
-		const auto point = std::clamp(
-			position,
-			0,
-			std::max(0, maximum - 1));
-		setVisualSelection((point >= anchor)
-			? std::min(maximum, point + 1)
-			: point);
-	};
-	const auto lineLastCharacterPosition = [](QTextCursor cursor) {
-		const auto block = cursor.block();
-		const auto textSize = int(block.text().size());
-		return (textSize > 0)
-			? (block.position() + textSize - 1)
-			: block.position();
-	};
-	const auto refreshMovedCursor = [&] {
-		_field->ensureCursorVisible();
-		vimKeymapRefreshComposeCursor();
-	};
-	const auto moveCursor = [&](
-			QTextCursor::MoveOperation operation,
-			bool allowPastLineEnd = false) {
-		auto cursor = _field->textCursor();
-		if (_vimKeymapComposeVisualMode == 1) {
-			if (operation == QTextCursor::Left
-				|| operation == QTextCursor::Right) {
-				auto positionCursor = _field->textCursor();
-				positionCursor.setPosition(visualCharacterPosition());
-				const auto block = positionCursor.block();
-				const auto first = block.position();
-				const auto last = lineLastCharacterPosition(positionCursor);
-				const auto step = (operation == QTextCursor::Right) ? 1 : -1;
-				const auto position = std::clamp(
-					positionCursor.position() + step,
-					first,
-					last);
-				const auto changed = (position != positionCursor.position());
-				setVisualSelectionCharacter(position);
-				refreshMovedCursor();
-				return changed;
-			}
-			cursor.setPosition(visualCharacterPosition());
-			const auto changed = cursor.movePosition(
-				operation,
-				QTextCursor::MoveAnchor);
-			setVisualSelectionCharacter(cursor.position());
-			refreshMovedCursor();
-			return changed;
-		}
-		if (Core::VimKeymap::NormalMode()
-			&& !_vimKeymapComposeOperator
-			&& !allowPastLineEnd) {
-			VimKeymapNormalizeComposeCursor(cursor);
-			if (operation == QTextCursor::Left
-				|| operation == QTextCursor::Right) {
-				const auto was = cursor.position();
-				const auto block = cursor.block();
-				const auto first = block.position();
-				const auto last = lineLastCharacterPosition(cursor);
-				const auto step = (operation == QTextCursor::Right) ? 1 : -1;
-				const auto position = std::clamp(
-					cursor.position() + step,
-					first,
-					last);
-				cursor.setPosition(position);
-				const auto changed = (cursor.position() != was);
-				_field->setTextCursor(cursor);
-				refreshMovedCursor();
-				return changed;
-			}
-		}
-		const auto changed = cursor.movePosition(operation, moveMode());
-		if (_vimKeymapComposeOperator) {
-			return finishOperatorWithSelection(cursor);
-		}
-		_field->setTextCursor(cursor);
-		focusField();
-		return changed;
-	};
-	const auto moveCursorTo = [&](int position, const QString &status) {
-		auto cursor = _field->textCursor();
-		position = std::clamp(
-			position,
-			0,
-			std::max(0, raw->document()->characterCount() - 1));
-		const auto changed = (cursor.position() != position);
-		if (_vimKeymapComposeVisualMode == 1) {
-			setVisualSelection(position);
-			refreshMovedCursor();
-			traceMotion(changed, status);
-			return true;
-		}
-		cursor.setPosition(position, moveMode());
-		if (_vimKeymapComposeOperator) {
-			return finishOperatorWithSelection(cursor);
-		}
-		_field->setTextCursor(cursor);
-		focusField();
-		traceMotion(changed, status);
-		return true;
-	};
-	const auto undoRedo = [&](bool redo) {
-		clearPending();
-		const auto document = raw->document();
-		const auto available = redo
-			? (document->availableRedoSteps() > 0 || _field->isRedoAvailable())
-			: (document->availableUndoSteps() > 0 || _field->isUndoAvailable());
-		if (available) {
-			if (redo) {
-				_field->redo();
-			} else {
-				_field->undo();
-			}
-			saveDraftDelayed();
-		}
-		Core::VimKeymap::SetNormalMode(true);
-		focusField();
-		Core::VimKeymap::TraceKey(
-			e,
-			available
-				? (redo ? u"redo compose text"_q : u"undo compose text"_q)
-				: (redo ? u"redo compose empty"_q : u"undo compose empty"_q));
-		return true;
-	};
-	const auto deleteSelection = [&](QTextCursor cursor) {
-		const auto before = _field->getTextWithTags();
-		copyCursorSelection(cursor);
-		cursor = _field->textCursor();
-		cursor.removeSelectedText();
-		_field->setTextCursor(cursor);
-		if (_field->getTextWithTags() != before) {
-			saveDraftDelayed();
-			focusField();
-			return true;
-		}
-		focusField();
-		return false;
-	};
-	const auto selectCurrentLine = [&] {
-		auto cursor = _field->textCursor();
-		const auto document = raw->document();
-		const auto block = cursor.block();
-		const auto start = block.position();
-		const auto end = std::min(
-			start + block.length(),
-			std::max(0, document->characterCount() - 1));
-		cursor.setPosition(start);
-		cursor.setPosition(end, QTextCursor::KeepAnchor);
-		return cursor;
-	};
-	const auto deleteCurrentLine = [&] {
-		return deleteSelection(selectCurrentLine());
-	};
-	const auto selectInnerWordAt = [&](int position) {
-		auto cursor = _field->textCursor();
-		cursor.clearSelection();
-		cursor.setPosition(std::clamp(position, 0, maximumCursorPosition()));
-		cursor.select(QTextCursor::WordUnderCursor);
-		if (!cursor.hasSelection() || cursor.selectedText().isEmpty()) {
-			cursor = _field->textCursor();
-			cursor.clearSelection();
-			cursor.setPosition(std::clamp(position, 0, maximumCursorPosition()));
-			cursor.movePosition(QTextCursor::NextWord);
-			cursor.select(QTextCursor::WordUnderCursor);
-		}
-		return cursor;
-	};
-	const auto selectInnerWord = [&] {
-		return selectInnerWordAt(_vimKeymapComposeVisualMode
-			? visualCharacterPosition()
-			: _field->textCursor().position());
-	};
-	const auto selectVisualInnerWord = [&] {
-		const auto cursor = selectInnerWordAt(visualCharacterPosition());
-		const auto selected = cursor.hasSelection()
-			&& !cursor.selectedText().isEmpty();
-		if (selected) {
-			_vimKeymapComposeVisualMode = 1;
-			_vimKeymapComposeVisualAnchor = cursor.selectionStart();
-			_field->setTextCursor(cursor);
-		}
-		focusField();
-		Core::VimKeymap::TraceKey(
-			e,
-			selected ? u"compose visual inner word"_q : u"compose word empty"_q);
-		return true;
-	};
-	const auto deleteInnerWord = [&] {
-		const auto cursor = selectInnerWord();
-		return cursor.hasSelection()
-			&& !cursor.selectedText().isEmpty()
-			&& deleteSelection(cursor);
-	};
-	const auto copyInnerWord = [&] {
-		const auto cursor = selectInnerWord();
-		const auto copied = cursor.hasSelection()
-			&& !cursor.selectedText().isEmpty()
-			&& copyCursorSelection(cursor);
-		auto restore = _field->textCursor();
-		restore.clearSelection();
-		_field->setTextCursor(restore);
-		focusField();
-		return copied;
-	};
-	const auto changeAfterDelete = [&](bool changed, const QString &status) {
-		Core::VimKeymap::SetNormalMode(false);
-		focusField();
-		Core::VimKeymap::TraceKey(
-			e,
-			changed ? status : status + u" empty"_q);
-		return true;
-	};
-	const auto deleteNextChar = [&](bool inputAfter) {
-		const auto before = _field->getTextWithTags();
-		auto cursor = _field->textCursor();
-		const auto hasSelection = cursor.movePosition(
-			QTextCursor::Right,
-			QTextCursor::KeepAnchor);
-		if (hasSelection) {
-			deleteSelection(cursor);
-		}
-		const auto changed = (_field->getTextWithTags() != before);
-		if (changed) {
-			saveDraftDelayed();
-		}
-		if (inputAfter) {
-			return changeAfterDelete(changed, u"compose substitute"_q);
-		}
-		focusField();
-		Core::VimKeymap::TraceKey(
-			e,
-			changed ? u"compose delete char"_q : u"compose delete char edge"_q);
-		return true;
-	};
-	const auto deletePreviousChar = [&] {
-		const auto before = _field->getTextWithTags();
-		auto cursor = _field->textCursor();
-		const auto hasSelection = cursor.movePosition(
-			QTextCursor::Left,
-			QTextCursor::KeepAnchor);
-		if (hasSelection) {
-			deleteSelection(cursor);
-		}
-		const auto changed = (_field->getTextWithTags() != before);
-		if (changed) {
-			saveDraftDelayed();
-		}
-		focusField();
-		Core::VimKeymap::TraceKey(
-			e,
-			changed ? u"compose delete previous char"_q : u"compose delete previous edge"_q);
-		return true;
-	};
-	const auto copyCurrentLine = [&] {
-		const auto selected = selectCurrentLine();
-		copyCursorSelection(selected);
-		auto cursor = _field->textCursor();
-		cursor.clearSelection();
-		_field->setTextCursor(cursor);
-		focusField();
-		Core::VimKeymap::TraceKey(e, u"compose yank line"_q);
-		return true;
-	};
-	const auto replaceNextChar = [&](const QString &text) {
-		_vimKeymapComposePending = 0;
-		if (text.isEmpty()) {
-			focusField();
-			Core::VimKeymap::TraceKey(e, u"compose replace cancelled"_q);
-			return true;
-		}
-		const auto before = _field->getTextWithTags();
-		auto cursor = _field->textCursor();
-		if (cursor.movePosition(QTextCursor::Right, QTextCursor::KeepAnchor)) {
-			cursor.insertText(text.left(1));
-			_field->setTextCursor(cursor);
-		}
-		const auto changed = (_field->getTextWithTags() != before);
-		if (changed) {
-			saveDraftDelayed();
-		}
-		Core::VimKeymap::SetNormalMode(true);
-		focusField();
-		Core::VimKeymap::TraceKey(
-			e,
-			changed ? u"compose replace char"_q : u"compose replace edge"_q);
-		return true;
-	};
-	const auto toggleCase = [&] {
-		const auto before = _field->getTextWithTags();
-		auto cursor = _field->textCursor();
-		cursor.movePosition(QTextCursor::Right, QTextCursor::KeepAnchor);
-		const auto selected = cursor.selectedText();
-		if (!selected.isEmpty()) {
-			const auto ch = selected.front();
-			cursor.insertText(ch.isUpper()
-				? QString(ch.toLower())
-				: QString(ch.toUpper()));
-			_field->setTextCursor(cursor);
-		}
-		const auto changed = (_field->getTextWithTags() != before);
-		if (changed) {
-			saveDraftDelayed();
-		}
-		focusField();
-		Core::VimKeymap::TraceKey(
-			e,
-			changed ? u"compose toggle case"_q : u"compose toggle case edge"_q);
-		return true;
-	};
-	const auto joinLine = [&] {
-		const auto before = _field->getTextWithTags();
-		auto cursor = _field->textCursor();
-		cursor.movePosition(QTextCursor::EndOfLine);
-		cursor.deleteChar();
-		if (_field->getTextWithTags() != before) {
-			cursor.insertText(u" "_q);
-			_field->setTextCursor(cursor);
-		}
-		const auto changed = (_field->getTextWithTags() != before);
-		if (changed) {
-			saveDraftDelayed();
-		}
-		focusField();
-		Core::VimKeymap::TraceKey(
-			e,
-			changed ? u"compose join line"_q : u"compose join line edge"_q);
-		return true;
-	};
-	const auto currentLineStart = [&] {
-		return _field->textCursor().block().position();
-	};
-	const auto currentLineEnd = [&] {
-		const auto document = raw->document();
-		const auto block = _field->textCursor().block();
-		return std::min(
-			block.position() + block.length() - 1,
-			std::max(0, document->characterCount() - 1));
-	};
-	const auto currentLineFirstNonBlank = [&] {
-		const auto block = _field->textCursor().block();
-		const auto text = block.text();
-		auto offset = 0;
-		while (offset < text.size() && text[offset].isSpace()) {
-			++offset;
-		}
-		return block.position() + offset;
-	};
-	const auto setInputCursorPosition = [&](int position) {
-		auto cursor = _field->textCursor();
-		cursor.clearSelection();
-		cursor.setPosition(std::clamp(position, 0, maximumCursorPosition()));
-		_field->setTextCursor(cursor);
-		_field->ensureCursorVisible();
-	};
-	const auto setInputCursorAfterCurrentCharacter = [&] {
-		auto cursor = _field->textCursor();
-		cursor.clearSelection();
-		VimKeymapNormalizeComposeCursor(cursor);
-		if (!cursor.block().text().isEmpty()) {
-			cursor.movePosition(QTextCursor::Right);
-		}
-		_field->setTextCursor(cursor);
-		_field->ensureCursorVisible();
-	};
-	const auto deleteToLineEnd = [&](bool inputAfter) {
-		auto cursor = _field->textCursor();
-		cursor.setPosition(currentLineEnd(), QTextCursor::KeepAnchor);
-		const auto changed = deleteSelection(cursor);
-		if (inputAfter) {
-			return changeAfterDelete(changed, u"compose change line end"_q);
-		}
-		Core::VimKeymap::TraceKey(
-			e,
-			changed ? u"compose delete to line end"_q : u"compose line end empty"_q);
-		return true;
-	};
-	const auto enterInputMode = [&](const QString &status) {
-		_vimKeymapComposeOperator = 0;
-		_vimKeymapComposeVisualMode = 0;
-		_vimKeymapComposeVisualAnchor = -1;
-		clearPending();
-		Core::VimKeymap::SetNormalMode(false);
-		focusField();
-		Core::VimKeymap::TraceKey(e, status);
-		return true;
-	};
-	const auto startVisualMode = [&](bool line) {
-		_vimKeymapComposeOperator = 0;
-		_vimKeymapComposeVisualMode = line ? 2 : 1;
-		clearPending();
-		auto cursor = line ? selectCurrentLine() : _field->textCursor();
-		if (!line) {
-			VimKeymapNormalizeComposeCursor(cursor);
-		}
-		_vimKeymapComposeVisualAnchor = cursor.hasSelection()
-			? cursor.selectionStart()
-			: cursor.position();
-		if (line) {
-			_field->setTextCursor(cursor);
-		} else {
-			setVisualSelection(_vimKeymapComposeVisualAnchor);
-		}
-		focusField();
-		Core::VimKeymap::TraceKey(
-			e,
-			line ? u"compose visual line"_q : u"compose visual"_q);
-		return true;
-	};
-	const auto linePaste = [&](bool before) {
-		clearPending();
-		auto cursor = _field->textCursor();
-		if (before) {
-			cursor.movePosition(QTextCursor::StartOfLine);
-		} else {
-			cursor.movePosition(QTextCursor::EndOfLine);
-			cursor.insertText(u"\n"_q);
-		}
-		_field->setTextCursor(cursor);
-		raw->paste();
-		saveDraftDelayed();
-		focusField();
-		Core::VimKeymap::TraceKey(e, before ? u"compose paste before"_q : u"compose paste"_q);
-		return true;
-	};
-
-	if (_vimKeymapComposePending == kComposePendingVisualInner) {
-		clearPending();
-		if (VimKeymapPlainOrShiftTextKey(e, Qt::Key_W, u"w"_q, u"\u0446"_q)) {
-			return selectVisualInnerWord();
-		}
-		focusField();
-		Core::VimKeymap::TraceKey(e, u"compose visual inner cancelled"_q);
-		return true;
-	}
-
-	if (_vimKeymapComposeVisualMode) {
-		if (Core::VimKeymap::UndoKey(e)) {
-			clearVisual();
-			return undoRedo(false);
-		} else if (Core::VimKeymap::RedoKey(e)) {
-			clearVisual();
-			return undoRedo(true);
-		} else if (plainLeft || plainRight) {
-			clearPending();
-			const auto changed = moveCursor(
-				plainLeft ? QTextCursor::Left : QTextCursor::Right);
-			traceMotion(
-				changed,
-				plainLeft
-					? u"compose cursor left"_q
-					: u"compose cursor right"_q);
-			return true;
-		} else if (VimKeymapPlainTextKey(e, Qt::Key_Y, u"y"_q, u"\u043D"_q)) {
-			const auto copied = copySelection();
-			clearVisual();
-			focusField();
-			Core::VimKeymap::TraceKey(
-				e,
-				copied ? u"compose visual yank"_q : u"compose visual empty"_q);
-			return true;
-		} else if (VimKeymapPlainTextKey(e, Qt::Key_D, u"d"_q, u"\u0432"_q)
-			|| VimKeymapPlainTextKey(e, Qt::Key_X, u"x"_q, u"\u0447"_q)) {
-			const auto deleted = deleteSelection(_field->textCursor());
-			_vimKeymapComposeVisualMode = 0;
-			_vimKeymapComposeVisualAnchor = -1;
-			vimKeymapRefreshComposeCursor();
-			Core::VimKeymap::TraceKey(
-				e,
-				deleted ? u"compose visual delete"_q : u"compose visual empty"_q);
-			return true;
-		} else if (VimKeymapPlainTextKey(e, Qt::Key_I, u"i"_q, u"\u0448"_q)) {
-			_vimKeymapComposePending = kComposePendingVisualInner;
-			focusField();
-			Core::VimKeymap::TraceKey(e, u"compose visual inner pending"_q);
-			return true;
-		}
-	}
-
-	if (_vimKeymapComposePending == kComposePendingReplace) {
-		const auto modifiers = VimKeymapCleanModifiers(e);
-		if (modifiers == Qt::NoModifier || modifiers == Qt::ShiftModifier) {
-			return replaceNextChar(e->text());
-		}
-		clearPending();
-		focusField();
-		Core::VimKeymap::TraceKey(e, u"compose replace cancelled"_q);
-		return true;
-	}
-
-	if (Core::VimKeymap::UndoKey(e)) {
-		_vimKeymapComposeOperator = 0;
-		clearVisual();
-		clearPending();
-		return undoRedo(false);
-	} else if (Core::VimKeymap::RedoKey(e)) {
-		_vimKeymapComposeOperator = 0;
-		clearVisual();
-		clearPending();
-		return undoRedo(true);
-	} else if (inputCursorMove) {
-		_vimKeymapComposeOperator = 0;
-		clearVisual();
-		clearPending();
-		const auto changed = moveCursor(
-			optionLeft ? QTextCursor::Left : QTextCursor::Right);
-		Core::VimKeymap::TraceKey(
-			e,
-			changed ? u"compose cursor"_q : u"compose cursor edge"_q);
-		return true;
-	}
-
-	if ((_vimKeymapComposeOperator == kComposeOpDelete
-			|| _vimKeymapComposeOperator == kComposeOpChange
-			|| _vimKeymapComposeOperator == kComposeOpYank)
-		&& VimKeymapPlainTextKey(e, Qt::Key_I, u"i"_q, u"\u0448"_q)) {
-		_vimKeymapComposeOperator
-			= (_vimKeymapComposeOperator == kComposeOpDelete)
-				? kComposeOpDeleteInner
-				: (_vimKeymapComposeOperator == kComposeOpChange)
-				? kComposeOpChangeInner
-				: kComposeOpYankInner;
-		clearPending();
-		focusField();
-		Core::VimKeymap::TraceKey(e, u"compose inner pending"_q);
-		return true;
-	} else if (VimKeymapPlainTextKey(e, Qt::Key_I, u"i"_q, u"\u0448"_q)) {
-		return enterInputMode(u"compose insert mode"_q);
-	} else if (VimKeymapShiftTextKey(e, Qt::Key_I, u"i"_q, u"\u0448"_q)) {
-		clearPending();
-		setInputCursorPosition(currentLineFirstNonBlank());
-		return enterInputMode(u"compose insert line"_q);
-	} else if (VimKeymapPlainTextKey(e, Qt::Key_A, u"a"_q, u"\u0444"_q)) {
-		clearPending();
-		setInputCursorAfterCurrentCharacter();
-		return enterInputMode(u"compose append mode"_q);
-	} else if (VimKeymapShiftTextKey(e, Qt::Key_A, u"a"_q, u"\u0444"_q)) {
-		clearPending();
-		setInputCursorPosition(currentLineEnd());
-		return enterInputMode(u"compose append line"_q);
-	} else if (VimKeymapPlainTextKey(e, Qt::Key_O, u"o"_q, u"\u0449"_q)) {
-		clearPending();
-		setInputCursorPosition(currentLineEnd());
-		auto cursor = _field->textCursor();
-		cursor.insertText(u"\n"_q);
-		_field->setTextCursor(cursor);
-		saveDraftDelayed();
-		return enterInputMode(u"compose open line below"_q);
-	} else if (VimKeymapShiftTextKey(e, Qt::Key_O, u"o"_q, u"\u0449"_q)) {
-		clearPending();
-		moveCursorTo(currentLineStart(), u"compose line start"_q);
-		auto cursor = _field->textCursor();
-		cursor.insertText(u"\n"_q);
-		_field->setTextCursor(cursor);
-		moveCursor(QTextCursor::Left);
-		saveDraftDelayed();
-		return enterInputMode(u"compose open line above"_q);
-	} else if (VimKeymapPlainTextKey(e, Qt::Key_V, u"v"_q, u"\u043C"_q)) {
-		return startVisualMode(false);
-	} else if (VimKeymapShiftTextKey(e, Qt::Key_V, u"v"_q, u"\u043C"_q)) {
-		return startVisualMode(true);
-	} else if (VimKeymapPlainTextKey(e, Qt::Key_G, u"g"_q, u"\u043F"_q)) {
-		if (_vimKeymapComposePending == kComposePendingGoto) {
-			clearPending();
-			return moveCursorTo(0, u"compose start"_q);
-		}
-		_vimKeymapComposePending = kComposePendingGoto;
-		focusField();
-		Core::VimKeymap::TraceKey(e, u"compose g pending"_q);
-		return true;
-	} else if (VimKeymapShiftTextKey(e, Qt::Key_G, u"g"_q, u"\u043F"_q)) {
-		clearPending();
-		return moveCursorTo(
-			std::max(0, raw->document()->characterCount() - 1),
-			u"compose end"_q);
-	} else if (plainLeft) {
-		clearPending();
-		const auto changed = moveCursor(QTextCursor::Left);
-		traceMotion(changed, u"compose cursor left"_q);
-		return true;
-	} else if (VimKeymapPlainTextKey(e, Qt::Key_J, u"j"_q, u"\u043E"_q)) {
-		clearPending();
-		const auto changed = moveCursor(QTextCursor::Down);
-		traceMotion(changed, u"compose cursor down"_q);
-		return true;
-	} else if (VimKeymapPlainTextKey(e, Qt::Key_K, u"k"_q, u"\u043B"_q)) {
-		clearPending();
-		const auto changed = moveCursor(QTextCursor::Up);
-		traceMotion(changed, u"compose cursor up"_q);
-		return true;
-	} else if (plainRight) {
-		clearPending();
-		const auto changed = moveCursor(QTextCursor::Right);
-		traceMotion(changed, u"compose cursor right"_q);
-		return true;
-	} else if (VimKeymapPlainOrShiftTextKey(e, Qt::Key_W, u"w"_q, u"\u0446"_q)) {
-		if (_vimKeymapComposeOperator == kComposeOpDeleteInner
-			|| _vimKeymapComposeOperator == kComposeOpChangeInner
-			|| _vimKeymapComposeOperator == kComposeOpYankInner) {
-			const auto change
-				= (_vimKeymapComposeOperator == kComposeOpChangeInner);
-			const auto yank
-				= (_vimKeymapComposeOperator == kComposeOpYankInner);
-			_vimKeymapComposeOperator = 0;
-			clearPending();
-			if (yank) {
-				const auto copied = copyInnerWord();
-				Core::VimKeymap::TraceKey(
-					e,
-					copied ? u"compose yank inner word"_q : u"compose word empty"_q);
-				return true;
-			}
-			const auto deleted = deleteInnerWord();
-			if (change) {
-				return changeAfterDelete(
-					deleted,
-					u"compose change inner word"_q);
-			}
-			Core::VimKeymap::TraceKey(
-				e,
-				deleted ? u"compose delete inner word"_q : u"compose word empty"_q);
-			return true;
-		}
-		clearPending();
-		const auto changed = moveCursor(QTextCursor::NextWord);
-		traceMotion(changed, u"compose next word"_q);
-		return true;
-	} else if (VimKeymapPlainOrShiftTextKey(e, Qt::Key_B, u"b"_q, u"\u0438"_q)) {
-		clearPending();
-		const auto changed = moveCursor(QTextCursor::PreviousWord);
-		traceMotion(changed, u"compose previous word"_q);
-		return true;
-	} else if (VimKeymapPlainOrShiftTextKey(e, Qt::Key_E, u"e"_q, u"\u0443"_q)) {
-		clearPending();
-		const auto changed = moveCursor(QTextCursor::EndOfWord);
-		traceMotion(changed, u"compose word end"_q);
-		return true;
-	} else if (VimKeymapTypedText(e, u"0"_q)
-		|| VimKeymapTypedText(e, u"|"_q)) {
-		clearPending();
-		return moveCursorTo(currentLineStart(), u"compose line start"_q);
-	} else if (VimKeymapTypedText(e, u"^"_q)) {
-		clearPending();
-		return moveCursorTo(currentLineFirstNonBlank(), u"compose first nonblank"_q);
-	} else if (VimKeymapTypedText(e, u"$"_q)) {
-		clearPending();
-		return moveCursorTo(currentLineEnd(), u"compose line end"_q);
-	} else if (VimKeymapTypedText(e, u"{"_q)) {
-		clearPending();
-		const auto changed = moveCursor(QTextCursor::PreviousBlock);
-		traceMotion(changed, u"compose paragraph up"_q);
-		return true;
-	} else if (VimKeymapTypedText(e, u"}"_q)) {
-		clearPending();
-		const auto changed = moveCursor(QTextCursor::NextBlock);
-		traceMotion(changed, u"compose paragraph down"_q);
-		return true;
-	} else if (VimKeymapTypedText(e, u"~"_q)) {
-		_vimKeymapComposeOperator = 0;
-		clearVisual();
-		clearPending();
-		return toggleCase();
-	} else if (VimKeymapPlainTextKey(e, Qt::Key_X, u"x"_q, u"\u0447"_q)) {
-		_vimKeymapComposeOperator = 0;
-		clearVisual();
-		clearPending();
-		return deleteNextChar(false);
-	} else if (VimKeymapShiftTextKey(e, Qt::Key_X, u"x"_q, u"\u0447"_q)) {
-		_vimKeymapComposeOperator = 0;
-		clearVisual();
-		clearPending();
-		return deletePreviousChar();
-	} else if (VimKeymapShiftTextKey(e, Qt::Key_D, u"d"_q, u"\u0432"_q)) {
-		_vimKeymapComposeOperator = 0;
-		clearVisual();
-		clearPending();
-		return deleteToLineEnd(false);
-	} else if (VimKeymapShiftTextKey(e, Qt::Key_C, u"c"_q, u"\u0441"_q)) {
-		_vimKeymapComposeOperator = 0;
-		clearVisual();
-		clearPending();
-		return deleteToLineEnd(true);
-	} else if (VimKeymapPlainTextKey(e, Qt::Key_C, u"c"_q, u"\u0441"_q)) {
-		clearPending();
-		if (!_field->hasText()) {
-			_vimKeymapComposeOperator = 0;
-			return false;
-		} else if (_vimKeymapComposeOperator == kComposeOpChange) {
-			_vimKeymapComposeOperator = 0;
-			const auto changed = deleteCurrentLine();
-			return changeAfterDelete(changed, u"compose change line"_q);
-		}
-		_vimKeymapComposeOperator = kComposeOpChange;
-		focusField();
-		Core::VimKeymap::TraceKey(e, u"compose change pending"_q);
-		return true;
-	} else if (VimKeymapPlainTextKey(e, Qt::Key_D, u"d"_q, u"\u0432"_q)) {
-		clearPending();
-		if (!_field->hasText()) {
-			_vimKeymapComposeOperator = 0;
-			return false;
-		} else if (_vimKeymapComposeOperator == kComposeOpDelete) {
-			_vimKeymapComposeOperator = 0;
-			const auto deleted = deleteCurrentLine();
-			Core::VimKeymap::TraceKey(
-				e,
-				deleted ? u"compose delete line"_q : u"compose line empty"_q);
-			return true;
-		}
-		_vimKeymapComposeOperator = kComposeOpDelete;
-		focusField();
-		Core::VimKeymap::TraceKey(e, u"compose delete pending"_q);
-		return true;
-	} else if (VimKeymapPlainTextKey(e, Qt::Key_S, u"s"_q, u"\u044B"_q)) {
-		_vimKeymapComposeOperator = 0;
-		clearVisual();
-		clearPending();
-		return deleteNextChar(true);
-	} else if (VimKeymapShiftTextKey(e, Qt::Key_S, u"s"_q, u"\u044B"_q)) {
-		_vimKeymapComposeOperator = 0;
-		clearVisual();
-		clearPending();
-		const auto changed = deleteCurrentLine();
-		return changeAfterDelete(changed, u"compose substitute line"_q);
-	} else if (VimKeymapPlainTextKey(e, Qt::Key_R, u"r"_q, u"\u043A"_q)) {
-		_vimKeymapComposeOperator = 0;
-		clearVisual();
-		_vimKeymapComposePending = kComposePendingReplace;
-		focusField();
-		Core::VimKeymap::TraceKey(e, u"compose replace pending"_q);
-		return true;
-	} else if (VimKeymapShiftTextKey(e, Qt::Key_R, u"r"_q, u"\u043A"_q)) {
-		return enterInputMode(u"compose replace input"_q);
-	} else if (VimKeymapShiftTextKey(e, Qt::Key_J, u"j"_q, u"\u043E"_q)) {
-		_vimKeymapComposeOperator = 0;
-		clearVisual();
-		clearPending();
-		return joinLine();
-	} else if (VimKeymapPlainTextKey(e, Qt::Key_Y, u"y"_q, u"\u043D"_q)) {
-		clearPending();
-		if (!_field->hasText()) {
-			_vimKeymapComposeOperator = 0;
-			return false;
-		} else if (_vimKeymapComposeOperator == kComposeOpYank) {
-			_vimKeymapComposeOperator = 0;
-			return copyCurrentLine();
-		}
-		_vimKeymapComposeOperator = kComposeOpYank;
-		focusField();
-		Core::VimKeymap::TraceKey(e, u"compose yank pending"_q);
-		return true;
-	} else if (VimKeymapShiftTextKey(e, Qt::Key_Y, u"y"_q, u"\u043D"_q)) {
-		_vimKeymapComposeOperator = 0;
-		clearVisual();
-		clearPending();
-		return copyCurrentLine();
-	} else if (VimKeymapPlainTextKey(e, Qt::Key_P, u"p"_q, u"\u0437"_q)) {
-		_vimKeymapComposeOperator = 0;
-		clearVisual();
-		return linePaste(false);
-	} else if (VimKeymapShiftTextKey(e, Qt::Key_P, u"p"_q, u"\u0437"_q)) {
-		_vimKeymapComposeOperator = 0;
-		clearVisual();
-		return linePaste(true);
-	} else if (_vimKeymapComposePending) {
-		clearPending();
-		Core::VimKeymap::TraceKey(e, u"compose pending cancelled"_q);
-		return true;
-	} else if (_vimKeymapComposeOperator) {
-		_vimKeymapComposeOperator = 0;
-		clearPending();
-		Core::VimKeymap::TraceKey(e, u"compose operator cancelled"_q);
-		return true;
-	}
-	return false;
+	return Core::VimKeymap::HandleComposeTextKey({
+		.field = _field,
+		.operation = _vimKeymapComposeOperator,
+		.visualMode = _vimKeymapComposeVisualMode,
+		.visualAnchor = _vimKeymapComposeVisualAnchor,
+		.pending = _vimKeymapComposePending,
+		.deleteTimer = _vimKeymapComposeDeleteTimer,
+		.searchActive = _vimKeymapSearchInputMode,
+		.panelOpen = !selector->isHidden() && selector->isVisible(),
+		.refreshCursor = [=] { vimKeymapRefreshComposeCursor(); },
+		.saveDraft = [=] { saveDraftDelayed(); },
+		.canShowDeleteHints = [=] {
+			return _list && _list == list && _list->isVisible()
+				&& window()->isActiveWindow()
+				&& _field->isVisible()
+				&& !_vimKeymapSearchInputMode
+				&& !controller()->isLayerShown()
+				&& !controller()->window().locked()
+				&& !QApplication::activeModalWidget()
+				&& !QApplication::activePopupWidget();
+		},
+		.showDeleteHints = [=] {
+			return _list->vimKeymapHandleAction(
+				Core::VimKeymap::Action::DeleteMessage);
+		},
+	}, e);
 }
 
 bool HistoryWidget::vimKeymapFocusEmojiPanel() {
@@ -12611,6 +11562,7 @@ void HistoryWidget::cancelEdit() {
 }
 
 void HistoryWidget::cancelFieldAreaState() {
+	cancelLocalQuickReplyInsertion();
 	controller()->hideLayer();
 	if (_previewDrawPreview) {
 		_preview->apply({ .removed = true });
@@ -12806,6 +11758,7 @@ void HistoryWidget::confirmDeleteSelected() {
 }
 
 void HistoryWidget::escape() {
+	cancelLocalQuickReplyInsertion();
 	if (_composeSearch) {
 		if (_nonEmptySelection) {
 			clearSelected();
@@ -13471,6 +12424,7 @@ void HistoryWidget::synteticScrollToY(int y) {
 }
 
 HistoryWidget::~HistoryWidget() {
+	cancelLocalQuickReplyInsertion();
 	Core::VimKeymap::UnregisterKeyHandler(this);
 	Core::VimKeymap::UnregisterTextInputPassthroughHandler(this);
 	Core::VimKeymap::UnregisterForcedNormalModeHandler(this);
