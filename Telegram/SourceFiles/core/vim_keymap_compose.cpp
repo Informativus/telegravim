@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "base/event_filter.h"
 #include "base/options.h"
+#include "base/platform/base_platform_info.h"
 #include "chat_helpers/spellchecker_menu.h"
 #include "core/vim_keymap.h"
 #include "core/vim_keymap_bindings.h"
@@ -125,7 +126,8 @@ constexpr auto kVimKeymapDeleteTimeout = crl::time(500);
 		const QString &cyrillic) {
 	const auto modifiers = VimKeymapCleanModifiers(e);
 	return (modifiers == Qt::AltModifier
-		|| modifiers == Qt::ControlModifier)
+		|| modifiers == Qt::ControlModifier
+		|| (Platform::IsMac() && modifiers == Qt::MetaModifier))
 		&& VimKeymapTextKey(e, key, latin, cyrillic);
 }
 
