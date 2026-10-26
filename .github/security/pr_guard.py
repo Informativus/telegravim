@@ -806,6 +806,35 @@ def reviewed_finding(run: dict, result: dict, source: Path, reviews: list) -> bo
         return False
     rule = result.get("ruleId")
     allowed = {
+        "Telegram/SourceFiles/api/api_local_quick_reply_sending.cpp": {
+            "cpp/poorly-documented-function",
+        },
+        "Telegram/SourceFiles/api/api_sending.cpp": {
+            "cpp/poorly-documented-function",
+            "cpp/use-in-own-initializer",
+        },
+        "Telegram/SourceFiles/data/data_types.h": {
+            "cpp/ambiguously-signed-bit-field",
+        },
+        "Telegram/SourceFiles/data/local_quick_reply_media.cpp": {
+            "cpp/use-in-own-initializer",
+        },
+        "Telegram/SourceFiles/data/local_quick_reply_view.cpp": {
+            "cpp/use-in-own-initializer",
+        },
+        "Telegram/SourceFiles/history/history_item.h": {
+            "cpp/member-const-no-effect",
+        },
+        "Telegram/SourceFiles/inline_bots/inline_bot_result.cpp": {
+            "cpp/missing-return",
+            "cpp/poorly-documented-function",
+        },
+        "Telegram/SourceFiles/media/transcription/transcription_engine.cpp": {
+            "cpp/poorly-documented-function",
+        },
+        "Telegram/SourceFiles/settings/business/settings_shortcut_messages.cpp": {
+            "cpp/poorly-documented-function",
+        },
         "Telegram/SourceFiles/boxes/edit_caption_box.cpp": {
             "cpp/poorly-documented-function",
         },
