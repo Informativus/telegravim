@@ -49,6 +49,7 @@ void ReadReceipts::setEnabled(bool enabled) {
 	++_generation;
 	_limits.clear();
 	_contents.clear();
+	_releasingContents.clear();
 	_session->local().writePref<bool>(kPreference, enabled);
 	_changes.fire_copy(enabled);
 }
@@ -68,7 +69,7 @@ bool ReadReceipts::allowed(
 }
 
 bool ReadReceipts::deferContents(not_null<HistoryItem*> item) {
-	if (!enabled() || _releasingContents) {
+	if (!enabled() || _releasingContents.erase(item->fullId())) {
 		return false;
 	}
 	if (item->isRegular()
@@ -139,8 +140,10 @@ void ReadReceipts::acknowledge(Key conversation, MsgId till) {
 			++i;
 		}
 	}
-	_releasingContents = true;
-	const auto guard = gsl::finally([&] { _releasingContents = false; });
+	for (const auto item : contents) {
+		_releasingContents.emplace(item->fullId());
+	}
+	const auto guard = gsl::finally([&] { _releasingContents.clear(); });
 	_session->api().markContentsRead(contents);
 }
 

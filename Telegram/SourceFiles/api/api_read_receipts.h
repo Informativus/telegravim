@@ -46,7 +46,7 @@ private:
 	base::flat_map<Key, MsgId> _limits;
 	base::flat_set<FullMsgId> _contents;
 	uint64 _generation = 0;
-	bool _releasingContents = false;
+	base::flat_set<FullMsgId> _releasingContents;
 
 };
 
