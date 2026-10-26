@@ -1329,6 +1329,8 @@ PRIVATE
     info/polls/info_polls_results_widget.h
     info/profile/info_profile_actions.cpp
     info/profile/info_profile_actions.h
+    info/profile/info_profile_details_widgets.cpp
+    info/profile/info_profile_details_widgets.h
     info/profile/info_profile_badge_tooltip.cpp
     info/profile/info_profile_badge_tooltip.h
     info/profile/info_profile_badge.cpp
