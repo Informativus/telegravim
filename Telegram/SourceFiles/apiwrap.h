@@ -95,6 +95,7 @@ class ComposeWithAi;
 class Transcribes;
 class Premium;
 class ReadMetrics;
+class ReadReceipts;
 class Usernames;
 class Websites;
 
@@ -466,6 +467,7 @@ public:
 	[[nodiscard]] Api::UnreadThings &unreadThings();
 	[[nodiscard]] Api::Ringtones &ringtones();
 	[[nodiscard]] Api::ComposeWithAi &composeWithAi();
+	[[nodiscard]] Api::ReadReceipts &readReceipts();
 	[[nodiscard]] Api::Transcribes &transcribes();
 	[[nodiscard]] Api::Premium &premium();
 	[[nodiscard]] Api::Usernames &usernames();
@@ -845,6 +847,7 @@ private:
 	const std::unique_ptr<Api::UnreadThings> _unreadThings;
 	const std::unique_ptr<Api::Ringtones> _ringtones;
 	const std::unique_ptr<Api::ComposeWithAi> _composeWithAi;
+	const std::unique_ptr<Api::ReadReceipts> _readReceipts;
 	const std::unique_ptr<Api::Transcribes> _transcribes;
 	const std::unique_ptr<Api::Premium> _premium;
 	const std::unique_ptr<Api::Usernames> _usernames;

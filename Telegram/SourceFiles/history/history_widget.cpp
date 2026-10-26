@@ -178,6 +178,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/player/media_player_instance.h"
 #include "core/application.h"
 #include "apiwrap.h"
+#include "api/api_read_receipts.h"
 #include "base/qthelp_regex.h"
 #include "ui/boxes/report_box_graphics.h"
 #include "ui/chat/pinned_bar.h"
@@ -3892,12 +3893,15 @@ void HistoryWidget::showHistory(
 		}
 
 		// Must be done before unreadCountUpdated(), or we auto-close.
-		if (_history->unreadMark()) {
+		if (_history->unreadMark()
+			&& !session().api().readReceipts().enabled()) {
 			session().data().histories().changeDialogUnreadMark(
 				_history,
 				false);
 		}
-		if (_migrated && _migrated->unreadMark()) {
+		if (_migrated
+			&& _migrated->unreadMark()
+			&& !session().api().readReceipts().enabled()) {
 			session().data().histories().changeDialogUnreadMark(
 				_migrated,
 				false);
@@ -5024,7 +5028,9 @@ bool HistoryWidget::handleDrawToReplyRequest(
 }
 
 void HistoryWidget::unreadCountUpdated() {
-	if (_history->unreadMark() || (_migrated && _migrated->unreadMark())) {
+	if (!session().api().readReceipts().enabled()
+		&& (_history->unreadMark()
+			|| (_migrated && _migrated->unreadMark()))) {
 		crl::on_main(this, [=, history = _history] {
 			if (history == _history) {
 				closeCurrent();

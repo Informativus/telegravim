@@ -218,6 +218,8 @@ PRIVATE
     api/api_reactions_notify_settings.h
     api/api_read_metrics.cpp
     api/api_read_metrics.h
+    api/api_read_receipts.cpp
+    api/api_read_receipts.h
     api/api_report.cpp
     api/api_report.h
     api/api_ringtones.cpp

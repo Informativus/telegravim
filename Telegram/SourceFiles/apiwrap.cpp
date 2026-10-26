@@ -38,6 +38,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_unread_things.h"
 #include "api/api_ringtones.h"
 #include "api/api_compose_with_ai.h"
+#include "api/api_read_receipts.h"
 #include "api/api_transcribes.h"
 #include "api/api_premium.h"
 #include "api/api_user_names.h"
@@ -230,6 +231,7 @@ ApiWrap::ApiWrap(not_null<Main::Session*> session)
 , _unreadThings(std::make_unique<Api::UnreadThings>(this))
 , _ringtones(std::make_unique<Api::Ringtones>(this))
 , _composeWithAi(std::make_unique<Api::ComposeWithAi>(this))
+, _readReceipts(std::make_unique<Api::ReadReceipts>(session))
 , _transcribes(std::make_unique<Api::Transcribes>(this))
 , _premium(std::make_unique<Api::Premium>(this))
 , _usernames(std::make_unique<Api::Usernames>(this))
@@ -1443,7 +1445,9 @@ void ApiWrap::markContentsRead(
 		QVector<MTPint>>();
 	markedIds.reserve(items.size());
 	for (const auto &item : items) {
-		if (!item->markContentsRead(true) || !item->isRegular()) {
+		if (readReceipts().deferContents(item)
+			|| !item->markContentsRead(true)
+			|| !item->isRegular()) {
 			continue;
 		}
 		if (const auto channel = item->history()->peer->asChannel()) {
@@ -1468,7 +1472,9 @@ void ApiWrap::markContentsRead(
 }
 
 void ApiWrap::markContentsRead(not_null<HistoryItem*> item) {
-	if (!item->markContentsRead(true) || !item->isRegular()) {
+	if (readReceipts().deferContents(item)
+		|| !item->markContentsRead(true)
+		|| !item->isRegular()) {
 		return;
 	}
 	const auto ids = MTP_vector<MTPint>(1, MTP_int(item->id));
@@ -5953,6 +5959,10 @@ Api::Ringtones &ApiWrap::ringtones() {
 
 Api::ComposeWithAi &ApiWrap::composeWithAi() {
 	return *_composeWithAi;
+}
+
+Api::ReadReceipts &ApiWrap::readReceipts() {
+	return *_readReceipts;
 }
 
 Api::Transcribes &ApiWrap::transcribes() {

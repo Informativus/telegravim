@@ -8947,3 +8947,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_local_transcribe_model_missing" = "Speech model not downloaded (465 MB).";
 "lng_local_transcribe_model_ready" = "Speech model downloaded. Ready for local transcription.";
 "lng_local_transcribe_download_failed" = "Could not download or verify the speech model. You can retry the download.";
+
+"lng_telegravim_settings" = "Telegravim Settings";
+"lng_telegravim_vim" = "Vim and Keyboard";
+"lng_telegravim_local" = "Local Features";
+"lng_telegravim_privacy" = "Reading Privacy";
+"lng_telegravim_local_free" = "Free in Telegravim";
+"lng_telegravim_folders" = "Folders, Colors and Tags";
+"lng_telegravim_saved_tags" = "Saved Messages: Tags and Pins";
+"lng_telegravim_local_about" = "These features are available without Telegram Premium. Open their usual Telegram editors here.";
+"lng_telegravim_business" = "Free and Premium Business Features";
+"lng_telegravim_read_after_send" = "Mark as read only after sending";
+"lng_telegravim_read_after_send_about" = "Read chats in their normal full-size window and play voice or video messages without sending read or listened receipts. A successful new message marks that conversation as read up to your message. Queued or failed sends, edits, reactions and scheduled messages do not mark it as read.\n\nApplies to this account in Telegravim. Ctrl+V still opens the small preview. Other Telegram clients keep their own reading behavior.";

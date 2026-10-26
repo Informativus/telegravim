@@ -71,6 +71,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_editing.h"
 #include "api/api_sending.h"
 #include "apiwrap.h"
+#include "api/api_read_receipts.h"
 #include "boxes/premium_preview_box.h"
 #include "data/business/data_shortcut_messages.h"
 #include "data/local_quick_reply_view.h"
@@ -4571,7 +4572,8 @@ void ChatWidget::subscribeToSublist() {
 	Expects(_sublist != nullptr);
 
 	// Must be done before unreadCountUpdated(), or we auto-close.
-	if (_sublist->unreadMark()) {
+	if (_sublist->unreadMark()
+		&& !session().api().readReceipts().enabled()) {
 		_sublist->owner().histories().changeSublistUnreadMark(
 			_sublist,
 			false);
@@ -4615,7 +4617,9 @@ void ChatWidget::subscribeToSublist() {
 void ChatWidget::unreadCountUpdated() {
 	if (mode() == Mode::History) {
 		const auto migrated = _history->migrateFrom();
-		if (_history->unreadMark() || (migrated && migrated->unreadMark())) {
+		if (!session().api().readReceipts().enabled()
+			&& (_history->unreadMark()
+				|| (migrated && migrated->unreadMark()))) {
 			crl::on_main(this, [=] {
 				closeCurrent();
 			});
@@ -4628,7 +4632,9 @@ void ChatWidget::unreadCountUpdated() {
 			: _history->amMonoforumAdmin()
 			? _history->chatListUnreadState().messages
 			: _history->chatListBadgesState().unreadCounter);
-	} else if (_sublist && _sublist->unreadMark()) {
+	} else if (_sublist
+		&& _sublist->unreadMark()
+		&& !session().api().readReceipts().enabled()) {
 		crl::on_main(this, [=] {
 			const auto guard = base::make_weak(this);
 			controller()->showPeerHistory(_sublist->owningHistory());
@@ -4693,13 +4699,16 @@ void ChatWidget::restoreState(not_null<ChatMemento*> memento) {
 	updateBotKeyboard();
 	if (mode() == Mode::History) {
 		// Must be done before unreadCountUpdated(), or we auto-close.
-		if (_history->unreadMark()) {
+		if (_history->unreadMark()
+			&& !session().api().readReceipts().enabled()) {
 			session().data().histories().changeDialogUnreadMark(
 				_history,
 				false);
 		}
 		const auto migrated = _history->migrateFrom();
-		if (migrated && migrated->unreadMark()) {
+		if (migrated
+			&& migrated->unreadMark()
+			&& !session().api().readReceipts().enabled()) {
 			session().data().histories().changeDialogUnreadMark(
 				migrated,
 				false);

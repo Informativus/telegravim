@@ -22,6 +22,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/application.h"
 #include "lang/lang_keys.h"
 #include "apiwrap.h"
+#include "api/api_read_receipts.h"
 
 namespace Data {
 namespace {
@@ -969,6 +970,12 @@ void RepliesList::readTill(MsgId tillId) {
 void RepliesList::readTill(
 		MsgId tillId,
 		HistoryItem *tillIdItem) {
+	if (!_history->session().api().readReceipts().allowed(
+			_history->peer->id,
+			tillId,
+			_rootId)) {
+		return;
+	}
 	if (!IsServerMsgId(tillId)) {
 		return;
 	}
@@ -1003,6 +1010,12 @@ void RepliesList::sendReadTillRequest() {
 		_readRequestTimer.cancel();
 	}
 	const auto api = &_history->session().api();
+	if (!api->readReceipts().allowed(
+			_history->peer->id,
+			computeInboxReadTillFull(),
+			_rootId)) {
+		return;
+	}
 	api->request(base::take(_readRequestId)).cancel();
 
 	_readRequestId = api->request(MTPmessages_ReadDiscussion(

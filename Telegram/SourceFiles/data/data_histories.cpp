@@ -35,6 +35,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_element.h"
 #include "core/application.h"
 #include "apiwrap.h"
+#include "api/api_read_receipts.h"
 
 namespace Data {
 namespace {
@@ -253,6 +254,10 @@ void Histories::readInboxTill(
 		bool force) {
 	Expects(IsServerMsgId(tillId) || (!tillId && !force));
 
+	if (!session().api().readReceipts().allowed(history->peer->id, tillId)) {
+		return;
+	}
+
 	DEBUG_LOG(("Reading: readInboxTill %1, force %2."
 		).arg(tillId.bare
 		).arg(Logs::b(force)));
@@ -350,6 +355,9 @@ void Histories::readInboxOnNewMessage(not_null<HistoryItem*> item) {
 }
 
 void Histories::readClientSideMessage(not_null<HistoryItem*> item) {
+	if (session().api().readReceipts().enabled()) {
+		return;
+	}
 	if (item->out() || !item->unread(item->history())) {
 		return;
 	}
@@ -695,6 +703,13 @@ void Histories::sendReadRequests() {
 	const auto now = crl::now();
 	auto next = std::optional<crl::time>();
 	for (auto &[history, state] : _states) {
+		if (!session().api().readReceipts().allowed(
+				history->peer->id,
+				state.willReadTill)) {
+			state.willReadTill = 0;
+			state.willReadWhen = 0;
+			continue;
+		}
 		if (!state.willReadTill) {
 			DEBUG_LOG(("Reading: skipping zero till."));
 			continue;
