@@ -4943,7 +4943,9 @@ void HistoryWidget::newItemAdded(not_null<HistoryItem*> item) {
 		return;
 	}
 	if (item->showNotification()) {
-		destroyUnreadBar();
+		if (!session().api().readReceipts().enabled()) {
+			destroyUnreadBar();
+		}
 		if (markingMessagesRead()) {
 			if (_list && item->hasUnwatchedEffect()) {
 				_list->startEffectOnRead(item);
@@ -5251,7 +5253,9 @@ void HistoryWidget::windowShown() {
 }
 
 bool HistoryWidget::markingMessagesRead() const {
-	return markingContentsRead() && !session().supportMode();
+	return markingContentsRead()
+		&& !session().supportMode()
+		&& !session().api().readReceipts().enabled();
 }
 
 bool HistoryWidget::markingContentsRead() const {

@@ -61,6 +61,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/vim_keymap_bindings.h"
 #include "core/vim_keymap_geometry.h"
 #include "apiwrap.h"
+#include "api/api_read_receipts.h"
 #include "api/api_who_reacted.h"
 #include "api/api_views.h"
 #include "layout/layout_selection.h"
@@ -3056,7 +3057,9 @@ bool ListWidget::markingContentsRead() const {
 }
 
 bool ListWidget::markingMessagesRead() const {
-	return markingContentsRead() && !session().supportMode();
+	return markingContentsRead()
+		&& !session().supportMode()
+		&& !session().api().readReceipts().enabled();
 }
 
 void ListWidget::showFinished() {
