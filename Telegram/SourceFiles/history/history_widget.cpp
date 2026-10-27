@@ -1592,7 +1592,9 @@ void HistoryWidget::initVoiceRecordBar() {
 			if (_peer) {
 				if (const auto error = Data::RestrictionError(
 						_peer,
-						ChatRestriction::SendVoiceMessages)) {
+						(_send->type() == Ui::SendButton::Type::Transcribe)
+							? ChatRestriction::SendOther
+							: ChatRestriction::SendVoiceMessages)) {
 					return error;
 				}
 			}
@@ -1682,8 +1684,8 @@ void HistoryWidget::initVoiceRecordBar() {
 
 	_voiceRecordBar->recordingTipRequests(
 	) | rpl::on_next([=] {
-		Core::App().settings().setRecordVideoMessages(
-			!Core::App().settings().recordVideoMessages());
+		_voiceRecordBar->cycleRecordButtonType(
+			_recordAvailability == Webrtc::RecordAvailability::VideoAndAudio);
 		updateSendButtonType();
 		switch (_send->type()) {
 		case Ui::SendButton::Type::Record: {
@@ -1694,6 +1696,9 @@ void HistoryWidget::initVoiceRecordBar() {
 		} break;
 		case Ui::SendButton::Type::Round:
 			controller()->showToast(tr::lng_record_video_tip(tr::now));
+			break;
+		case Ui::SendButton::Type::Transcribe:
+			controller()->showToast(tr::lng_local_dictation_tip(tr::now));
 			break;
 		}
 	}, lifetime());
@@ -6082,6 +6087,18 @@ void HistoryWidget::sendVoice(const VoiceToSend &data) {
 	if (!canWriteMessage() || data.bytes.isEmpty() || !_history) {
 		return;
 	}
+	if (!data.transcription.isEmpty()) {
+		sendTextWithTags({ data.transcription }, false, data.options,
+			crl::guard(this, [=] { _voiceRecordBar->clearListenState(); }));
+		return;
+	}
+	if (const auto error = Data::RestrictionError(_history->peer,
+			data.video
+				? ChatRestriction::SendVideoMessages
+				: ChatRestriction::SendVoiceMessages)) {
+		Data::ShowSendErrorToast(controller(), _history->peer, error);
+		return;
+	}
 
 	const auto withPaymentApproved = [=](int approved) {
 		auto copy = data;
@@ -6408,10 +6425,7 @@ auto HistoryWidget::computeSendButtonType() const {
 		return Type::Cancel;
 	} else if (showRecordButton()) {
 		const auto both = Webrtc::RecordAvailability::VideoAndAudio;
-		const auto video = Core::App().settings().recordVideoMessages();
-		return (video && _recordAvailability == both)
-			? Type::Round
-			: Type::Record;
+		return _voiceRecordBar->recordButtonType(_recordAvailability == both);
 	}
 	return Type::Send;
 }
@@ -6867,8 +6881,7 @@ void HistoryWidget::sendButtonClicked() {
 		cancelInlineBot();
 	} else if (type == Ui::SendButton::Type::Stop) {
 		stopStreamedDraft();
-	} else if (type != Ui::SendButton::Type::Record
-		&& type != Ui::SendButton::Type::Round) {
+	} else if (!Ui::SendButton::IsRecordingType(type)) {
 		send({});
 	}
 }
@@ -7292,13 +7305,15 @@ void HistoryWidget::updateSendButtonType() {
 		? Type::Stop
 		: computeSendButtonType();
 	const auto forbidden = [&] {
-		if (type != Type::Record && type != Type::Round) {
+		if (!Ui::SendButton::IsRecordingType(type)) {
 			return false;
 		}
 		if (!_peer) {
 			return false;
 		}
-		const auto restriction = (type == Type::Record)
+		const auto restriction = (type == Type::Transcribe)
+			? ChatRestriction::SendOther
+			: (type == Type::Record)
 			? ChatRestriction::SendVoiceMessages
 			: ChatRestriction::SendVideoMessages;
 		return !!Data::RestrictionError(_peer, restriction);
@@ -7343,8 +7358,7 @@ void HistoryWidget::updateSendButtonType() {
 	});
 	_send->setDisabled(disabledBySlowmode
 		&& (type == Type::Send
-			|| type == Type::Record
-			|| type == Type::Round));
+			|| Ui::SendButton::IsRecordingType(type)));
 
 	if (delay != 0) {
 		base::call_delayed(

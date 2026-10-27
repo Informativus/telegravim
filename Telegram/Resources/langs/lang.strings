@@ -8939,7 +8939,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_local_transcribe_title" = "Local transcription";
 "lng_local_transcribe_enable" = "Use local transcription without Premium";
 "lng_local_transcribe_dont_show" = "Don't show this offer again";
-"lng_local_transcribe_settings_about" = "Transcribe voice and video messages on this device for free, without uploading them. Download the speech model once (465 MB) from Hugging Face. These preferences apply to this account on this device. Premium accounts always use Telegram's standard transcription. With local transcription off, Telegram's usual limits apply.";
+"lng_local_transcribe_settings_about" = "Transcribe voice and video messages on this device for free, without uploading them. Download the speech model once (465 MB) from Hugging Face. These preferences apply to this account on this device. For received messages, Premium accounts use Telegram's standard transcription. With local transcription off, Telegram's usual limits apply. Recording with transcription is a separate local option below.";
 "lng_local_transcribe_offer_ready" = "Enable free local transcription of voice and video messages? The speech model is already downloaded. Audio and transcripts stay on your device. You can change this later in Settings > Advanced > Local transcription.";
 "lng_local_transcribe_download_enable" = "Download and enable";
 "lng_local_transcribe_enable_button" = "Enable";
@@ -8959,3 +8959,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_telegravim_business" = "Free and Premium Business Features";
 "lng_telegravim_read_after_send" = "Mark as read only after sending";
 "lng_telegravim_read_after_send_about" = "Read chats in their normal full-size window and play voice or video messages without sending read or listened receipts. A successful new message marks that conversation as read up to your message. Queued or failed sends, edits, reactions and scheduled messages do not mark it as read.\n\nApplies to this account in Telegravim. Ctrl+V still opens the small preview. Other Telegram clients keep their own reading behavior.";
+
+"lng_local_dictation_enable" = "Record with local transcription";
+"lng_local_dictation_about" = "Adds a text mode to the recording button. Click to switch voice → video → text, then hold to record. Review and edit the transcript before choosing to send text or voice.";
+"lng_local_dictation_title" = "Voice to text";
+"lng_local_dictation_tip" = "Hold to record, then review and send text or voice.";
+"lng_local_dictation_review" = "Review your recording";
+"lng_local_dictation_private" = "Transcribed on this device. Nothing is sent until you choose text or voice.";
+"lng_local_dictation_placeholder" = "Edit the transcription";
+"lng_local_dictation_send_text" = "Send text";
+"lng_local_dictation_send_voice" = "Send voice";

@@ -4435,7 +4435,9 @@ void ComposeControls::initVoiceRecordBar() {
 			if (peer) {
 				if (const auto error = Data::RestrictionError(
 						peer,
-						ChatRestriction::SendVoiceMessages)) {
+						(_send->type() == Ui::SendButton::Type::Transcribe)
+							? ChatRestriction::SendOther
+							: ChatRestriction::SendVoiceMessages)) {
 					return error;
 				}
 			}
@@ -4463,8 +4465,8 @@ void ComposeControls::initVoiceRecordBar() {
 
 	_voiceRecordBar->recordingTipRequests(
 	) | rpl::on_next([=] {
-		Core::App().settings().setRecordVideoMessages(
-			!Core::App().settings().recordVideoMessages());
+		_voiceRecordBar->cycleRecordButtonType(
+			_recordAvailability == Webrtc::RecordAvailability::VideoAndAudio);
 		updateSendButtonType();
 		switch (_send->type()) {
 		case Ui::SendButton::Type::Record: {
@@ -4475,6 +4477,9 @@ void ComposeControls::initVoiceRecordBar() {
 		} break;
 		case Ui::SendButton::Type::Round:
 			_show->showToast(tr::lng_record_video_tip(tr::now));
+			break;
+		case Ui::SendButton::Type::Transcribe:
+			_show->showToast(tr::lng_local_dictation_tip(tr::now));
 			break;
 		}
 	}, _wrap->lifetime());
@@ -4865,10 +4870,7 @@ auto ComposeControls::computeSendButtonType() const {
 		return Type::Cancel;
 	} else if (showRecordButton()) {
 		const auto both = Webrtc::RecordAvailability::VideoAndAudio;
-		const auto video = Core::App().settings().recordVideoMessages();
-		return (video && _recordAvailability == both)
-			? Type::Round
-			: Type::Record;
+		return _voiceRecordBar->recordButtonType(_recordAvailability == both);
 	} else if (showEditStarsButton()) {
 		return Type::EditPrice;
 	}
@@ -4930,13 +4932,15 @@ void ComposeControls::updateSendButtonType() {
 		? Type::Stop
 		: computeSendButtonType();
 	const auto forbidden = [&] {
-		if (type != Type::Record && type != Type::Round) {
+		if (!Ui::SendButton::IsRecordingType(type)) {
 			return false;
 		}
 		if (!_history) {
 			return false;
 		}
-		const auto restriction = (type == Type::Record)
+		const auto restriction = (type == Type::Transcribe)
+			? ChatRestriction::SendOther
+			: (type == Type::Record)
 			? ChatRestriction::SendVoiceMessages
 			: ChatRestriction::SendVideoMessages;
 		return !!Data::RestrictionError(_history->peer, restriction);
@@ -4986,8 +4990,7 @@ void ComposeControls::updateSendButtonType() {
 	});
 	_send->setDisabled(_sendDisabledBySlowmode.current()
 		&& (type == Type::Send
-			|| type == Type::Record
-			|| type == Type::Round));
+			|| Ui::SendButton::IsRecordingType(type)));
 	updateSendLockBadge();
 }
 
@@ -6369,8 +6372,7 @@ bool ComposeControls::isRecordingPressed() const {
 	return !_voiceRecordBar->isRecordingLocked()
 		&& (!_voiceRecordBar->isHidden()
 			|| (_send->isDown()
-				&& (_send->type() == Ui::SendButton::Type::Record
-					|| _send->type() == Ui::SendButton::Type::Round)));
+				&& Ui::SendButton::IsRecordingType(_send->type())));
 }
 
 rpl::producer<bool> ComposeControls::recordingActiveValue() const {

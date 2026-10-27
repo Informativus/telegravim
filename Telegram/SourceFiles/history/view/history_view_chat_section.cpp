@@ -2717,6 +2717,18 @@ void ChatWidget::send() {
 }
 
 void ChatWidget::sendVoice(const ComposeControls::VoiceToSend &data) {
+	if (!data.transcription.isEmpty()) {
+		sendTextWithTags({ data.transcription }, false, data.options,
+			crl::guard(this, [=] { _composeControls->clearListenState(); }));
+		return;
+	}
+	if (const auto error = Data::RestrictionError(_history->peer,
+			data.video
+				? ChatRestriction::SendVideoMessages
+				: ChatRestriction::SendVoiceMessages)) {
+		Data::ShowSendErrorToast(controller(), _history->peer, error);
+		return;
+	}
 	const auto withPaymentApproved = [=](int approved) {
 		auto copy = data;
 		copy.options.starsApproved = approved;

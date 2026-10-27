@@ -120,6 +120,18 @@ void ShowLocalTranscriptionSettings(
 		) | rpl::on_next(crl::guard(session, [=](bool value) {
 			local->setEnabled(value);
 		}), box->lifetime());
+		const auto dictation = box->addRow(object_ptr<Ui::Checkbox>(
+			box,
+			tr::lng_local_dictation_enable(tr::now),
+			local->dictationEnabled()));
+		dictation->checkedChanges(
+		) | rpl::on_next(crl::guard(session, [=](bool value) {
+			local->setDictationEnabled(value);
+		}), box->lifetime());
+		box->addRow(object_ptr<Ui::FlatLabel>(
+			box,
+			tr::lng_local_dictation_about(),
+			st::boxLabel));
 		box->addRow(object_ptr<Ui::FlatLabel>(
 			box,
 			tr::lng_local_transcribe_language(),

@@ -82,6 +82,19 @@ void LocalTranscription::setEnabled(bool enabled) {
 	}
 }
 
+bool LocalTranscription::dictationEnabled() const {
+	return Core::App().settings().readPref<bool>(
+		"local_dictation_enabled_" + std::to_string(_session->uniqueId()));
+}
+
+void LocalTranscription::setDictationEnabled(bool enabled) {
+	Core::App().settings().writePref<bool>(
+		"local_dictation_enabled_" + std::to_string(_session->uniqueId()),
+		enabled);
+	Core::App().saveSettingsDelayed();
+	_modelChanges.fire({});
+}
+
 QString LocalTranscription::language() const {
 	const auto stored = Core::App().settings().readPref<QByteArray>(
 		"local_transcription_language_" + std::to_string(_session->uniqueId()));
@@ -180,8 +193,42 @@ void LocalTranscription::cancel(FullMsgId id) {
 	_update(id, {}, true, true);
 }
 
+uint64 LocalTranscription::enqueueRecording(
+		QByteArray bytes,
+		RecordingUpdate update) {
+	const auto id = ++_nextRecordingId;
+	_recordings.push_back({ id, std::move(bytes), std::move(update) });
+	crl::on_main(crl::guard(this, [=] { next(); }));
+	return id;
+}
+
+void LocalTranscription::cancelRecording(uint64 id) {
+	std::erase_if(_recordings, [=](const Recording &entry) {
+		return entry.id == id;
+	});
+	if (_activeRecording && _activeRecording->id == id) {
+		_cancelled->store(true);
+		if (!_running) {
+			finish({}, true);
+		}
+	}
+}
+
 void LocalTranscription::next() {
-	if (_active || _queue.empty()) {
+	if (_active || _activeRecording) {
+		return;
+	}
+	if (!_recordings.empty()) {
+		_activeRecording = std::move(_recordings.front());
+		_recordings.pop_front();
+		_cancelled = std::make_shared<std::atomic<bool>>(false);
+		if (needsModel()) {
+			downloadModel();
+		} else {
+			recognize();
+		}
+		return;
+	} else if (_queue.empty()) {
 		return;
 	}
 	_active = _queue.front();
@@ -213,6 +260,12 @@ void LocalTranscription::next() {
 }
 
 void LocalTranscription::check() {
+	if (_activeRecording) {
+		if (!_running && !_reply) {
+			recognize();
+		}
+		return;
+	}
 	if (!_active) {
 		return;
 	}
@@ -269,7 +322,9 @@ void LocalTranscription::check() {
 }
 
 void LocalTranscription::publish(QString text) {
-	if (_active && !_cancelled->load()) {
+	if (_activeRecording && !_cancelled->load()) {
+		_activeRecording->update(std::move(text), false, false);
+	} else if (_active && !_cancelled->load()) {
 		_update(*_active, std::move(text), false, false);
 	}
 }
@@ -356,7 +411,12 @@ void LocalTranscription::modelDownloadFailed() {
 		_queue.pop_front();
 		_update(id, ErrorText(Error::Model), true, true);
 	}
-	if (_active && !_running) {
+	while (!_recordings.empty()) {
+		auto entry = std::move(_recordings.front());
+		_recordings.pop_front();
+		entry.update(ErrorText(Error::Model), true, true);
+	}
+	if ((_active || _activeRecording) && !_running) {
 		finish(ErrorText(Error::Model), true);
 	}
 }
@@ -364,9 +424,11 @@ void LocalTranscription::modelDownloadFailed() {
 void LocalTranscription::recognize() {
 	_running = true;
 	publish(tr::lng_local_transcribe_preparing(tr::now));
-	const auto bytes = _media->bytes();
+	const auto bytes = _activeRecording
+		? _activeRecording->bytes
+		: _media->bytes();
 	const auto audioDirectory = _audioDirectory;
-	const auto location = bytes.isEmpty()
+	const auto location = (bytes.isEmpty() && _media)
 		? _media->owner()->location(true)
 		: Core::FileLocation();
 	const auto model = modelPath();
@@ -424,15 +486,20 @@ void LocalTranscription::clearAudioDownload() {
 }
 
 void LocalTranscription::finish(QString text, bool failed) {
-	const auto id = *_active;
+	const auto id = _active;
+	auto recording = std::exchange(_activeRecording, std::nullopt);
+	const auto cancelled = std::exchange(_cancelled, nullptr);
 	_timer.stop();
 	clearAudioDownload();
 	_media.reset();
 	_active.reset();
-	if (!_cancelled->load()) {
-		_update(id, std::move(text), true, failed);
+	if (!cancelled->load()) {
+		if (recording) {
+			recording->update(std::move(text), true, failed);
+		} else if (id) {
+			_update(*id, std::move(text), true, failed);
+		}
 	}
-	_cancelled.reset();
 	crl::on_main(crl::guard(this, [=] { next(); }));
 }
 

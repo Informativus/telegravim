@@ -32,12 +32,15 @@ namespace Api {
 class LocalTranscription final : public QObject {
 public:
 	using Update = Fn<void(FullMsgId, QString, bool, bool)>;
+	using RecordingUpdate = Fn<void(QString, bool, bool)>;
 
 	LocalTranscription(not_null<Main::Session*> session, Update update);
 	~LocalTranscription();
 
 	[[nodiscard]] bool enabled() const;
 	void setEnabled(bool enabled);
+	[[nodiscard]] bool dictationEnabled() const;
+	void setDictationEnabled(bool enabled);
 	[[nodiscard]] QString language() const;
 	void setLanguage(const QString &language);
 	[[nodiscard]] QString recognitionLanguage() const;
@@ -51,8 +54,16 @@ public:
 	void cancelModelDownload();
 	void enqueue(FullMsgId id);
 	void cancel(FullMsgId id);
+	[[nodiscard]] uint64 enqueueRecording(QByteArray bytes, RecordingUpdate update);
+	void cancelRecording(uint64 id);
 
 private:
+	struct Recording {
+		uint64 id = 0;
+		QByteArray bytes;
+		RecordingUpdate update;
+	};
+
 	void next();
 	void check();
 	void modelDownloadFailed();
@@ -66,6 +77,9 @@ private:
 	const Update _update;
 	std::deque<FullMsgId> _queue;
 	std::optional<FullMsgId> _active;
+	std::deque<Recording> _recordings;
+	std::optional<Recording> _activeRecording;
+	uint64 _nextRecordingId = 0;
 	std::shared_ptr<Data::DocumentMedia> _media;
 	std::shared_ptr<QTemporaryDir> _audioDirectory;
 	std::shared_ptr<std::atomic<bool>> _cancelled;
