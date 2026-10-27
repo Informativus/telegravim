@@ -1,19 +1,10 @@
 --- a/TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java
 +++ b/TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java
-@@ -417,7 +417,8 @@
-             Intent intent = getIntent();
-             boolean isProxy = false;
-             if (intent != null && intent.getAction() != null) {
+@@ -420 +420,2 @@
 -                if (Intent.ACTION_SEND.equals(intent.getAction()) || Intent.ACTION_SEND_MULTIPLE.equals(intent.getAction())) {
 +                if ((Intent.ACTION_SEND.equals(intent.getAction()) || Intent.ACTION_SEND_MULTIPLE.equals(intent.getAction()))
 +                        && !org.telegram.messenger.televim.OfflineSettingsInput.matches(intent)) {
-                     super.onCreate(savedInstanceState);
-                     finish();
-                     return;
-@@ -1509,6 +1510,29 @@
- 
-     @SuppressLint("Range")
-     private boolean handleIntent(Intent intent, boolean isNew, boolean restore, boolean fromPassword, Browser.Progress progress, boolean rebuildFragments, boolean openedTelegram) {
+@@ -1511,0 +1513,23 @@
 +        if (org.telegram.messenger.televim.OfflineSettingsInput.matches(intent)) {
 +            if (!fromPassword && (AndroidUtilities.needShowPasscode(true) || SharedConfig.isWaitingForPasscodeEnter)) {
 +                showPasscodeActivity(true, false, -1, -1, null, null);
@@ -37,6 +28,3 @@
 +            presentFragment(new OfflineSettingsActivity(input, invalid));
 +            return true;
 +        }
-         if (GiftInfoBottomSheet.handleIntent(intent, progress)) {
-             return true;
-         }

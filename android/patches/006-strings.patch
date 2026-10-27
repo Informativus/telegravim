@@ -1,12 +1,7 @@
 --- a/TMessagesProj/src/main/res/values-ar/strings.xml
 +++ b/TMessagesProj/src/main/res/values-ar/strings.xml
-@@ -1,7 +1,7 @@
- <?xml version="1.0" encoding="utf-8"?>
- <resources>
+@@ -3,2 +3,2 @@
 -    <string name="AppName">تيليجرام</string>
 -    <string name="AppNameBeta">(Beta) تيليجرام</string>
 +    <string name="AppName">Televim</string>
 +    <string name="AppNameBeta">Televim Beta</string>
-     <string name="LanguageName">العربية</string>
-     <string name="English">الإنجليزية</string>
-     <string name="LanguageNameInEnglish">Arabic</string>

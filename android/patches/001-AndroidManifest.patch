@@ -1,29 +1,14 @@
 --- a/TMessagesProj/src/main/AndroidManifest.xml
 +++ b/TMessagesProj/src/main/AndroidManifest.xml
-@@ -87,6 +87,7 @@
-     <uses-sdk tools:overrideLibrary="com.google.mlkit.vision.segmentation.subject"/>
- 
-     <queries>
+@@ -89,0 +90 @@
 +        <provider android:authorities="com.android.externalstorage.documents" />
-         <package android:name="com.google.android.apps.maps"/>
-         <intent>
-             <action android:name="android.intent.action.VIEW"/>
-@@ -96,9 +97,8 @@
- 
-     <application
-         android:name="org.telegram.messenger.ApplicationLoader"
+@@ -99,3 +100,2 @@
 -        android:allowBackup="true"
 -        android:restoreAnyVersion="true"
 -        android:backupAgent=".BackupAgent"
 +        android:allowBackup="false"
 +        android:restoreAnyVersion="false"
-         android:hardwareAccelerated="true"
-         android:largeHeap="true"
-         android:theme="@style/Theme.TMessages.Start"
-@@ -216,6 +216,24 @@
-             android:launchMode="singleTask"
-             android:windowSoftInputMode="adjustResize"
-             android:exported="true">
+@@ -218,0 +219,18 @@
 +            <intent-filter>
 +                <action android:name="android.intent.action.VIEW" />
 +                <category android:name="android.intent.category.DEFAULT" />
@@ -42,6 +27,3 @@
 +                <category android:name="android.intent.category.DEFAULT" />
 +                <data android:scheme="content" android:host="*" android:pathPattern=".*\\.tgv" android:mimeType="application/octet-stream" />
 +            </intent-filter>
-             <intent-filter>
-                 <action android:name="android.intent.action.MAIN" />
-             </intent-filter>

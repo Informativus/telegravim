@@ -286,8 +286,8 @@ def customize(destination, manifest, inputs, modes, cache):
                 if entry:
                     path = entry.split(b"\t", 2)[2].decode("utf-8")
                     safe_path(destination, path, include_leaf=True)
-            git(destination, "apply", "--check", "--whitespace=error-all", "--", str(patch), environment=environment)
-            git(destination, "apply", "--whitespace=error-all", "--", str(patch), environment=environment)
+            git(destination, "apply", "--check", "--unidiff-zero", "--whitespace=error-all", "--", str(patch), environment=environment)
+            git(destination, "apply", "--unidiff-zero", "--whitespace=error-all", "--", str(patch), environment=environment)
     for name, data in inputs["overlay"].items():
         path = safe_path(destination, name, include_leaf=True)
         path.parent.mkdir(parents=True, exist_ok=True)

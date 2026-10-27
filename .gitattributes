@@ -8,4 +8,4 @@
 # Ensure lottie animations are treated as binary files
 *.lottie binary
 
-android/patches/*.patch text eol=lf whitespace=-blank-at-eol
+android/patches/*.patch text eol=lf

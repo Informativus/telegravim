@@ -1,20 +1,8 @@
 --- a/TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java
 +++ b/TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java
-@@ -725,6 +725,7 @@
-         items.add(SettingCell.Factory.of(8, IconBackgroundColors.CYAN.top, IconBackgroundColors.CYAN.bottom, R.drawable.settings_devices, getString(R.string.SettingsDevices), getString(R.string.SettingsDevicesInfo)));
-         items.add(SettingCell.Factory.of(9, IconBackgroundColors.ORANGE_DEEP.top, IconBackgroundColors.ORANGE_DEEP.bottom, R.drawable.settings_power, getString(R.string.SettingsPowerSaving), getString(R.string.SettingsPowerSavingInfo)));
-         items.add(SettingCell.Factory.of(10, IconBackgroundColors.PURPLE.top, IconBackgroundColors.PURPLE.bottom, R.drawable.settings_language, getString(R.string.SettingsLanguage), LocaleController.getCurrentLanguageName()));
+@@ -727,0 +728 @@
 +        items.add(SettingCell.Factory.of(27, IconBackgroundColors.BLUE.top, IconBackgroundColors.BLUE.bottom, R.drawable.settings_data, getString(R.string.TelevimImportTitle)));
- 
-         items.add(UItem.asShadow(null));
-         if (!walletAbove && getMessagesController().config.walletAvailable.get()) {
-@@ -837,6 +838,9 @@
-             return;
-         }
-         switch (item.id) {
+@@ -839,0 +841,3 @@
 +            case 27:
 +                presentSettingFragment(new OfflineSettingsActivity());
 +                break;
-             case 1:
-                 presentSettingFragment(new UserInfoActivity());
-                 break;
