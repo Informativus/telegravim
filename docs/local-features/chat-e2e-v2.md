@@ -126,6 +126,9 @@ reconstructed from an exported settings file.
 
 Desktop identity, selected peer keys, historical key records, counters,
 handshakes and receipts live in the account-local encrypted `e2e-state` file.
+A separate `e2e-state-required` marker is committed before the first state write.
+If state is later missing while the marker remains, sending fails closed instead
+of generating a replacement identity or silently sending ordinary messages.
 Atomic persistence must finish successfully before publishing an identity,
 returning ciphertext, acknowledging receipt or changing the visible mode.
 Unreadable state fails closed. Android stores its software EC identity, counters,

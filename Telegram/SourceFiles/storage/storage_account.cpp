@@ -281,6 +281,7 @@ base::flat_set<QString> Account::collectGoodNames() const {
 		"maps",
 		"configs",
 		u"e2e-state"_q,
+		u"e2e-state-required"_q,
 	};
 	const auto push = [&](FileKey key) {
 		if (!key) {
@@ -3738,6 +3739,9 @@ std::optional<QByteArray> Account::readE2eState() const {
 	}
 	auto file = QFile(_basePath + u"e2e-state"_q);
 	if (!file.exists()) {
+		if (QFile::exists(_basePath + u"e2e-state-required"_q)) {
+			return std::nullopt;
+		}
 		return QByteArray();
 	}
 	if (!file.open(QIODevice::ReadOnly)
@@ -3765,6 +3769,20 @@ bool Account::writeE2eState(const QByteArray &state) {
 	auto data = EncryptedDescriptor(state.size() + sizeof(quint32));
 	data.stream << state;
 	const auto encrypted = PrepareEncrypted(data, _localKey);
+	if (encrypted.isEmpty()) {
+		return false;
+	}
+	const auto requiredPath = _basePath + u"e2e-state-required"_q;
+	if (!QFile::exists(requiredPath)) {
+		auto required = QSaveFile(requiredPath);
+		if (!required.open(QIODevice::WriteOnly)
+			|| !required.setPermissions(
+				QFileDevice::ReadOwner | QFileDevice::WriteOwner)
+			|| required.write("TVE2", 4) != 4
+			|| !required.commit()) {
+			return false;
+		}
+	}
 	auto file = QSaveFile(_basePath + u"e2e-state"_q);
 	if (!file.open(QIODevice::WriteOnly)
 		|| !file.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner)
