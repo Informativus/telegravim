@@ -1623,11 +1623,6 @@ void Filler::addThemeEdit() {
 		&st::menuIconChangeColors);
 }
 
-void ShowDisableSharingBox(
-		not_null<SessionController*> controller,
-		not_null<PeerData*> peer,
-		Fn<void(bool)> toggleNoForwards) {
-	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
 void Filler::addToggleE2E() {
 	const auto user = _peer ? _peer->asUser() : nullptr;
 	if (!user || user->isSelf() || user->isBot()) {
@@ -1666,6 +1661,11 @@ void Filler::addToggleE2E() {
 	}, &st::menuIconLock);
 }
 
+void ShowDisableSharingBox(
+		not_null<SessionController*> controller,
+		not_null<PeerData*> peer,
+		Fn<void(bool)> toggleNoForwards) {
+	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
 		box->setStyle(st::showOrBox);
 		box->setWidth(st::boxWideWidth);
 		box->addTopButton(st::boxTitleClose, [=] {
