@@ -809,9 +809,18 @@ def reviewed_finding(run: dict, result: dict, source: Path, reviews: list) -> bo
         "Telegram/SourceFiles/api/api_local_quick_reply_sending.cpp": {
             "cpp/poorly-documented-function",
         },
+        "Telegram/SourceFiles/api/api_polls.cpp": {
+            "cpp/poorly-documented-function",
+        },
         "Telegram/SourceFiles/api/api_sending.cpp": {
             "cpp/poorly-documented-function",
             "cpp/use-in-own-initializer",
+        },
+        "Telegram/SourceFiles/api/api_todo_lists.cpp": {
+            "cpp/poorly-documented-function",
+        },
+        "Telegram/SourceFiles/boxes/share_box.cpp": {
+            "cpp/poorly-documented-function",
         },
         "Telegram/SourceFiles/data/data_types.h": {
             "cpp/ambiguously-signed-bit-field",
@@ -827,6 +836,13 @@ def reviewed_finding(run: dict, result: dict, source: Path, reviews: list) -> bo
         },
         "Telegram/SourceFiles/inline_bots/inline_bot_result.cpp": {
             "cpp/missing-return",
+            "cpp/poorly-documented-function",
+        },
+        "Telegram/SourceFiles/main/main_session.h": {
+            "cpp/member-const-no-effect",
+            "cpp/non-member-const-no-effect",
+        },
+        "Telegram/SourceFiles/media/stories/media_stories_share.cpp": {
             "cpp/poorly-documented-function",
         },
         "Telegram/SourceFiles/media/transcription/transcription_engine.cpp": {
@@ -914,6 +930,9 @@ def reviewed_finding(run: dict, result: dict, source: Path, reviews: list) -> bo
             "cpp/ambiguously-signed-bit-field",
             "cpp/member-const-no-effect",
             "cpp/missing-return",
+        },
+        "Telegram/SourceFiles/storage/storage_account.cpp": {
+            "cpp/non-member-const-no-effect",
         },
         "Telegram/SourceFiles/tests/vim_config_tests.h": {
             "cpp/constant-comparison",
