@@ -508,37 +508,44 @@ public:
 	}
 
 	bool load() {
+		// A snapshot keeps identity, peer-key epochs and receipts together.
+		// Only accounts without a snapshot may migrate the old preferences.
+		// Selecting an old peer key must retain its counters and receipt ledger;
+		// validating both directions prevents a restart from making a replay fresh.
+		// The caller discards every loaded record if any part is malformed.
 		const auto stored = session->local().readE2eState();
 		if (!stored) {
 			return false;
 		}
+		const auto hasSnapshot = !stored->isEmpty();
+		const auto snapshot = hasSnapshot ? DecodeState(*stored) : QJsonObject();
+		const auto version = hasSnapshot
+			? snapshot.value(u"version"_q).toInt()
+			: 1;
 		auto serialized = session->local().readPref<QByteArray>(
 			kIdentityPref,
 			QByteArray());
 		const auto legacyPeers = session->local().readPref<QByteArray>(
 			kPeersPref,
 			QByteArray());
-		if (stored->isEmpty() && !legacyPeers.isEmpty()
+		if (!hasSnapshot && !legacyPeers.isEmpty()
 			&& !QJsonDocument::fromJson(legacyPeers).isObject()) {
 			return false;
 		}
 		auto state = DecodeState(legacyPeers);
-		auto version = 1;
-		if (!stored->isEmpty()) {
-			const auto root = DecodeState(*stored);
-			version = root.value(u"version"_q).toInt();
-			const auto decoded = Base64(root.value(u"identity"_q).toString());
+		if (hasSnapshot) {
+			const auto decoded = Base64(snapshot.value(u"identity"_q).toString());
 			if ((version != 1 && version != 2)
 				|| !decoded || decoded->isEmpty()
-				|| !root.value(u"peers"_q).isObject()
-				|| (version == 2 && root.value(u"account"_q).toString()
+				|| !snapshot.value(u"peers"_q).isObject()
+				|| (version == 2 && snapshot.value(u"account"_q).toString()
 					!= QString::number(session->userId().bare))) {
 				return false;
 			}
 			serialized = *decoded;
-			state = root.value(u"peers"_q).toObject();
+			state = snapshot.value(u"peers"_q).toObject();
 		}
-		if (stored->isEmpty() && serialized.isEmpty() && state.isEmpty()) {
+		if (!hasSnapshot && serialized.isEmpty() && state.isEmpty()) {
 			return true;
 		}
 		constexpr auto kPrefixSize = sizeof(kIdentityVersion) - 1;
