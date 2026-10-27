@@ -54,6 +54,10 @@ MTPInputReplyTo ReplyToForMTP(
 		}
 	} else if (replyTo.messageId || replyTo.topicRootId) {
 		const auto to = LookupReplyTo(history, replyTo.messageId);
+		if (to && to->isE2eProtected()) {
+			replyTo.quote = {};
+			replyTo.quoteOffset = 0;
+		}
 		const auto replyingToTopic = replyTo.topicRootId
 			? history->peer->forumTopicFor(replyTo.topicRootId)
 			: nullptr;

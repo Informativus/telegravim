@@ -319,17 +319,34 @@ void Session::applyE2eMessage(
 	const auto peerId = item->history()->peer->id;
 	const auto wireText = qs(message.vmessage());
 	const auto outgoing = message.is_out();
+	const auto protectedMessage = E2E::Chat::IsKeyExchange(wireText)
+		|| E2E::Chat::IsEnvelope(wireText)
+		|| session->e2e().isEncrypted(peerId, item->id)
+		|| item->isE2eProtected();
+	if (protectedMessage
+		&& (!item->history()->peer->isUser()
+			|| item->history()->peer->isSelf()
+			|| message.vfwd_from()
+			|| message.vvia_bot_id()
+			|| message.vvia_business_bot_id()
+			|| message.vguestchat_via_from()
+			|| (message.vfrom_id()
+				&& peerFromMTP(*message.vfrom_id())
+					!= (outgoing ? session->userPeerId() : peerId)))) {
+		item->setEncryptedText(u"Encrypted message unavailable"_q);
+		return;
+	}
 	if (E2E::Chat::IsKeyExchange(wireText)) {
-		item->setText({ session->e2e().controlNotice(
-			peerId, wireText, outgoing, live), {} });
+		item->setEncryptedText(session->e2e().controlNotice(
+			peerId, wireText, outgoing, live));
 	} else if (E2E::Chat::IsEnvelope(wireText)) {
 		const auto received = session->e2e().receive(
 			peerId, item->id, outgoing, live, wireText);
 		if (!received) {
-			item->setText({ u"Encrypted message unavailable"_q, {} });
+			item->setEncryptedText(u"Encrypted message unavailable"_q);
 			return;
 		}
-		item->setText({ received->text, {} });
+		item->setEncryptedText(received->text);
 		if (!received->replies.empty()) {
 			crl::on_main(session, [=, replies = received->replies] {
 				for (const auto &reply : replies) {
@@ -342,8 +359,8 @@ void Session::applyE2eMessage(
 				}
 			});
 		}
-	} else if (session->e2e().isEncrypted(peerId, item->id)) {
-		item->setText({ u"Encrypted message unavailable"_q, {} });
+	} else if (protectedMessage) {
+		item->setEncryptedText(u"Encrypted message unavailable"_q);
 	}
 }
 

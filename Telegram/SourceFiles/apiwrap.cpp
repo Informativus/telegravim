@@ -3869,6 +3869,14 @@ void ApiWrap::forwardMessages(
 		return;
 	}
 	Expects(!draft.items.empty());
+	if (ranges::any_of(draft.items, [](not_null<HistoryItem*> item) {
+			return item->isE2eProtected();
+		})) {
+		sendMessageFail(
+			u"Forwarding encrypted messages is unavailable."_q,
+			action.history->peer);
+		return;
+	}
 
 	auto &histories = _session->data().histories();
 
@@ -4972,6 +4980,9 @@ void ApiWrap::sendMessage(
 			sendFlags |= MTPmessages_SendMessage::Flag::f_allow_paid_stars;
 			mediaFlags |= MTPmessages_SendMedia::Flag::f_allow_paid_stars;
 		}
+		const auto localText = encrypted
+			? TextWithEntities{ wireText, {} }
+			: displayedSending;
 		lastMessage = history->addNewLocalMessage({
 			.id = newId.msg,
 			.flags = flags,
@@ -4984,7 +4995,10 @@ void ApiWrap::sendMessage(
 			.postAuthor = NewMessagePostAuthor(action),
 			.effectId = action.options.effectId,
 			.suggest = HistoryMessageSuggestInfo(action.options),
-		}, displayedSending, media);
+		}, localText, media);
+		if (encrypted || message.e2eControl) {
+			lastMessage->setEncryptedText(displayedSending.text);
+		}
 		const auto done = [=](
 				const MTPUpdates &result,
 				const MTP::Response &response) {
@@ -5002,7 +5016,9 @@ void ApiWrap::sendMessage(
 				lastMessage->destroy();
 			} else {
 				sendMessageFail(error, peer, randomId, newId);
-				if (!action.options.scheduled
+				if (!encrypted
+					&& !message.e2eControl
+					&& !action.options.scheduled
 					&& !action.options.shortcutId) {
 					const auto failed = _session->data().message(newId);
 					const auto local = history->localDraft(

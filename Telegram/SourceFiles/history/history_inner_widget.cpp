@@ -3573,6 +3573,11 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 		? reinterpret_cast<DocumentData*>(
 			link->property(kDocumentLinkMediaProperty).toULongLong())
 		: nullptr;
+	const auto protectedSelection = (_selectedTextItem
+		&& _selectedTextItem->isE2eProtected())
+		|| ranges::any_of(_selected, [](not_null<HistoryItem*> item) {
+			return item->isE2eProtected();
+		});
 	if (lnkPhoto || lnkDocument) {
 		const auto item = _dragStateItem;
 		const auto itemId = item ? item->fullId() : FullMsgId();
@@ -3589,14 +3594,17 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 					[=] { copySelectedText(); },
 					&st::menuIconCopy);
 			}
-			if (item && !Ui::SkipTranslate(selectedText.rich)) {
+			if (item
+				&& !item->isE2eProtected()
+				&& !protectedSelection
+				&& !Ui::SkipTranslate(selectedText.rich)) {
 				const auto peer = item->history()->peer;
 				_menu->addAction(tr::lng_context_translate_selected({}), [=] {
 					_controller->show(Box(
 						Ui::TranslateBox,
 						peer,
 						MsgId(),
-						getSelectedText().rich,
+						selectedText.rich,
 						hasCopyRestrictionForSelected()));
 				}, &st::menuIconTranslate);
 			}
@@ -3751,7 +3759,10 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 					[=] { copySelectedText(); },
 					&st::menuIconCopy);
 			}
-			if (item && !Ui::SkipTranslate(selectedText.rich)) {
+			if (item
+				&& !item->isE2eProtected()
+				&& !protectedSelection
+				&& !Ui::SkipTranslate(selectedText.rich)) {
 				const auto peer = item->history()->peer;
 				_menu->addAction(tr::lng_context_translate_selected({}), [=] {
 					_controller->show(Box(
@@ -3868,6 +3879,7 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 							&st::menuIconCopy);
 					}
 					if ((!item->translation() || !_history->translatedTo())
+						&& !item->isE2eProtected()
 						&& (view->hasVisibleText() || mediaHasTextForCopy)) {
 						const auto peer = item->history()->peer;
 						const auto itemId = item->id;
