@@ -58,12 +58,18 @@ public final class OfflineSettingsInput {
             return false;
         }
         String type = intent.getType();
-        if ("application/x-televim-settings".equals(type) || "application/json".equals(type)) {
+        if ("application/x-televim-settings".equals(type)) {
             return true;
         }
         String name = uri == null ? null : uri.getLastPathSegment();
-        return name != null && (name.toLowerCase(Locale.ROOT).endsWith(".tgv")
-                || name.toLowerCase(Locale.ROOT).endsWith(".json"));
+        if (name != null) {
+            name = name.toLowerCase(Locale.ROOT);
+        }
+        if (name != null && name.endsWith(".tgv")) {
+            return true;
+        }
+        return Intent.ACTION_VIEW.equals(intent.getAction())
+                && ("application/json".equals(type) || (name != null && name.endsWith(".json")));
     }
 
     public static OfflineSettingsInput fromIntent(Intent intent) throws IOException {

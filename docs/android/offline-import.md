@@ -70,11 +70,13 @@ It must not download a recognition model or pass frames to another service.
 
 ## Local files
 
-The initial file entrypoint is a user-initiated **Open with** or **Share** action
-on an already-local file in Android's file manager, targeting Televim. The app
-does not promise a universal offline system file picker: a document provider or
-picker can contact a cloud service even when a URI starts with `content://` or
-`EXTRA_LOCAL_ONLY` is requested.
+For an already-local JSON file in Android's file manager, use **Open with**
+and select Televim. Encrypted `.tgv` files support both **Open with** and
+**Share** to Televim. Sharing an ordinary JSON file retains Telegram's native
+file-sending behavior; an explicit `application/x-televim-settings` MIME type
+still selects the importer. The app does not promise a universal offline system
+file picker: a document provider or picker can contact a cloud service even
+when a URI starts with `content://` or `EXTRA_LOCAL_ONLY` is requested.
 
 Before provider queries or file reads, verify the granted read access and the
 supported local authority, package and system-provider identity. Reject remote,

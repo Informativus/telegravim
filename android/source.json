@@ -12,7 +12,7 @@
     ".gitignore": "75ba9225f13be90206a6352cf921cd7acafb55b6fdc34a6c924bdcdade879fc6",
     "TMessagesProj/build.gradle": "2ecae877c1d9f447eee4bd5ffa237adda3710aff952e279849d502fb7d1f7875",
     "TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java": "451cf3b0f05e902ef75dff1247404b8eccb9e3238c584f5c165ee08bc0c084c7",
-    "TMessagesProj/src/main/java/org/telegram/messenger/televim/OfflineSettingsInput.java": "0aca6a8fc40039acae7aac0417e4b992092bdada535f72be1cad2ac790d968c6",
+    "TMessagesProj/src/main/java/org/telegram/messenger/televim/OfflineSettingsInput.java": "681b5808dad2343da66c79154e390dd6943f5a392b0a3535f4e29b086fa235d9",
     "TMessagesProj/src/main/java/org/telegram/messenger/televim/OfflineSettingsStore.java": "b9907e7496e6bd20fb99e096558cb3b39e047290627111b4b1198be7316c798f",
     "TMessagesProj/src/main/java/org/telegram/messenger/televim/OfflineTransfer.java": "5f767bff3974fba5ec0e28d83d1001ab01e4e9ca41c5ef4b2a85c2b6205f50ae",
     "TMessagesProj/src/main/java/org/telegram/messenger/televim/StrictJson.java": "f44df0803aacc7687a25f88661cd9856a2a668e1feee58dcb233ed2986713e8d",
@@ -25,8 +25,8 @@
     "TMessagesProj/src/main/res/mipmap-anydpi/icon_5_foreground_sa.xml": "3a98f559417e14a93e97f0588e3958ddaa8ea559fb77180fb69bd5188d50883b",
     "TMessagesProj/src/main/res/mipmap-anydpi/icon_6_foreground_sa.xml": "3a98f559417e14a93e97f0588e3958ddaa8ea559fb77180fb69bd5188d50883b",
     "TMessagesProj/src/main/res/mipmap-anydpi/icon_foreground_sa.xml": "3a98f559417e14a93e97f0588e3958ddaa8ea559fb77180fb69bd5188d50883b",
-    "TMessagesProj/src/main/res/values-ru/televim.xml": "6e7c822e4c848c13df3fa03e9876e2718959352c5db19dd34b7fabcd5a0390c8",
-    "TMessagesProj/src/main/res/values/televim.xml": "12e96d445e1c5d39f8d3d5ecd17ad889dd5c0ba2aa5f033521d30b204345e244",
+    "TMessagesProj/src/main/res/values-ru/televim.xml": "1394670d48656682ee7d24252a54c3803f77aeea9bfa067d8a55d650fdc76d26",
+    "TMessagesProj/src/main/res/values/televim.xml": "bbeb696897b5b4f517e6e09cf61d941006138819b69f7c0cfca69bea371165fd",
     "TMessagesProj_AppStandalone/build.gradle": "39c99500dffff1656cc2aaebdf0cbfabecddaf8d4002a8f0cbaeb301003dfc97",
     "TMessagesProj_AppStandalone/src/main/res/mipmap-anydpi-v26/ic_launcher_sa.xml": "6dfeedcd9025906b30f51d0a68970bea2c53787e612c3faf7b3e76f0aad977c2",
     "TMessagesProj_AppStandalone/src/main/res/mipmap-anydpi-v26/icon_2_launcher_sa.xml": "627eccaf92f2fb79a1a51e5888226bb5f9dc700f514890827fdfff5caf0749f9",
@@ -58,7 +58,9 @@
     "012-strings.patch": "238d68077ad40180ab01f1c98a19d89ad597274b707e727f64c5743f8af726e6",
     "013-strings.patch": "113fe3b05343eb5356f31833cc52ce0e31948596deca80358a085ccda19a22d6",
     "014-strings.patch": "8fa3947c1bca42b3cb1828e4d8a3c8fa35c0f07a78d564eec7ab1302ff46c679",
-    "015-strings.patch": "ffc9374f2b07e506518912848e172d47ed67210bac70c21c12d2dd4bb5d355dd"
+    "015-strings.patch": "ffc9374f2b07e506518912848e172d47ed67210bac70c21c12d2dd4bb5d355dd",
+    "016-TelegramBuildAppPlugin-localization.patch": "e7587edf8d81e6c1d19a9335071958a0968c6d8d2186fd1e085a2dbe8e81dd40",
+    "017-TelegramBuildPlugin-localization.patch": "2aac900fdcc7237ec354dc4a60bb0e829ead77af97d270df0ffbe7340ed9a2e9"
   },
   "upstream_commit": "3de37c8cfb039452be7398909461da6288babf15"
 }

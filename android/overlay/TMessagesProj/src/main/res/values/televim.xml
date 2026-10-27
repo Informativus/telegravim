@@ -9,7 +9,7 @@
     <string name="TelevimImportScan">Scan settings QR</string>
     <string name="TelevimImportPreview">Preview import</string>
     <string name="TelevimImportApply">Apply settings and retain package</string>
-    <string name="TelevimImportFiles">For a file, open your device storage in the system Files app, then use Open with or Share → Televim. Only physical local storage from the system provider is accepted. Cloud files, virtual files, and web links are rejected. Encrypted files can be at most 8 MiB; JSON can be at most 2 MiB.</string>
+    <string name="TelevimImportFiles">For a file, open your device storage in the system Files app. For JSON, choose Open with → Televim. For an encrypted .tgv file, choose Open with or Share → Televim. Only physical local storage from the system provider is accepted. Cloud files, virtual files, and web links are rejected. Encrypted files can be at most 8 MiB; JSON can be at most 2 MiB.</string>
     <string name="TelevimImportLocalFile">Local settings file</string>
     <string name="TelevimImportFileReady">A local file is selected. Enter its export password if encrypted, then preview. A JSON settings file does not need a password.</string>
     <string name="TelevimImportWorking">Checking the package locally…</string>
