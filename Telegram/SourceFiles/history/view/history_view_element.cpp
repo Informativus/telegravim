@@ -2877,14 +2877,8 @@ void Element::refreshReactions() {
 					item->chosenReactions(),
 					id);
 				if (item->reactionsAreTags()) {
-					if (item->history()->session().premium()) {
-						const auto tag = Data::SearchTagToQuery(id);
-						HashtagClickHandler(tag).onClick(context);
-					} else if (controller) {
-						ShowPremiumPreviewBox(
-							controller,
-							PremiumFeature::TagsForMessages);
-					}
+					const auto tag = Data::SearchTagToQuery(id);
+					HashtagClickHandler(tag).onClick(context);
 					return;
 				}
 				if (id.paid()) {

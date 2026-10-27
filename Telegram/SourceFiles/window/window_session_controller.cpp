@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/window_session_controller.h"
 
+#include "data/data_message_reactions.h"
+
 #include "apiwrap.h"
 #include "api/api_cloud_password.h"
 #include "api/api_text_entities.h"
@@ -46,6 +48,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_saved_messages.h"
 #include "data/data_saved_sublist.h"
 #include "data/data_session.h"
+#include "data/local_pinned_dialogs.h"
 #include "data/data_thread.h"
 #include "data/data_file_origin.h"
 #include "data/data_flags.h"
@@ -62,6 +65,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_forum.h"
 #include "data/data_forum_topic.h"
 #include "data/data_chat_filters.h"
+#include "data/local_navigation_preferences.h"
 #include "data/data_replies_list.h"
 #include "data/data_peer_values.h"
 #include "data/data_premium_limits.h"
@@ -1582,6 +1586,20 @@ SessionController::SessionController(
 , _chatStyle(std::make_unique<Ui::ChatStyle>(session->colorIndicesValue())) {
 	init();
 
+	session->data().localPinnedDialogs().errors(
+	) | rpl::on_next([=](const QString &error) {
+		showToast(error);
+	}, lifetime());
+	session->data().chatsFilters().localErrors(
+	) | rpl::on_next([=](const QString &error) {
+		showToast(error);
+	}, lifetime());
+
+	session->data().reactions().localTagErrors(
+	) | rpl::on_next([=](const QString &error) {
+		showToast(error);
+	}, lifetime());
+
 	_chatStyleTheme = _defaultChatTheme;
 	_chatStyle->apply(_defaultChatTheme.get());
 
@@ -1681,6 +1699,12 @@ SessionController::SessionController(
 		}
 		checkOpenedFilter();
 		crl::on_main(this, processFiltersMenu);
+	}, lifetime());
+	session->data().chatsFilters().navigationPreferences().changes(
+	) | rpl::on_next([=] {
+		if (!_filtersActivated) {
+			activateFirstChatsFilter();
+		}
 	}, lifetime());
 
 	session->data().itemIdChanged(
@@ -2054,7 +2078,8 @@ void SessionController::checkOpenedFilter() {
 void SessionController::activateFirstChatsFilter() {
 	if (_filtersActivated
 		|| !isPrimary()
-		|| !session().data().chatsFilters().loaded()) {
+		|| !session().data().chatsFilters().loaded()
+		|| !session().data().chatsFilters().navigationPreferences().loaded()) {
 		return;
 	}
 	_filtersActivated = true;
@@ -3325,6 +3350,15 @@ void SessionController::setActiveChatsFilter(
 		resetFakeUnreadWhileOpened();
 	}
 	_activeChatsFilter.force_assign(id);
+	if (changed) {
+		if (const auto reference = session().data().chatsFilters().stableReference(id);
+			!reference.isEmpty()) {
+			session().data().chatsFilters().navigationPreferences().setStartupRef(
+				reference);
+			session().data().chatsFilters().navigationPreferences().setLastSectionRef(
+				reference);
+		}
+	}
 	if (id || !changed) {
 		closeForum();
 		closeFolder();
@@ -4157,11 +4191,12 @@ bool CheckAndJumpToNearChatsFilter(
 	if (index == list->size() && id != 0) {
 		return false;
 	}
-	const auto changed = index + (isNext ? 1 : -1);
-	if (changed >= int(list->size()) || changed < 0) {
-		return false;
+	auto changed = index + (isNext ? 1 : -1);
+	while (changed >= 0 && changed < int(list->size())
+		&& session->data().chatsFilters().isLocked((*list)[changed].id())) {
+		changed += isNext ? 1 : -1;
 	}
-	if (changed > Data::PremiumLimits(session).dialogFiltersCurrent()) {
+	if (changed >= int(list->size()) || changed < 0) {
 		return false;
 	}
 	if (jump) {

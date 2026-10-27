@@ -110,6 +110,33 @@ nice_target_sources(Telegram ${src_loc}
 PRIVATE
     ${style_files}
 
+    boxes/local_transfer_box.cpp
+    boxes/local_transfer_box.h
+    data/local_pinned_dialogs.cpp
+    data/local_pinned_dialogs.h
+    data/local_chat_folders.cpp
+    data/local_chat_folders.h
+    data/local_navigation_preferences.cpp
+    data/local_navigation_preferences.h
+    data/local_pinned_items.cpp
+    data/local_pinned_items.h
+    data/local_saved_tags.cpp
+    data/local_saved_tags.h
+    data/local_saved_tags_search.cpp
+    data/local_saved_tags_search.h
+    storage/local_data_store.cpp
+    storage/local_data_store.h
+    storage/local_chat_folders_format.cpp
+    storage/local_chat_folders_format.h
+    storage/local_navigation_preferences_format.cpp
+    storage/local_navigation_preferences_format.h
+    storage/local_pinned_items_format.cpp
+    storage/local_pinned_items_format.h
+    storage/local_transfer.cpp
+    storage/local_transfer.h
+    storage/local_transfer_format.cpp
+    storage/local_transfer_format.h
+
     api/api_attached_stickers.cpp
     api/api_attached_stickers.h
     api/api_authorizations.cpp

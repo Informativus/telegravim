@@ -19,6 +19,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_saved_messages.h"
 #include "data/data_session.h"
 #include "data/data_user.h"
+#include "dialogs/dialogs_key.h"
 #include "history/view/history_view_item_preview.h"
 #include "history/history.h"
 #include "history/history_item.h"
@@ -31,6 +32,13 @@ namespace {
 
 constexpr auto kMessagesPerPage = 50;
 constexpr auto kReadRequestTimeout = 3 * crl::time(1000);
+
+[[nodiscard]] bool CloudPinned(not_null<SavedSublist*> sublist) {
+	return ranges::contains(
+		sublist->owner().cloudPinnedChatsOrder(sublist->parent()),
+		sublist.get(),
+		&Dialogs::Key::sublist);
+}
 
 } // namespace
 
@@ -216,7 +224,7 @@ void SavedSublist::applyItemAdded(not_null<HistoryItem*> item) {
 	} else {
 		setLastMessage(item);
 	}
-	if (!_parent->parentChat() && !isPinnedDialog(FilterId())) {
+	if (!_parent->parentChat() && !CloudPinned(this)) {
 		if (_restorePinnedWhenNonEmpty) {
 			owner().setChatPinned(this, FilterId(), true);
 			_restorePinnedWhenNonEmpty = false;
@@ -253,7 +261,7 @@ void SavedSublist::applyItemRemoved(MsgId id) {
 						return;
 					} else if ((_skippedBefore == 0) || locallyKnownEmpty) {
 						if (!_parent->parentChat()
-							&& isPinnedDialog(FilterId())) {
+							&& CloudPinned(this)) {
 							_restorePinnedWhenNonEmpty = true;
 							owner().setChatPinned(this, FilterId(), false);
 						}
@@ -1180,7 +1188,7 @@ void SavedSublist::loadAround(MsgId id) {
 				_fullCount = _skippedBefore = _skippedAfter = 0;
 				if (!_parent->parentChat()
 					&& !_chatListMessage.value_or(nullptr)) {
-					if (isPinnedDialog(FilterId())) {
+					if (CloudPinned(this)) {
 						_restorePinnedWhenNonEmpty = true;
 						owner().setChatPinned(this, FilterId(), false);
 					}

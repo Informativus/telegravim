@@ -175,9 +175,9 @@ public:
 	void chatPreviewShown(bool shown, RowDescriptor row = {});
 	[[nodiscard]] bool vimKeymapOpenChatPreview();
 		bool chooseRow(
-			Qt::KeyboardModifiers modifiers = {},
-			MsgId pressedTopicRootId = {},
-			PeerId pressedSublistPeerId = {});
+			Qt::KeyboardModifiers modifiers = Qt::KeyboardModifiers(),
+			MsgId pressedTopicRootId = MsgId(),
+			PeerId pressedSublistPeerId = PeerId());
 		bool processKeyDispatch(QKeyEvent *e);
 		[[nodiscard]] bool vimKeymapNavigateSearchResults(
 			Qt::Key key,
@@ -660,8 +660,12 @@ private:
 
 	[[nodiscard]] QImage *cacheChatsFilterTag(
 		const Data::ChatFilter &filter,
-		uint8 more,
+		int more,
 		bool active);
+	[[nodiscard]] bool lookupChatsFilterTagsOverflow(
+		Row *row,
+		QPoint localPosition);
+	void showChatsFilterTagsMenu(not_null<Row*> row);
 
 	void performDrag();
 
@@ -689,6 +693,8 @@ private:
 	}};
 	bool _selectedChatTypeFilter = false;
 	bool _pressedChatTypeFilter = false;
+	bool _selectedChatFilterTagsOverflow = false;
+	bool _pressedChatFilterTagsOverflow = false;
 	bool _selectedMorePosts = false;
 	bool _pressedMorePosts = false;
 	int _collapsedSelected = -1;

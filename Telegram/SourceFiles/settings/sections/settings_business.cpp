@@ -36,6 +36,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings/business/settings_quick_replies.h"
 #include "settings/business/settings_working_hours.h"
 #include "settings/sections/settings_main.h"
+#include "settings/sections/settings_folders.h"
 #include "settings/settings_builder.h"
 #include "settings/settings_common.h"
 #include "settings/settings_common_session.h"
@@ -549,7 +550,7 @@ void BuildBusinessSectionContent(
 
 			const auto showFeature = [=](PremiumFeature feature) {
 				if (feature == PremiumFeature::FilterTags) {
-					ShowPremiumPreviewToBuy(controller, feature);
+					showOther(FoldersId());
 					return;
 				}
 				showOther([&] {
@@ -616,7 +617,8 @@ void BuildBusinessSectionContent(
 
 			AddBusinessSummary(content, controller, state, [=](PremiumFeature feature) {
 				const auto alwaysAvailable
-					= (feature == PremiumFeature::BusinessBots);
+					= (feature == PremiumFeature::BusinessBots)
+					|| (feature == PremiumFeature::FilterTags);
 				if (!alwaysAvailable && !session->premium()) {
 					ShowPremiumPreviewToBuy(controller, feature, nullptr);
 					return;

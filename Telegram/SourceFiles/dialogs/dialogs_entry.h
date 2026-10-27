@@ -151,9 +151,9 @@ public:
 	[[nodiscard]] virtual const QString &chatListNameSortKey() const = 0;
 	[[nodiscard]] virtual int chatListNameVersion() const = 0;
 	[[nodiscard]] virtual auto chatListNameWords() const
-		-> const base::flat_set<QString> & = 0;
+		-> base::flat_set<QString> const & = 0;
 	[[nodiscard]] virtual auto chatListFirstLetters() const
-		-> const base::flat_set<QChar> & = 0;
+		-> base::flat_set<QChar> const & = 0;
 
 	[[nodiscard]] virtual bool folderKnown() const {
 		return true;
@@ -181,6 +181,8 @@ public:
 	}
 
 	[[nodiscard]] bool hasChatsFilterTags(FilterId exclude) const;
+	[[nodiscard]] std::vector<FilterId> chatsFilterTagIds(
+		FilterId exclude) const;
 protected:
 	void notifyUnreadStateChange(const UnreadState &wasState);
 	inline auto unreadStateChangeNotifier(bool required);

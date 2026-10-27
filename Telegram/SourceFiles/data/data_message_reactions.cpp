@@ -29,8 +29,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_file_origin.h"
 #include "data/data_peer_values.h"
 #include "data/data_saved_sublist.h"
+#include "data/local_saved_tags.h"
 #include "data/stickers/data_custom_emoji.h"
 #include "storage/localimageloader.h"
+#include "ui/chat/attach/attach_prepare.h"
 #include "ui/image/image_location_factory.h"
 #include "ui/animated_icon.h"
 #include "mtproto/mtproto_config.h"
@@ -42,6 +44,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "base/random.h"
 
+#include <QtCore/QBuffer>
+
 namespace Data {
 namespace {
 
@@ -50,7 +54,6 @@ constexpr auto kPollEach = 20 * crl::time(1000);
 constexpr auto kSizeForDownscale = 64;
 constexpr auto kRecentRequestTimeout = 10 * crl::time(1000);
 constexpr auto kRecentReactionsLimit = 40;
-constexpr auto kMyTagsRequestTimeout = crl::time(1000);
 constexpr auto kTopRequestDelay = 60 * crl::time(1000);
 constexpr auto kTopReactionsLimit = 14;
 constexpr auto kPaidAccumulatePeriod = 5 * crl::time(1000) + 500;
@@ -177,6 +180,13 @@ constexpr auto kPaidAccumulatePeriod = 5 * crl::time(1000) + 500;
 
 } // namespace
 
+bool UsesLocalSavedTags(not_null<const HistoryItem*> item) {
+	return item->history()->peer->isSelf()
+		&& item->isRegular()
+		&& !item->isScheduled()
+		&& IsServerMsgId(item->id);
+}
+
 PossibleItemReactionsRef LookupPossibleReactions(
 		not_null<HistoryItem*> item,
 		bool paidInFront) {
@@ -202,7 +212,8 @@ PossibleItemReactionsRef LookupPossibleReactions(
 	const auto &all = item->reactions();
 	const auto &allowed = PeerAllowedReactions(peer);
 	const auto limit = UniqueReactionsLimit(peer);
-	const auto premiumPossible = session->premiumPossible();
+	const auto localTags = UsesLocalSavedTags(item);
+	const auto premiumPossible = localTags || session->premiumPossible();
 	const auto limited = (all.size() >= limit) && [&] {
 		const auto my = item->chosenReactions();
 		if (my.empty()) {
@@ -364,12 +375,26 @@ PossibleItemReactions::PossibleItemReactions(
 
 Reactions::Reactions(not_null<Session*> owner)
 : _owner(owner)
+, _localSavedTags(std::make_unique<LocalSavedTags>(nullptr, &owner->session()))
 , _topRefreshTimer([=] { refreshTop(); })
 , _repaintTimer([=] { repaintCollected(); })
 , _sendPaidTimer([=] { sendPaid(); }) {
 	refreshDefault();
 
 	_myTags.emplace(nullptr);
+	_localTags.emplace(nullptr);
+	_localSavedTags->changes() | rpl::on_next([=] {
+		const auto error = _localSavedTags->error();
+		refreshLocalTags();
+		if (!error.isEmpty()) {
+			_localTagErrors.fire_copy(error);
+		}
+		if (Core::Quitting()) {
+			crl::on_main(&_owner->session(), [=] {
+				checkQuitPreventFinished();
+			});
+		}
+	}, _lifetime);
 
 	base::timer_each(
 		kRefreshFullListEach
@@ -397,6 +422,7 @@ Reactions::Reactions(not_null<Session*> owner)
 	}, _lifetime);
 
 	crl::on_main(&owner->session(), [=] {
+		_localSavedTags->reload();
 		// applyFavorite accesses not yet constructed parts of session.
 		rpl::single(rpl::empty) | rpl::then(
 			_owner->session().mtp().config().updates()
@@ -444,20 +470,125 @@ void Reactions::refreshDefault() {
 }
 
 void Reactions::refreshMyTags(SavedSublist *sublist) {
-	requestMyTags(sublist);
+	const auto added = !_localTags.contains(sublist);
+	if (added) {
+		_localTags.emplace(sublist);
+	}
+	refreshLocalTags(added);
+}
+
+LocalSavedTags &Reactions::localSavedTags() const {
+	return *_localSavedTags;
+}
+
+rpl::producer<QString> Reactions::localTagErrors() const {
+	return _localTagErrors.events();
+}
+
+void Reactions::toggleLocalTag(
+		not_null<HistoryItem*> item,
+		const ReactionId &id) {
+	Expects(UsesLocalSavedTags(item));
+	_localSavedTags->toggleReaction(item->fullId(), id);
+}
+
+void Reactions::refreshLocalTags(bool force) {
+	const auto revision = _localSavedTags->viewRevision();
+	if (!force && _localTagsRevision == revision) {
+		return;
+	}
+	_localTagsRevision = revision;
+	auto titles = base::flat_map<ReactionId, QString>();
+	for (const auto &info : myTagsInfo()) {
+		titles.emplace(info.id, info.title);
+	}
+	auto counts = base::flat_map<PeerId, base::flat_map<ReactionId, int>>();
+	auto chosen = base::flat_map<FullMsgId, std::vector<ReactionId>>();
+	for (const auto &[id, reactions] : _localSavedTags->nativeReactions()) {
+		if (reactions.empty()) {
+			continue;
+		}
+		auto ids = std::vector<ReactionId>();
+		ids.reserve(reactions.size());
+		const auto savedPeer = _localSavedTags->savedPeer(id);
+		for (const auto &reaction : reactions) {
+			ids.push_back(reaction.id);
+			++counts[PeerId()][reaction.id];
+			if (savedPeer) {
+				++counts[*savedPeer][reaction.id];
+			}
+		}
+		chosen.emplace(id, std::move(ids));
+	}
+	auto renamed = base::flat_set<ReactionId>();
+	for (auto &[sublist, local] : _localTags) {
+		local.info.clear();
+		const auto peer = sublist ? sublist->sublistPeer()->id : PeerId();
+		const auto &perPeer = counts[peer];
+		for (const auto &tag : _localSavedTags->tags()) {
+			if (!tag.reaction || tag.reaction.paid()) {
+				continue;
+			}
+			const auto i = perPeer.find(tag.reaction);
+			if (i == end(perPeer) || !i->second) {
+				continue;
+			}
+			local.info.push_back({
+				.id = tag.reaction,
+				.title = tag.title,
+				.count = i->second,
+			});
+			if (!sublist) {
+				const auto old = titles.find(tag.reaction);
+				if (old == end(titles) || old->second != tag.title) {
+					renamed.emplace(tag.reaction);
+				}
+			}
+		}
+		ranges::stable_sort(local.info, [](const MyTagInfo &a, const MyTagInfo &b) {
+			return a.count > b.count;
+		});
+		local.tags.clear();
+		for (const auto &info : local.info) {
+			if (auto reaction = resolveLocalTag(info.id)) {
+				reaction->title = info.title;
+				reaction->count = info.count;
+				local.tags.push_back(std::move(*reaction));
+			} else if (_unresolvedLocalTags.emplace(info.id).second) {
+				resolve(info.id);
+			}
+		}
+	}
+	auto changed = base::flat_set<FullMsgId>();
+	for (const auto &[id, reactions] : chosen) {
+		const auto i = _localChosen.find(id);
+		if (i == end(_localChosen) || i->second != reactions) {
+			changed.emplace(id);
+		}
+	}
+	for (const auto &entry : _localChosen) {
+		if (!chosen.contains(entry.first)) {
+			changed.emplace(entry.first);
+		}
+	}
+	_localChosen = std::move(chosen);
+	for (const auto id : changed) {
+		if (const auto item = _owner->message(id)) {
+			_owner->notifyItemDataChange(item);
+		}
+	}
+	for (const auto &id : renamed) {
+		_myTagRenamed.fire_copy(id);
+	}
+	const auto sublists = _localTags | ranges::views::keys
+		| ranges::to_vector;
+	for (const auto sublist : sublists) {
+		_myTagsUpdated.fire_copy(sublist);
+	}
 }
 
 void Reactions::refreshMyTagsDelayed() {
-	auto &my = _myTags[nullptr];
-	if (my.requestId || my.requestScheduled) {
-		return;
-	}
-	my.requestScheduled = true;
-	base::call_delayed(kMyTagsRequestTimeout, &_owner->session(), [=] {
-		if (_myTags[nullptr].requestScheduled) {
-			requestMyTags();
-		}
-	});
+	refreshLocalTags();
 }
 
 void Reactions::refreshTags() {
@@ -477,7 +608,7 @@ const std::vector<Reaction> &Reactions::list(Type type) const {
 	case Type::Top: return _top;
 	case Type::All: return _available;
 	case Type::MyTags:
-		return _myTags.find((SavedSublist*)nullptr)->second.tags;
+		return _localTags.find((SavedSublist*)nullptr)->second.tags;
 	case Type::Tags: return _tags;
 	case Type::Effects: return _effects;
 	}
@@ -485,12 +616,12 @@ const std::vector<Reaction> &Reactions::list(Type type) const {
 }
 
 const std::vector<MyTagInfo> &Reactions::myTagsInfo() const {
-	return _myTags.find((SavedSublist*)nullptr)->second.info;
+	return _localTags.find((SavedSublist*)nullptr)->second.info;
 }
 
 const QString &Reactions::myTagTitle(const ReactionId &id) const {
-	const auto i = _myTags.find((SavedSublist*)nullptr);
-	if (i != end(_myTags)) {
+	const auto i = _localTags.find((SavedSublist*)nullptr);
+	if (i != end(_localTags)) {
 		const auto j = ranges::find(i->second.info, id, &MyTagInfo::id);
 		if (j != end(i->second.info)) {
 			return j->title;
@@ -566,28 +697,11 @@ void Reactions::decrementMyTag(const ReactionId &id, SavedSublist *sublist) {
 	scheduleMyTagsUpdate(sublist);
 }
 
-void Reactions::renameTag(const ReactionId &id, const QString &name) {
-	auto changed = false;
-	for (auto &[sublist, my] : _myTags) {
-		auto i = ranges::find(my.info, id, &MyTagInfo::id);
-		if (i == end(my.info) || i->title == name) {
-			continue;
-		}
-		i->title = name;
-		changed = true;
-		scheduleMyTagsUpdate(sublist);
-	}
-	if (!changed) {
-		return;
-	}
-	_myTagRenamed.fire_copy(id);
-
-	using Flag = MTPmessages_UpdateSavedReactionTag::Flag;
-	_owner->session().api().request(MTPmessages_UpdateSavedReactionTag(
-		MTP_flags(name.isEmpty() ? Flag(0) : Flag::f_title),
-		ReactionToMTP(id),
-		MTP_string(name)
-	)).send();
+void Reactions::renameTag(
+		const ReactionId &id,
+		const QString &name,
+		Fn<void(bool)> done) {
+	_localSavedTags->renameReaction(id, name, std::move(done));
 }
 
 void Reactions::scheduleMyTagsUpdate(SavedSublist *sublist) {
@@ -730,6 +844,10 @@ void Reactions::preloadImageFor(const ReactionId &id) {
 	}
 	auto &set = _images.emplace(id).first->second;
 	set.effect = (id.custom() != 0);
+	if (_localTagMedia.contains(id)) {
+		generateImage(set, id.emoji());
+		return;
+	}
 	if (id.paid()) {
 		loadImage(set, lookupPaid()->centerIcon, true);
 		return;
@@ -928,8 +1046,6 @@ void Reactions::loadImage(
 }
 
 void Reactions::generateImage(ImageSet &set, const QString &emoji) {
-	Expects(set.effect);
-
 	const auto e = Ui::Emoji::Find(emoji);
 	Assert(e != nullptr);
 
@@ -942,7 +1058,9 @@ void Reactions::generateImage(ImageSet &set, const QString &emoji) {
 		QPainter p(&image);
 		Ui::Emoji::Draw(p, e, large, 0, 0);
 	}
-	const auto size = st::effectInfoImage;
+	const auto size = set.effect
+		? st::effectInfoImage
+		: st::reactionInlineImage;
 	set.image = image.scaled(size * factor, size * factor);
 	set.image.setDevicePixelRatio(factor);
 }
@@ -1250,6 +1368,7 @@ void Reactions::recentUpdated() {
 }
 
 void Reactions::defaultUpdated() {
+	refreshLocalTags(true);
 	refreshTop();
 	refreshRecent();
 	if (_genericAnimations.empty()) {
@@ -1288,6 +1407,7 @@ void Reactions::customEmojiResolveDone(not_null<DocumentData*> document) {
 		return;
 	}
 	const auto id = ReactionId{ { document->id } };
+	const auto localTag = _unresolvedLocalTags.remove(id);
 	const auto favorite = (_unresolvedFavoriteId == id);
 	const auto i = _unresolvedTop.find(id);
 	const auto top = (i != end(_unresolvedTop));
@@ -1337,6 +1457,9 @@ void Reactions::customEmojiResolveDone(not_null<DocumentData*> document) {
 	if (tag) {
 		_tagsUpdated.fire({});
 	}
+	if (localTag) {
+		refreshLocalTags(true);
+	}
 }
 
 std::optional<Reaction> Reactions::resolveById(const ReactionId &id) {
@@ -1352,6 +1475,55 @@ std::optional<Reaction> Reactions::resolveById(const ReactionId &id) {
 		}
 	}
 	return {};
+}
+
+std::optional<Reaction> Reactions::resolveLocalTag(const ReactionId &id) {
+	if (auto resolved = resolveById(id)) {
+		return resolved;
+	}
+	const auto emoji = Ui::Emoji::Find(id.emoji());
+	if (!emoji) {
+		return {};
+	}
+	if (!_localTagMedia.contains(id)) {
+		const auto size = Ui::Emoji::GetSizeLarge();
+		auto image = QImage(size, size, QImage::Format_ARGB32_Premultiplied);
+		image.setDevicePixelRatio(style::DevicePixelRatio());
+		image.fill(Qt::transparent);
+		{
+			auto painter = QPainter(&image);
+			Ui::Emoji::Draw(painter, emoji, size, 0, 0);
+		}
+		auto bytes = QByteArray();
+		auto buffer = QBuffer(&bytes);
+		if (!image.save(&buffer, "WEBP")) {
+			return {};
+		}
+		auto task = FileLoadTask(FileLoadTask::Args{
+			.session = &_owner->session(),
+			.content = bytes,
+			.type = SendMediaType::File,
+			.to = FileLoadTo(0, {}, {}, 0),
+			.caption = {},
+		});
+		task.process({ .generateGoodThumbnail = false });
+		const auto result = task.peekResult();
+		Assert(result != nullptr);
+		const auto document = _owner->processDocument(result->document);
+		Assert(document->sticker() != nullptr);
+		auto media = document->createMediaView();
+		media->setBytes(bytes);
+		_localTagMedia.emplace(id, std::move(media));
+		generateImage(_images[id], id.emoji());
+	}
+	const auto document = _localTagMedia.find(id)->second->owner();
+	return Reaction{
+		.id = id,
+		.appearAnimation = document,
+		.selectAnimation = document,
+		.centerIcon = document,
+		.active = true,
+	};
 }
 
 std::vector<Reaction> Reactions::resolveByIds(
@@ -1374,7 +1546,14 @@ std::optional<Reaction> Reactions::resolveByInfo(
 		SavedSublist *sublist) {
 	const auto withInfo = [&](Reaction reaction) {
 		reaction.count = info.count;
-		reaction.title = sublist ? myTagTitle(reaction.id) : info.title;
+		reaction.title = info.title;
+		if (sublist) {
+			const auto &global = _myTags.find((SavedSublist*)nullptr)->second.info;
+			const auto i = ranges::find(global, reaction.id, &MyTagInfo::id);
+			if (i != end(global)) {
+				reaction.title = i->title;
+			}
+		}
 		return reaction;
 	};
 	if (const auto emoji = info.id.emoji(); !emoji.isEmpty()) {
@@ -1496,6 +1675,9 @@ std::optional<Reaction> Reactions::parse(const MTPAvailableEffect &entry) {
 }
 
 void Reactions::send(not_null<HistoryItem*> item, bool addToRecent) {
+	if (UsesLocalSavedTags(item)) {
+		return;
+	}
 	const auto id = item->fullId();
 	auto &api = _owner->session().api();
 	auto i = _sentRequests.find(id);
@@ -1624,7 +1806,7 @@ rpl::producer<std::vector<Reaction>> Reactions::myTagsValue(
 		SavedSublist *sublist) {
 	refreshMyTags(sublist);
 	const auto list = [=] {
-		return _myTags[sublist].tags;
+		return _localTags[sublist].tags;
 	};
 	return rpl::single(
 		list()
@@ -1644,10 +1826,10 @@ bool Reactions::isQuitPrevent() {
 			sendPaid(item);
 		}
 	}
-	if (_sendingPaid.empty()) {
+	if (_sendingPaid.empty() && !_localSavedTags->busy()) {
 		return false;
 	}
-	LOG(("Reactions prevents quit, sending paid..."));
+	LOG(("Reactions prevents quit, finishing pending changes..."));
 	return true;
 }
 
@@ -1905,7 +2087,7 @@ void Reactions::sendPaidRequest(
 }
 
 void Reactions::checkQuitPreventFinished() {
-	if (_sendingPaid.empty()) {
+	if (_sendingPaid.empty() && !_localSavedTags->busy()) {
 		if (Core::Quitting()) {
 			LOG(("Reactions doesn't prevent quit any more."));
 		}

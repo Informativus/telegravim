@@ -467,8 +467,8 @@ not_null<Row*> Entry::addToChatList(
 void Entry::removeFromChatList(
 		FilterId filterId,
 		not_null<MainList*> list) {
-	if (isPinnedDialog(filterId)) {
-		list->pinned()->setPinned(this, false);
+	if (isPinnedDialog(filterId) || list->pinned()->hasProjection()) {
+		list->pinned()->removeEntry(this);
 		owner().notifyPinnedDialogsOrderUpdated();
 	}
 	if (filterId) {
@@ -536,6 +536,19 @@ bool Entry::hasChatsFilterTags(FilterId exclude) const {
 		}
 	}
 	return !_tagColors.empty();
+}
+
+std::vector<FilterId> Entry::chatsFilterTagIds(FilterId exclude) const {
+	auto result = std::vector<FilterId>();
+	if (!owner().chatsFilters().tagsEnabled()) {
+		return result;
+	}
+	for (const auto &filter : owner().chatsFilters().list()) {
+		if (filter.id() != exclude && inChatList(filter.id())) {
+			result.push_back(filter.id());
+		}
+	}
+	return result;
 }
 
 } // namespace Dialogs

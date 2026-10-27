@@ -23,6 +23,9 @@ struct MoreChatsBarContent;
 
 namespace Data {
 
+class LocalChatFolders;
+class LocalNavigationPreferences;
+
 class Session;
 
 struct ChatFilterTitle {
@@ -73,9 +76,13 @@ public:
 	[[nodiscard]] ChatFilter withId(FilterId id) const;
 	[[nodiscard]] ChatFilter withTitle(ChatFilterTitle title) const;
 	[[nodiscard]] ChatFilter withColorIndex(std::optional<uint8>) const;
+	[[nodiscard]] ChatFilter withLocalColorIndex(
+		std::optional<std::optional<uint8>>) const;
+	[[nodiscard]] ChatFilter withColorFrom(const ChatFilter &other) const;
 	[[nodiscard]] ChatFilter withChatlist(
 		bool chatlist,
 		bool hasMyLinks) const;
+	[[nodiscard]] ChatFilter withLocalId(QString id) const;
 	[[nodiscard]] ChatFilter withoutAlways(not_null<History*>) const;
 
 	[[nodiscard]] static ChatFilter FromTL(
@@ -92,6 +99,8 @@ public:
 	[[nodiscard]] bool staticTitle() const;
 	[[nodiscard]] bool chatlist() const;
 	[[nodiscard]] bool hasMyLinks() const;
+	[[nodiscard]] bool isLocal() const;
+	[[nodiscard]] const QString &localId() const;
 	[[nodiscard]] const base::flat_set<not_null<History*>> &always() const;
 	[[nodiscard]] const std::vector<not_null<History*>> &pinned() const;
 	[[nodiscard]] const base::flat_set<not_null<History*>> &never() const;
@@ -105,10 +114,12 @@ private:
 	TextWithEntities _title;
 	QString _iconEmoji;
 	std::optional<uint8> _colorIndex;
+	std::optional<std::optional<uint8>> _localColorIndex;
 	base::flat_set<not_null<History*>> _always;
 	std::vector<not_null<History*>> _pinned;
 	base::flat_set<not_null<History*>> _never;
 	Flags _flags;
+	QString _localId;
 
 };
 
@@ -117,6 +128,7 @@ inline bool operator==(const ChatFilter &a, const ChatFilter &b) {
 		&& (a.iconEmoji() == b.iconEmoji())
 		&& (a.colorIndex() == b.colorIndex())
 		&& (a.flags() == b.flags())
+		&& (a.localId() == b.localId())
 		&& (a.always() == b.always())
 		&& (a.never() == b.never());
 }
@@ -167,9 +179,24 @@ public:
 	[[nodiscard]] rpl::producer<TagColorChanged> tagColorChanged() const;
 	[[nodiscard]] bool loaded() const;
 	[[nodiscard]] bool has() const;
+	[[nodiscard]] bool isLocal(FilterId id) const;
+	[[nodiscard]] bool isLocked(FilterId id) const;
+	[[nodiscard]] QString localId(FilterId id) const;
+	[[nodiscard]] bool localBusy() const;
+	[[nodiscard]] const QString &localError() const;
+	[[nodiscard]] rpl::producer<QString> localErrors() const;
+
+	ChatFilter makeLocal(ChatFilter filter = {});
+	void saveLocal(ChatFilter filter, Fn<void(bool)> done = nullptr);
+	void saveCloudColor(FilterId id, std::optional<uint8> color);
+	void refreshLocalColors();
+	void removeLocal(FilterId id, Fn<void(bool)> done = nullptr);
+	void reorderLocal(std::vector<FilterId> order, Fn<void(bool)> done = nullptr);
 
 	[[nodiscard]] FilterId defaultId() const;
 	[[nodiscard]] FilterId lookupId(int index) const;
+	[[nodiscard]] LocalNavigationPreferences &navigationPreferences() const;
+	[[nodiscard]] QString stableReference(FilterId id) const;
 
 	bool loadNextExceptions(bool chatsListLoaded);
 
@@ -189,8 +216,7 @@ public:
 
 	void requestSuggested();
 	[[nodiscard]] bool suggestedLoaded() const;
-	[[nodiscard]] auto suggestedFilters() const
-		-> const std::vector<SuggestedFilter> &;
+	[[nodiscard]] const std::vector<SuggestedFilter> &suggestedFilters() const;
 	[[nodiscard]] rpl::producer<> suggestedUpdated() const;
 
 	ChatFilterLink add(
@@ -230,11 +256,21 @@ private:
 	bool applyChange(ChatFilter &filter, ChatFilter &&updated);
 	void applyInsert(ChatFilter filter, int position);
 	void applyRemove(int position);
+	bool rebuildLocal(bool notify = true);
+	[[nodiscard]] ChatFilter applyLocalColor(ChatFilter filter) const;
+	[[nodiscard]] FilterId localFilterId(const QString &id);
 
 	void checkLoadMoreChatsLists();
 	void loadMoreChatsList(FilterId id);
 
 	const not_null<Session*> _owner;
+	const std::unique_ptr<LocalChatFolders> _localFolders;
+	const std::unique_ptr<LocalNavigationPreferences> _navigationPreferences;
+	rpl::lifetime _localFoldersLifetime;
+	rpl::lifetime _navigationPreferencesLifetime;
+	base::flat_map<QString, FilterId> _localFilterIds;
+	rpl::event_stream<QString> _localErrors;
+	QString _lastLocalError;
 
 	std::vector<ChatFilter> _list;
 	base::flat_map<FilterId, std::unique_ptr<Dialogs::MainList>> _chatsLists;
@@ -244,7 +280,7 @@ private:
 	mtpRequestId _loadRequestId = 0;
 	mtpRequestId _saveOrderRequestId = 0;
 	mtpRequestId _saveOrderAfterId = 0;
-	mtpRequestId _toggleTagsRequestId = 0;
+	bool _cloudTagsEnabled = false;
 	bool _loaded = false;
 	bool _reloading = false;
 
@@ -256,6 +292,7 @@ private:
 	rpl::variable<bool> _tagsEnabled = false;
 
 	std::deque<FilterId> _exceptionsToLoad;
+	std::deque<PeerId> _exceptionPeersToLoad;
 	mtpRequestId _exceptionsLoadRequestId = 0;
 
 	base::flat_map<FilterId, std::vector<ChatFilterLink>> _chatlistLinks;

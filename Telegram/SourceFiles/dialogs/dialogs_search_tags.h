@@ -53,7 +53,7 @@ public:
 private:
 	struct Tag;
 
-	void fill(const std::vector<Data::Reaction> &list, bool premium);
+	void fill(const std::vector<Data::Reaction> &list);
 	void paintCustomFrame(
 		QPainter &p,
 		not_null<Ui::Text::CustomEmoji*> emoji,

@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_saved_messages.h"
 #include "data/data_session.h"
 #include "data/data_user.h"
+#include "data/local_saved_tags.h"
 #include "dialogs/dialogs_key.h"
 #include "dialogs/dialogs_search_from_controllers.h" // SearchFromBox
 #include "dialogs/dialogs_search_tags.h"
@@ -331,6 +332,7 @@ protected:
 private:
 	void clearItems();
 	void refreshTags();
+	void restoreLocalFilter();
 	void updateSize();
 	void requestSearch(bool cache = true);
 	void requestSearchDelayed();
@@ -347,6 +349,7 @@ private:
 	rpl::variable<PeerData*> _from = nullptr;
 
 	base::Timer _searchTimer;
+	bool _restoreLocalFilter = false;
 
 	Api::MessagesSearchMerged::CachedRequests _typedRequests;
 
@@ -403,6 +406,7 @@ TopBar::TopBar(
 	}, lifetime());
 
 	_select->setQueryChangedCallback([=](const QString &) {
+		_restoreLocalFilter = false;
 		requestSearchDelayed();
 		_queryChanges.fire({});
 	});
@@ -413,6 +417,18 @@ TopBar::TopBar(
 
 	_select->setCancelledCallback([=] {
 		_cancelRequests.fire({});
+	});
+	_restoreLocalFilter = history->peer->isSelf() && query.isEmpty();
+	if (history->peer->isSelf()) {
+		history->owner().reactions().localSavedTags().changes(
+		) | rpl::on_next([=] { restoreLocalFilter(); }, lifetime());
+	}
+	crl::on_main(this, [=] {
+		if (_restoreLocalFilter) {
+			restoreLocalFilter();
+		} else if (!query.isEmpty()) {
+			requestSearch(false);
+		}
 	});
 }
 
@@ -441,15 +457,29 @@ void TopBar::updateSize() {
 }
 
 void TopBar::setQuery(const QString &query) {
+	_restoreLocalFilter = false;
 	if (auto tags = Data::SearchTagsFromQuery(query); !tags.empty()) {
 		if (_searchTagsSelected != tags) {
 			_searchTagsSelected = std::move(tags);
 			refreshTags();
 		}
 		_select->setQuery(QString());
+		requestSearch(false);
 	} else {
 		_select->setQuery(query);
 	}
+}
+
+void TopBar::restoreLocalFilter() {
+	auto &model = _history->owner().reactions().localSavedTags();
+	if (!_restoreLocalFilter || !model.loaded()) {
+		return;
+	}
+	_restoreLocalFilter = false;
+	_searchTagsSelected = model.filterReactions();
+	_select->setQuery(model.filter().text);
+	refreshTags();
+	requestSearch(false);
 }
 
 void TopBar::clearItems() {
@@ -517,12 +547,6 @@ void TopBar::refreshTags() {
 			_window);
 	}, _searchTags->lifetime());
 
-	if (!_searchTagsSelected.empty()) {
-		crl::on_main(this, [=] {
-			requestSearch(false);
-		});
-	}
-
 	const auto padding = st::searchInChatTagsPadding;
 	const auto position = QPoint(padding.left(), padding.top());
 
@@ -581,6 +605,8 @@ void TopBar::refreshTags() {
 }
 
 void TopBar::requestSearch(bool cache) {
+	_searchTimer.cancel();
+	_restoreLocalFilter = false;
 	const auto search = SearchRequest{
 		_select->getQuery(),
 		_from.current(),
@@ -588,6 +614,11 @@ void TopBar::requestSearch(bool cache) {
 	};
 	if (cache) {
 		_typedRequests.insert(search);
+	}
+	if (_history->peer->isSelf()) {
+		_history->owner().reactions().localSavedTags().rememberFilter(
+			search.tags,
+			search.query);
 	}
 	_searchRequests.fire_copy(search);
 }
@@ -651,7 +682,7 @@ public:
 	using Index = int;
 	BottomBar(not_null<Ui::RpWidget*> parent, bool fastShowChooseFrom);
 
-	void setTotal(int total);
+	void setTotal(int total, bool resetCurrent = true);
 	void setCurrent(int current);
 
 	[[nodiscard]] rpl::producer<Index> showItemRequests() const;
@@ -665,6 +696,7 @@ public:
 	bool handleKeyPress(not_null<QKeyEvent*> e);
 
 private:
+	void updateCurrent(int current);
 	void updateText(int current);
 
 	base::unique_qptr<Ui::FlatButton> _showList;
@@ -750,25 +782,7 @@ BottomBar::BottomBar(not_null<Ui::RpWidget*> parent, bool fastShowChooseFrom)
 
 	_current.value(
 	) | rpl::on_next([=](int current) {
-		const auto nextDisabled = (current <= 0) || (current >= _total);
-		const auto prevDisabled = (current <= 1);
-		_next.enabled = !nextDisabled;
-		_previous.enabled = !prevDisabled;
-		_next->setAttribute(Qt::WA_TransparentForMouseEvents, nextDisabled);
-		_previous->setAttribute(
-			Qt::WA_TransparentForMouseEvents,
-			prevDisabled);
-		_next->setIconOverride(nextDisabled
-			? &st::calendarPreviousDisabled
-			: nullptr);
-		_previous->setIconOverride(prevDisabled
-			? &st::calendarNextDisabled
-			: nullptr);
-
-		_showList->setAttribute(
-			Qt::WA_TransparentForMouseEvents,
-			nextDisabled && prevDisabled);
-		updateText(current);
+		updateCurrent(current);
 	}, lifetime());
 
 	rpl::merge(
@@ -807,9 +821,28 @@ bool BottomBar::handleKeyPress(not_null<QKeyEvent*> e) {
 	return false;
 }
 
-void BottomBar::setTotal(int total) {
+void BottomBar::setTotal(int total, bool resetCurrent) {
 	_total = total;
-	setCurrent(1);
+	if (resetCurrent) {
+		setCurrent(1);
+	} else {
+		updateCurrent(_current.current());
+	}
+}
+
+void BottomBar::updateCurrent(int current) {
+	const auto nextDisabled = (current <= 0) || (_total >= 0 && current >= _total);
+	const auto prevDisabled = (current <= 1);
+	_next.enabled = !nextDisabled;
+	_previous.enabled = !prevDisabled;
+	_next->setAttribute(Qt::WA_TransparentForMouseEvents, nextDisabled);
+	_previous->setAttribute(Qt::WA_TransparentForMouseEvents, prevDisabled);
+	_next->setIconOverride(nextDisabled ? &st::calendarPreviousDisabled : nullptr);
+	_previous->setIconOverride(prevDisabled ? &st::calendarNextDisabled : nullptr);
+	_showList->setAttribute(
+		Qt::WA_TransparentForMouseEvents,
+		nextDisabled && prevDisabled);
+	updateText(current);
 }
 
 void BottomBar::setCurrent(int current) {
@@ -959,6 +992,12 @@ ComposeSearch::Inner::Inner(
 	) | rpl::on_next([=](SearchRequest search) {
 		if (search.query.isEmpty() && search.tags.empty()) {
 			if (!search.from || _history->peer->isSelf()) {
+				if (_history->peer->isSelf()) {
+					_apiSearch.cancel();
+					_pendingJump.data = {};
+					_list.controller->addItems({}, true);
+					_bottomBar->setTotal(0);
+				}
 				return;
 			}
 		}
@@ -993,6 +1032,9 @@ ComposeSearch::Inner::Inner(
 	_apiSearch.newFounds(
 	) | rpl::on_next([=] {
 		const auto &apiData = _apiSearch.messages();
+		if (!apiData.error.isEmpty()) {
+			window->showToast(apiData.error);
+		}
 		const auto weak = base::make_weak(_bottomBar.get());
 		_bottomBar->setTotal(apiData.total);
 		if (weak) {
@@ -1003,10 +1045,20 @@ ComposeSearch::Inner::Inner(
 
 	_apiSearch.nextFounds(
 	) | rpl::on_next([=] {
+		const auto &data = _apiSearch.messages();
+		if (!data.error.isEmpty()) {
+			window->showToast(data.error);
+		}
+		if (data.complete) {
+			_bottomBar->setTotal(data.total, false);
+		}
+		const auto weak = base::make_weak(_topBar.get());
 		if (_pendingJump.data.token == _apiSearch.messages().nextToken) {
 			_pendingJump.jumps.fire_copy(_pendingJump.data.index);
 		}
-		_list.controller->addItems(_apiSearch.messages().messages, false);
+		if (weak) {
+			_list.controller->addItems(_apiSearch.messages().messages, false);
+		}
 	}, _topBar->lifetime());
 
 	rpl::merge(
@@ -1095,9 +1147,6 @@ ComposeSearch::Inner::Inner(
 		return allowed && HasChooseFrom(_history) && !from;
 	}));
 
-	if (!query.isEmpty()) {
-		_apiSearch.search({ query });
-	}
 }
 
 void ComposeSearch::Inner::setInnerFocus() {

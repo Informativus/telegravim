@@ -133,7 +133,7 @@ Data::ChatFilter ChangedFilter(
 		filter.flags(),
 		std::move(always),
 		pinned,
-		std::move(never));
+		std::move(never)).withLocalId(filter.localId()).withColorFrom(filter);
 	const auto in = result.contains(history);
 	if (in == add) {
 		return result;
@@ -153,7 +153,7 @@ Data::ChatFilter ChangedFilter(
 		filter.flags(),
 		std::move(always),
 		std::move(pinned),
-		std::move(never));
+		std::move(never)).withLocalId(filter.localId()).withColorFrom(filter);
 }
 
 void ChangeFilterById(
@@ -167,12 +167,7 @@ void ChangeFilterById(
 	if (i != end(list)) {
 		const auto was = *i;
 		const auto filter = ChangedFilter(was, history, add);
-		history->owner().chatsFilters().set(filter);
-		history->session().api().request(MTPmessages_UpdateDialogFilter(
-			MTP_flags(MTPmessages_UpdateDialogFilter::Flag::f_filter),
-			MTP_int(filter.id()),
-			filter.tl()
-		)).done([=, chat = history->peer->name(), name = filter.title()] {
+		const auto done = [=, chat = history->peer->name(), name = filter.title()] {
 			const auto account = not_null(&history->session().account());
 			if (const auto controller = Core::App().windowFor(account)) {
 				const auto isStatic = name.isStatic;
@@ -192,7 +187,21 @@ void ChangeFilterById(
 					}),
 				});
 			}
-		}).fail([=](const MTP::Error &error) {
+		};
+		if (filter.isLocal()) {
+			history->owner().chatsFilters().saveLocal(filter, [=](bool success) {
+				if (success) {
+					done();
+				}
+			});
+			return;
+		}
+		history->owner().chatsFilters().set(filter);
+		history->session().api().request(MTPmessages_UpdateDialogFilter(
+			MTP_flags(MTPmessages_UpdateDialogFilter::Flag::f_filter),
+			MTP_int(filter.id()),
+			filter.tl()
+		)).done(done).fail([=](const MTP::Error &error) {
 			LOG(("API Error: failed to %1 a dialog to a folder. %2")
 				.arg(add ? u"add"_q : u"remove"_q)
 				.arg(error.type()));
@@ -259,11 +268,13 @@ ChooseFilterValidator::LimitData ChooseFilterValidator::limitReached(
 
 	const auto list = _history->owner().chatsFilters().list();
 	const auto i = ranges::find(list, filterId, &Data::ChatFilter::id);
+	if (i == end(list)) {
+		return {};
+	}
 	const auto limit = _history->owner().pinnedChatsLimit(filterId);
 	const auto &chatsList = always ? i->always() : i->never();
 	return {
-		.reached = (i != end(list))
-			&& !ranges::contains(chatsList, _history)
+		.reached = !ranges::contains(chatsList, _history)
 			&& (chatsList.size() >= limit),
 		.count = int(chatsList.size()),
 	};
@@ -295,6 +306,7 @@ void FillChooseFilterMenu(
 		const auto contains = menu->lifetime().make_state<bool>(
 			filter.contains(history));
 		const auto title = filter.title();
+		const auto local = filter.isLocal();
 		auto item = base::make_unique_q<FilterAction>(
 			menu->menu(),
 			menu->st().menu,
@@ -317,11 +329,21 @@ void FillChooseFilterMenu(
 			const auto r = validator.limitReached(id, toAdd);
 			if (r.reached) {
 				menu->hideMenu();
-				controller->show(Box(
-					FilterChatsLimitBox,
-					&controller->session(),
-					r.count,
-					toAdd));
+				if (local) {
+					controller->showToast((toAdd
+						? tr::lng_filter_chats_limit1
+						: tr::lng_filter_chats_exlude_limit1)(
+							tr::now,
+							lt_count,
+							r.count,
+							tr::rich));
+				} else {
+					controller->show(Box(
+						FilterChatsLimitBox,
+						&controller->session(),
+						r.count,
+						toAdd));
+				}
 				return;
 			} else if (toAdd ? validator.canAdd() : validator.canRemove(id)) {
 				*suppressClose = true;
@@ -352,42 +374,20 @@ void FillChooseFilterMenu(
 			: validator.canAdd());
 	}
 
-	const auto limit = [session = &controller->session()] {
-		return Data::PremiumLimits(session).dialogFiltersCurrent();
-	};
-	if ((list.size() - 1) < limit()) {
-		menu->addAction(tr::lng_filters_create(tr::now), [=] {
-			const auto strong = weak.get();
-			if (!strong) {
-				return;
-			}
-			const auto session = &strong->session();
-			const auto &list = session->data().chatsFilters().list();
-			if ((list.size() - 1) >= limit()) {
-				return;
-			}
-			const auto chooseNextId = [&] {
-				auto id = 2;
-				while (ranges::contains(list, id, &Data::ChatFilter::id)) {
-					++id;
-				}
-				return id;
-			};
-			auto filter =
-				Data::ChatFilter({}, {}, {}, {}, {}, { history }, {}, {});
-			const auto send = [=](const Data::ChatFilter &filter) {
-				session->api().request(MTPmessages_UpdateDialogFilter(
-					MTP_flags(MTPmessages_UpdateDialogFilter::Flag::f_filter),
-					MTP_int(chooseNextId()),
-					filter.tl()
-				)).done([=] {
-					session->data().chatsFilters().reload();
-				}).send();
-			};
-			strong->uiShow()->show(
-				Box(EditFilterBox, strong, std::move(filter), send, nullptr));
-		}, &st::menuIconShowInFolder);
-	}
+	menu->addAction(tr::lng_filters_create(tr::now), [=] {
+		const auto strong = weak.get();
+		if (!strong) {
+			return;
+		}
+		const auto session = &strong->session();
+		auto filter = session->data().chatsFilters().makeLocal(
+			Data::ChatFilter({}, {}, {}, {}, {}, { history }, {}, {}));
+		const auto save = [=](const Data::ChatFilter &filter) {
+			session->data().chatsFilters().saveLocal(filter);
+		};
+		strong->uiShow()->show(
+			Box(EditFilterBox, strong, std::move(filter), save, nullptr));
+	}, &st::menuIconShowInFolder);
 
 	history->owner().chatsFilters().changed(
 	) | rpl::on_next([=] {

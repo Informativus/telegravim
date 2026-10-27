@@ -105,6 +105,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/stickers/data_custom_emoji.h"
 #include "data/data_changes.h"
 #include "data/data_session.h"
+#include "data/local_pinned_dialogs.h"
 #include "data/data_folder.h"
 #include "data/data_poll.h"
 #include "data/data_channel.h"
@@ -364,7 +365,7 @@ private:
 };
 
 History *FindWastedPin(not_null<Data::Session*> data, Data::Folder *folder) {
-	const auto &order = data->pinnedChatsOrder(folder);
+	const auto &order = data->cloudPinnedChatsOrder(folder);
 	for (const auto &pinned : order) {
 		if (const auto history = pinned.history()) {
 			if (history->peer->isChat()
@@ -414,19 +415,6 @@ bool PinnedLimitReached(
 	return true;
 }
 
-bool PinnedLimitReached(
-		not_null<Window::SessionController*> controller,
-		not_null<History*> history,
-		FilterId filterId) {
-	const auto owner = &history->owner();
-	if (owner->pinnedCanPin(filterId, history)) {
-		return false;
-	}
-	controller->show(
-		Box(FilterPinsLimitBox, &history->session(), filterId));
-	return true;
-}
-
 void TogglePinnedThread(
 		not_null<Window::SessionController*> controller,
 		not_null<Dialogs::Entry*> entry,
@@ -436,6 +424,23 @@ void TogglePinnedThread(
 	}
 	const auto owner = &entry->owner();
 	const auto isPinned = !entry->isPinnedDialog(FilterId());
+	auto &localPins = owner->localPinnedDialogs();
+	if (localPins.supports(entry)) {
+		const auto isHistory = (entry->asHistory() != nullptr);
+		localPins.setPinned(entry, FilterId(), isPinned,
+			crl::guard(controller, [=](bool success) {
+				if (!success) {
+					return;
+				}
+				if (isPinned && isHistory) {
+					controller->content()->dialogsToUp();
+				}
+				if (onToggled) {
+					onToggled();
+				}
+			}));
+		return;
+	}
 	if (isPinned && PinnedLimitReached(controller, entry)) {
 		return;
 	}
@@ -4576,18 +4581,18 @@ void TogglePinnedThread(
 	}
 
 	const auto isPinned = !history->isPinnedDialog(filterId);
-	if (isPinned && PinnedLimitReached(controller, history, filterId)) {
-		return;
-	}
-
-	owner->setChatPinned(history, filterId, isPinned);
-	Api::SaveNewFilterPinned(&owner->session(), filterId);
-	if (isPinned) {
-		controller->content()->dialogsToUp();
-		if (onToggled) {
-			onToggled();
-		}
-	}
+	owner->localPinnedDialogs().setPinned(history, filterId, isPinned,
+		crl::guard(controller, [=](bool success) {
+			if (!success) {
+				return;
+			}
+			if (isPinned) {
+				controller->content()->dialogsToUp();
+			}
+			if (onToggled) {
+				onToggled();
+			}
+		}));
 }
 
 bool IsArchived(not_null<History*> history) {

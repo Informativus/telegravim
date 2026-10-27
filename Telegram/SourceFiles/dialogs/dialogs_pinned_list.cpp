@@ -15,12 +15,93 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "data/data_forum.h"
 
+#include <set>
+
 namespace Dialogs {
 
 PinnedList::PinnedList(FilterId filterId, int limit)
 : _filterId(filterId)
 , _limit(limit) {
 	Expects(limit > 0);
+}
+
+void PinnedList::setProjection(
+		Fn<std::vector<Key>(const std::vector<Key>&)> project,
+		Fn<bool(Key)> owns) {
+	Expects(bool(project));
+
+	if (!_projection) {
+		_cloudData = _data;
+	}
+	_projection = std::move(project);
+	_owns = std::move(owns);
+	refreshProjection();
+}
+
+bool PinnedList::hasProjection() const {
+	return bool(_projection);
+}
+
+const std::vector<Key> &PinnedList::cloudOrder() const {
+	return _projection ? _cloudData : _data;
+}
+
+void PinnedList::applyVisibleOrder(std::vector<Key> order) {
+	const auto previous = base::take(_data);
+	_data = std::move(order);
+	const auto included = std::set<Key>(begin(_data), end(_data));
+	for (const auto key : previous) {
+		if (!included.contains(key) && (!_owns || _owns(key))) {
+			key.entry()->cachePinnedIndex(_filterId, 0);
+		}
+	}
+	for (auto i = 0; i < int(_data.size()); ++i) {
+		_data[i].entry()->cachePinnedIndex(_filterId, i + 1);
+	}
+}
+
+void PinnedList::refreshProjection() {
+	if (!_projection) {
+		return;
+	} else if (_refreshing) {
+		_refreshAgain = true;
+		return;
+	}
+	_refreshing = true;
+	do {
+		_refreshAgain = false;
+		auto order = _projection(_cloudData);
+		if (order != _data) {
+			applyVisibleOrder(std::move(order));
+		} else {
+			for (auto i = 0; i < int(_data.size()); ++i) {
+				_data[i].entry()->cachePinnedIndex(_filterId, i + 1);
+			}
+		}
+	} while (_refreshAgain);
+	_refreshing = false;
+}
+
+void PinnedList::removeEntry(Key key) {
+	if (!_projection) {
+		setPinned(key, false);
+		return;
+	}
+	if (const auto i = ranges::find(_cloudData, key); i != end(_cloudData)) {
+		_cloudData.erase(i);
+	}
+	if (const auto i = ranges::find(_data, key); i != end(_data)) {
+		_data.erase(i);
+		key.entry()->cachePinnedIndex(_filterId, 0);
+		for (auto index = 0; index < int(_data.size()); ++index) {
+			_data[index].entry()->cachePinnedIndex(_filterId, index + 1);
+		}
+	}
+}
+
+void PinnedList::applyCloudOrder(std::vector<Key> order) {
+	_cloudData = std::move(order);
+	refreshProjection();
 }
 
 void PinnedList::setLimit(int limit) {
@@ -30,13 +111,30 @@ void PinnedList::setLimit(int limit) {
 		return;
 	}
 	_limit = limit;
-	applyLimit(_limit);
+	if (_projection) {
+		if (_cloudData.size() > _limit) {
+			_cloudData.resize(_limit);
+		}
+		refreshProjection();
+	} else {
+		applyLimit(_limit);
+	}
 }
 
 void PinnedList::addPinned(Key key) {
 	Expects(key.entry()->folderKnown());
 
-	addPinnedGetPosition(key);
+	if (_projection) {
+		if (!ranges::contains(_cloudData, key)) {
+			if (_cloudData.size() >= _limit) {
+				_cloudData.resize(_limit - 1);
+			}
+			_cloudData.push_back(key);
+		}
+		refreshProjection();
+	} else {
+		addPinnedGetPosition(key);
+	}
 }
 
 int PinnedList::addPinnedGetPosition(Key key) {
@@ -54,6 +152,20 @@ int PinnedList::addPinnedGetPosition(Key key) {
 void PinnedList::setPinned(Key key, bool pinned) {
 	Expects(key.entry()->folderKnown() || _filterId != 0);
 
+	if (_projection) {
+		const auto i = ranges::find(_cloudData, key);
+		if (i != end(_cloudData)) {
+			_cloudData.erase(i);
+		}
+		if (pinned) {
+			if (_cloudData.size() >= _limit) {
+				_cloudData.resize(_limit - 1);
+			}
+			_cloudData.insert(begin(_cloudData), key);
+		}
+		refreshProjection();
+		return;
+	}
 	if (pinned) {
 		const int position = addPinnedGetPosition(key);
 		if (position) {
@@ -85,7 +197,11 @@ void PinnedList::applyLimit(int limit) {
 }
 
 void PinnedList::clear() {
-	applyLimit(0);
+	if (_projection) {
+		applyCloudOrder({});
+	} else {
+		applyLimit(0);
+	}
 }
 
 void PinnedList::applyList(
@@ -93,14 +209,25 @@ void PinnedList::applyList(
 		const QVector<MTPDialogPeer> &list) {
 	Expects(this != owner->savedMessages().chatsList()->pinned());
 
-	clear();
+	auto order = std::vector<Key>();
+	auto included = std::set<Key>();
+	if (!_projection) {
+		clear();
+	}
+	const auto add = [&](Key key) {
+		if (!_projection) {
+			addPinned(key);
+		} else if (included.emplace(key).second) {
+			order.push_back(key);
+		}
+	};
 	for (const auto &peer : list) {
 		peer.match([&](const MTPDdialogPeer &data) {
 			if (const auto peerId = peerFromMTP(data.vpeer())) {
-				addPinned(owner->history(peerId));
+				add(owner->history(peerId));
 			}
 		}, [&](const MTPDdialogPeerFolder &data) {
-			addPinned(owner->folder(data.vfolder_id().v));
+			add(owner->folder(data.vfolder_id().v));
 		}, [&](const MTPDdialogPeerCommunity &data) {
 			const auto channelId = ChannelId(data.vcommunity_id().v);
 			if (const auto channel = owner->channelLoaded(channelId)) {
@@ -108,9 +235,15 @@ void PinnedList::applyList(
 				if (!history->folderKnown()) {
 					history->clearFolder();
 				}
-				addPinned(history);
+				add(history);
 			}
 		});
+	}
+	if (_projection) {
+		if (order.size() > _limit) {
+			order.resize(_limit);
+		}
+		applyCloudOrder(std::move(order));
 	}
 }
 
@@ -119,16 +252,33 @@ void PinnedList::applyList(
 		const QVector<MTPDialogPeer> &list) {
 	Expects(this == sublistsOwner->chatsList()->pinned());
 
-	clear();
+	auto order = std::vector<Key>();
+	auto included = std::set<Key>();
+	if (!_projection) {
+		clear();
+	}
+	const auto add = [&](Key key) {
+		if (!_projection) {
+			addPinned(key);
+		} else if (included.emplace(key).second) {
+			order.push_back(key);
+		}
+	};
 	for (const auto &peer : list) {
 		peer.match([&](const MTPDdialogPeer &data) {
 			if (const auto peerId = peerFromMTP(data.vpeer())) {
 				const auto peer = sublistsOwner->owner().peer(peerId);
-				addPinned(sublistsOwner->sublist(peer));
+				add(sublistsOwner->sublist(peer));
 			}
 		}, [](const MTPDdialogPeerFolder &data) {
 		}, [](const MTPDdialogPeerCommunity &data) {
 		});
+	}
+	if (_projection) {
+		if (order.size() > _limit) {
+			order.resize(_limit);
+		}
+		applyCloudOrder(std::move(order));
 	}
 }
 
@@ -146,6 +296,15 @@ void PinnedList::applyList(
 void PinnedList::applyList(const std::vector<not_null<History*>> &list) {
 	Expects(_filterId != 0);
 
+	if (_projection) {
+		auto order = std::vector<Key>();
+		order.reserve(list.size());
+		for (const auto history : list) {
+			order.push_back(history);
+		}
+		applyCloudOrder(std::move(order));
+		return;
+	}
 	const auto old = base::take(_data);
 
 	const auto count = int(list.size());

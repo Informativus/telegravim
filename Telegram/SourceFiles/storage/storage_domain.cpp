@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "core/version.h"
 #include "storage/details/storage_file_utilities.h"
+#include "storage/local_data_store.h"
 #include "storage/serialize_common.h"
 #include "mtproto/mtproto_config.h"
 #include "main/main_domain.h"
@@ -38,6 +39,17 @@ Domain::Domain(not_null<Main::Domain*> owner, const QString &dataName)
 }
 
 Domain::~Domain() = default;
+
+std::shared_ptr<LocalData::Store> Domain::localData() {
+	Expects(_localKey != nullptr);
+
+	if (!_localData) {
+		_localData = std::make_shared<LocalData::Store>(
+			BaseGlobalPath() + u"local-data-"_q + ComputeKeyName(_dataName),
+			_localKey);
+	}
+	return _localData;
+}
 
 StartResult Domain::start(const QByteArray &passcode) {
 	const auto modern = startModern(passcode);

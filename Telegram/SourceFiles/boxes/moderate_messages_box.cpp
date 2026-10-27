@@ -224,7 +224,7 @@ ModerateOptions CalculateModerateOptions(const ModerateReactionEntry &reaction) 
 			search->searchMessages({ .from = peer });
 		};
 		consumer.put_next({});
-		send(send);
+		std::invoke(send, send);
 
 		return lifetime;
 	};
@@ -1712,12 +1712,17 @@ void DeleteChatBox(not_null<Ui::GenericBox*> box, not_null<PeerData*> peer) {
 		if (removeFromChats) {
 			const auto history = peer->owner().history(peer).get();
 			const auto removeFrom = removeFromChatsFilters(history);
-			for (const auto &filter : peer->owner().chatsFilters().list()) {
+			const auto filters = peer->owner().chatsFilters().list();
+			for (const auto &filter : filters) {
 				if (!ranges::contains(removeFrom, filter.id())) {
 					continue;
 				}
 				const auto result = filter.withoutAlways(history);
 				if (result == filter) {
+					continue;
+				}
+				if (result.isLocal()) {
+					peer->owner().chatsFilters().saveLocal(result);
 					continue;
 				}
 				const auto tl = result.tl();

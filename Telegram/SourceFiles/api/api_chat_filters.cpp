@@ -870,7 +870,10 @@ void ProcessFilterInvite(
 void SaveNewFilterPinned(
 		not_null<Main::Session*> session,
 		FilterId filterId) {
-	const auto &order = session->data().pinnedChatsOrder(filterId);
+	if (filterId < 0) {
+		return;
+	}
+	const auto &order = session->data().cloudPinnedChatsOrder(filterId);
 	auto &filters = session->data().chatsFilters();
 	const auto &filter = filters.applyUpdatedPinned(filterId, order);
 	session->api().request(MTPmessages_UpdateDialogFilter(

@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_folder.h"
 
+#include "data/local_pinned_dialogs.h"
 #include "data/data_session.h"
 #include "data/data_channel.h"
 #include "data/data_histories.h"
@@ -223,6 +224,9 @@ void Folder::reorderLastHistories() {
 }
 
 not_null<Dialogs::MainList*> Folder::chatsList() {
+	if (const auto local = owner().localPinnedDialogsLoaded()) {
+		local->attach(_chatsList.pinned(), this);
+	}
 	return &_chatsList;
 }
 

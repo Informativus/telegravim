@@ -26,6 +26,7 @@ class CustomEmoji;
 namespace Data {
 
 class SavedSublist;
+class LocalSavedTags;
 class DocumentMedia;
 class Session;
 
@@ -67,6 +68,7 @@ struct PossibleItemReactions {
 	bool paidInFront = false);
 [[nodiscard]] PossibleItemReactionsRef LookupPossibleReactions(
 	not_null<Main::Session*> session);
+[[nodiscard]] bool UsesLocalSavedTags(not_null<const HistoryItem*> item);
 
 struct MyTagInfo {
 	ReactionId id;
@@ -89,6 +91,9 @@ public:
 		return *_owner;
 	}
 	[[nodiscard]] Main::Session &session() const;
+	[[nodiscard]] LocalSavedTags &localSavedTags() const;
+	[[nodiscard]] rpl::producer<QString> localTagErrors() const;
+	void toggleLocalTag(not_null<HistoryItem*> item, const ReactionId &id);
 
 	void refreshTop();
 	void refreshRecent();
@@ -116,7 +121,10 @@ public:
 	void setFavorite(const ReactionId &id);
 	void incrementMyTag(const ReactionId &id, SavedSublist *sublist);
 	void decrementMyTag(const ReactionId &id, SavedSublist *sublist);
-	void renameTag(const ReactionId &id, const QString &name);
+	void renameTag(
+		const ReactionId &id,
+		const QString &name,
+		Fn<void(bool)> done = nullptr);
 	[[nodiscard]] DocumentData *chooseGenericAnimation(
 		not_null<DocumentData*> custom) const;
 	[[nodiscard]] DocumentData *choosePaidReactionAnimation() const;
@@ -227,6 +235,7 @@ private:
 	void effectsUpdated();
 
 	[[nodiscard]] std::optional<Reaction> resolveById(const ReactionId &id);
+	[[nodiscard]] std::optional<Reaction> resolveLocalTag(const ReactionId &id);
 	[[nodiscard]] std::vector<Reaction> resolveByIds(
 		const std::vector<ReactionId> &ids,
 		base::flat_set<ReactionId> &unresolved);
@@ -242,6 +251,7 @@ private:
 	void resolve(const ReactionId &id);
 	void applyFavorite(const ReactionId &id);
 	void scheduleMyTagsUpdate(SavedSublist *sublist);
+	void refreshLocalTags(bool force = false);
 
 	[[nodiscard]] std::optional<Reaction> parse(
 		const MTPAvailableReaction &entry);
@@ -283,6 +293,13 @@ private:
 	void checkQuitPreventFinished();
 
 	const not_null<Session*> _owner;
+	const std::unique_ptr<LocalSavedTags> _localSavedTags;
+	base::flat_map<SavedSublist*, TagsBySublist> _localTags;
+	base::flat_map<ReactionId, std::shared_ptr<DocumentMedia>> _localTagMedia;
+	base::flat_set<ReactionId> _unresolvedLocalTags;
+	base::flat_map<FullMsgId, std::vector<ReactionId>> _localChosen;
+	uint64 _localTagsRevision = 0;
+	rpl::event_stream<QString> _localTagErrors;
 
 	std::vector<Reaction> _active;
 	std::vector<Reaction> _available;
