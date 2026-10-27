@@ -47,7 +47,7 @@
     "001-AndroidManifest.patch": "2c753248d920df7989b82a01bfe65a55c00042299203d856eb828866f277c532",
     "002-BaseFragment.patch": "b9bc87415de51fc1d2ded88d839de5185454e8db8687678527deadb4eda3dbbd",
     "003-ChatActivityEnterView.patch": "c76a448120667ac777fc126502e03ab37558ae296f2caf4dea0de251255dce1b",
-    "004-LaunchActivity.patch": "8b50ddf31c327c3c796c4cbed518622e940c54edbe5c268fb530084c9f381a40",
+    "004-LaunchActivity.patch": "f3d51f03742dc4498a9a1f5939f525c1360502cee8a7b56f2b22467aadc6bfc4",
     "005-SettingsActivity.patch": "12b2a12f4a09c452a4d62a39f48dfbc5209dc7afa59de4727bec55f4a3cfd08b",
     "006-strings.patch": "35a7d50a51382bd74c3f230cf09b8965f1cdfda6013e768dfda4c9b1fd78caf4",
     "007-strings.patch": "69bb01c831df5c051064459d6d6efaaa61be4976b2ec718e3228cf6c81563a18",
