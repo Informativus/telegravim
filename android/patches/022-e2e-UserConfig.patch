@@ -1,0 +1,4 @@
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/UserConfig.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/UserConfig.java
+@@ -461,0 +462 @@
++        org.telegram.messenger.televim.E2eChat.logout(currentAccount);

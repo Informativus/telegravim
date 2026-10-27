@@ -8853,6 +8853,26 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_local_transfer_scope_store" = "Local data settings";
 "lng_local_transfer_scope_resource" = "Local resource metadata";
 
+"lng_local_transfer_settings_title" = "Transfer settings to Android";
+"lng_local_transfer_settings_back" = "Back";
+"lng_local_transfer_settings_about" = "Choose the settings to include. This version transfers Send by Enter and Large Emoji. They apply to all accounts on Android. Other Desktop features are not activated by this transfer. Create an export password below; Android will ask for it after scanning the QR or opening the link. Settings are processed on your devices without network requests.";
+"lng_local_transfer_settings_enter" = "Include Send by Enter (currently {state})";
+"lng_local_transfer_settings_emoji" = "Include Large Emoji (currently {state})";
+"lng_local_transfer_settings_enabled" = "enabled";
+"lng_local_transfer_settings_disabled" = "disabled";
+"lng_local_transfer_settings_create" = "Create encrypted link and QR";
+"lng_local_transfer_settings_select" = "Choose at least one setting to include.";
+"lng_local_transfer_settings_ready" = "In Televim for Android, open Import Settings and scan this QR or paste the copied link. Enter the export password separately, then review the changes. This is not your Telegram password. Only your selected settings are included.";
+"lng_local_transfer_settings_copy" = "Copy encrypted settings link";
+"lng_local_transfer_settings_copied" = "Encrypted link copied. The export password is not included.";
+"lng_local_transfer_settings_qr_large" = "These settings are too large for one QR. Save the encrypted file to transfer them locally.";
+"lng_local_transfer_settings_link_large" = "These settings are too large for a link. Save the encrypted file and open it locally with Televim on Android.";
+"lng_local_transfer_settings_json" = "Save settings JSON";
+"lng_local_transfer_settings_json_filter" = "Televim settings JSON (*.json)";
+"lng_local_transfer_settings_json_about" = "JSON contains only the selected switches, without account identifiers. It is not encrypted and does not need a password.";
+"lng_local_transfer_settings_json_done" = "Settings JSON saved without encryption.";
+"lng_local_transfer_settings_save_error" = "Could not save the settings file. The previous file was left unchanged.";
+
 // Keys finished
 
 "lng_local_replies_about" = "Create replies with rich text and attachments. Type / in a chat to insert a reply, review it, and send when ready.";

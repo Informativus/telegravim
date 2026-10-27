@@ -1,0 +1,8 @@
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/MediaDataController.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/MediaDataController.java
+@@ -8047 +8047,2 @@
+-            if (!DialogObject.isEncryptedDialog(dialogId)) {
++            if (!DialogObject.isEncryptedDialog(dialogId)
++                    && !org.telegram.messenger.televim.E2eChat.enabled(currentAccount, dialogId)) {
+@@ -8208,0 +8210 @@
++        if (fromServer && org.telegram.messenger.televim.E2eChat.enabled(currentAccount, dialogId)) return;

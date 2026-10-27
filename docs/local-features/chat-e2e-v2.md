@@ -133,6 +133,8 @@ handshakes and receipts in an atomic encrypted file under `getNoBackupFilesDir()
 A nonexportable Android Keystore AES key wraps this state; the EC private key
 is present in app memory while in use. Committed bytes are read back before
 the transaction succeeds. Missing state with an existing wrapping key fails closed.
+This supports Android API 26 and newer. Android logout removes the state file
+and its wrapping key.
 Neither implementation places this data in `.tgv` or the LocalData module map.
 
 While encryption is requested, including while confirmation is pending:
