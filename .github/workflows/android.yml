@@ -32,6 +32,7 @@ jobs:
     permissions:
       contents: read
     env:
+      GIT_LFS_SKIP_SMUDGE: '1'
       GRADLE_USER_HOME: ${{ github.workspace }}/.local/build-cache/gradle-android
       TELEVIM_BUILD_ROOT: ${{ github.workspace }}/.local/android-build
       TELEVIM_API_ID: '1'
@@ -124,6 +125,7 @@ jobs:
     permissions:
       contents: read
     env:
+      GIT_LFS_SKIP_SMUDGE: '1'
       APK_ABI: ${{ inputs.abi }}
       GRADLE_USER_HOME: ${{ github.workspace }}/.local/build-cache/gradle-android
       TELEVIM_BUILD_ROOT: ${{ github.workspace }}/.local/android-build
