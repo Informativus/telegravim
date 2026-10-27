@@ -6,4 +6,9 @@ if [ -z "$sdk_root" ]; then
     echo 'Set ANDROID_SDK_ROOT to the configured Android SDK.' >&2
     exit 1
 fi
+for argument do
+    case "$argument" in
+        -t|-t?*) exec "$sdk_root/cmake/3.22.1/bin/ninja" "$@" ;;
+    esac
+done
 exec "$sdk_root/cmake/3.22.1/bin/ninja" "$@" -j2
