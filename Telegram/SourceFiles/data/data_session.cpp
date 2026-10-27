@@ -309,8 +309,6 @@ void EnumerateStaticMediaPhotos(
 
 } // namespace
 
-Session::Session(not_null<Main::Session*> session)
-: _session(session)
 void Session::applyE2eMessage(
 		not_null<HistoryItem*> item,
 		const MTPDmessage &message,
@@ -364,6 +362,8 @@ void Session::applyE2eMessage(
 	}
 }
 
+Session::Session(not_null<Main::Session*> session)
+: _session(session)
 , _cache(Core::App().databases().get(
 	_session->local().cachePath(),
 	_session->local().cacheSettings()))
