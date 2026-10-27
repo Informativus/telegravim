@@ -75,7 +75,10 @@ The prepared source uses
 `GRADLE_USER_HOME` inside the checkout's ignored `.local/` directory.
 The APK is written under
 `$TELEVIM_BUILD_ROOT/TMessagesProj_AppStandalone/outputs/apk/afat/standalone/app.apk`.
-The Android workflow currently produces a verified signed build artifact.
+Pull requests compile Android Java and resources on a GitHub-hosted runner using
+invalid placeholder API credentials. This check receives no private credentials
+and produces no installable artifact. The manually dispatched Android workflow
+uses the protected owner-review environment to produce a verified signed build artifact.
 Publishing that APK into the matching Desktop release is a separate release step.
 A workflow artifact alone is not a published GitHub Release.
 

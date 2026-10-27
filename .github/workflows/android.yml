@@ -1,6 +1,11 @@
-name: Android signed build artifact
+name: Android build and signed artifact
 
 on:
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - 'android/**'
+      - '.github/workflows/android.yml'
   workflow_dispatch:
     inputs:
       abi:
@@ -15,12 +20,65 @@ on:
 permissions: {}
 
 concurrency:
-  group: android-signed-build
-  cancel-in-progress: false
+  group: android-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  compile:
+    name: Compile Android Java and resources
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      GRADLE_USER_HOME: ${{ github.workspace }}/.local/build-cache/gradle-android
+      TELEVIM_BUILD_ROOT: ${{ github.workspace }}/.local/android-build
+      TELEVIM_API_ID: '1'
+      TELEVIM_API_HASH: '00000000000000000000000000000000'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          submodules: false
+      - name: Initialize pinned Android dependencies
+        run: |
+          git -c protocol.file.allow=never submodule update \
+            --init --recursive --depth 1 --jobs 2 -- android/upstream
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install the pinned Android toolchain
+        run: |
+          export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          sdkmanager="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          "$sdkmanager" --install \
+            'platforms;android-36' 'build-tools;36.0.0' \
+            'ndk;27.2.12479018' 'cmake;3.22.1'
+      - name: Compile without private credentials or an installable artifact
+        run: |
+          python3 android/prepare.py
+          python3 - <<'PY'
+          import json
+          import pathlib
+          import subprocess
+
+          root = pathlib.Path.cwd()
+          summary = json.loads((root / ".local/android-build/source-metadata.json").read_text())
+          source = root / ".local/android-source" / summary["input_digest"]
+          subprocess.run([
+              "bash", str(source / "gradlew"), "--no-daemon", "--no-parallel",
+              "--max-workers=2", "--console=plain", "--project-cache-dir",
+              str(root / ".local/android-build/gradle-cache"),
+              "-PtelevimAbis=arm64-v8a",
+              ":TMessagesProj_AppStandalone:compileAfatDebugJavaWithJavac",
+          ], cwd=source, check=True)
+          PY
+
   review-policy:
     name: Verify the owner approval gate
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -59,6 +117,7 @@ jobs:
   android:
     name: Build signed Android APK
     needs: review-policy
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     environment: network-review
