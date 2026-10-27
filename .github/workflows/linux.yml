@@ -21,12 +21,26 @@ jobs:
     timeout-minutes: 360
     env:
       BUILD_IMAGE: ghcr.io/telegramdesktop/tdesktop/centos_env@sha256:e2fe8063c7cddf0c0bd039032d0be7b69e4f01fd75e3b637f00d9df8d7e8a0ea
+      GIT_LFS_SKIP_SMUDGE: '1'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-          submodules: recursive
+          submodules: false
           ref: ${{ inputs.source_ref || github.ref }}
+      - name: Initialize pinned Desktop dependencies
+        run: |
+          python3 - <<'PY'
+          import subprocess
+
+          rows = subprocess.check_output(["git", "ls-tree", "-r", "HEAD"], text=True)
+          paths = [row.split("\t", 1)[1] for row in rows.splitlines()
+                   if row.startswith("160000 ") and not row.split("\t", 1)[1].startswith("android/")]
+          if not paths:
+              raise SystemExit("Desktop dependencies are missing.")
+          subprocess.run(["git", "-c", "protocol.file.allow=never", "submodule", "update",
+                          "--init", "--recursive", "--depth", "1", "--jobs", "2", "--", *paths], check=True)
+          PY
       - name: Make space for the build image
         uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
