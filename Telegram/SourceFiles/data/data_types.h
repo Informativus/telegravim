@@ -37,6 +37,7 @@ using Options = base::flags<Option>;
 
 namespace Data {
 
+class LocalQuickReplyStage;
 struct FileOrigin;
 struct EmojiStatusCollectible;
 
@@ -404,6 +405,7 @@ enum class ViewRemovalReason : uchar {
 struct ForwardDraft {
 	MessageIdsList ids;
 	ForwardOptions options = ForwardOptions::PreserveInfo;
+	std::vector<std::shared_ptr<const LocalQuickReplyStage>> localQuickReplyStages;
 
 	friend inline auto operator<=>(
 		const ForwardDraft&,
@@ -413,6 +415,7 @@ struct ForwardDraft {
 struct ResolvedForwardDraft {
 	HistoryItemsList items;
 	ForwardOptions options = ForwardOptions::PreserveInfo;
+	std::vector<std::shared_ptr<const LocalQuickReplyStage>> localQuickReplyStages;
 };
 
 } // namespace Data

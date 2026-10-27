@@ -590,6 +590,11 @@ InnerWidget::InnerWidget(
 		};
 		update(previous);
 		update(next);
+		if (next.key.thread() && previous.key != next.key) {
+			_vimKeymapChatNavigationRow = next;
+			_vimKeymapChatNavigationNeedsFirst = false;
+			vimKeymapClearPendingChatNavigation();
+		}
 	}, lifetime());
 
 	_controller->activeChatsFilter(
@@ -2144,10 +2149,12 @@ bool InnerWidget::vimKeymapOpenChatPreview() {
 		return false;
 	}
 	const auto row = base::take(_chatPreviewRow);
+	vimKeymapClearPendingChatNavigation();
 	_controller->cancelScheduledPreview();
 	updateDialogRow(row);
 	if (jumpToDialogRow(row)) {
 		setFocus(Qt::ShortcutFocusReason);
+		vimKeymapSelectChat(row);
 		_vimKeymapChatNavigationRow = row;
 		_vimKeymapChatNavigationNeedsFirst = false;
 		return true;
@@ -6072,6 +6079,13 @@ bool InnerWidget::chooseRow(
 				}
 			}
 		}
+		if (chosen.key.thread() && !chosen.newWindow && !chosen.userpicClick) {
+			_vimKeymapChatNavigationRow = RowDescriptor(
+				chosen.key,
+				chosen.message.fullId);
+			_vimKeymapChatNavigationNeedsFirst = false;
+			vimKeymapClearPendingChatNavigation();
+		}
 		_chosenRow.fire_copy(chosen);
 		return true;
 	}
@@ -6579,8 +6593,9 @@ bool InnerWidget::vimKeymapJumpToChat(bool next, int steps) {
 	const auto selectedInList = listHasFocus && currentListContains(selected);
 	const auto activeInList = currentListContains(active);
 	const auto navigationInList = currentListContains(_vimKeymapChatNavigationRow);
-	const auto hasAnchor = selectedInList || navigationInList || activeInList;
-	const auto forceFirst = _vimKeymapChatNavigationNeedsFirst && !hasAnchor;
+	const auto forceFirst = _vimKeymapChatNavigationNeedsFirst;
+	const auto hasAnchor = !forceFirst
+		&& (selectedInList || navigationInList || activeInList);
 	auto target = forceFirst
 		? vimKeymapEdgeChat(true)
 		: navigationInList

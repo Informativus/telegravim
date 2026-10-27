@@ -22,6 +22,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_peer_photo.h"
 #include "api/api_polls.h"
 #include "api/api_sending.h"
+#include "api/api_local_quick_reply_sending.h"
 #include "api/api_text_entities.h"
 #include "api/api_rich_tasks.h"
 #include "api/api_todo_lists.h"
@@ -37,6 +38,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_unread_things.h"
 #include "api/api_ringtones.h"
 #include "api/api_compose_with_ai.h"
+#include "api/api_read_receipts.h"
 #include "api/api_transcribes.h"
 #include "api/api_premium.h"
 #include "api/api_user_names.h"
@@ -61,6 +63,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_saved_sublist.h"
 #include "data/data_search_controller.h"
 #include "data/data_session.h"
+#include "data/local_quick_reply_view.h"
 #include "data/data_channel.h"
 #include "data/data_chat.h"
 #include "data/data_user.h"
@@ -228,6 +231,7 @@ ApiWrap::ApiWrap(not_null<Main::Session*> session)
 , _unreadThings(std::make_unique<Api::UnreadThings>(this))
 , _ringtones(std::make_unique<Api::Ringtones>(this))
 , _composeWithAi(std::make_unique<Api::ComposeWithAi>(this))
+, _readReceipts(std::make_unique<Api::ReadReceipts>(session))
 , _transcribes(std::make_unique<Api::Transcribes>(this))
 , _premium(std::make_unique<Api::Premium>(this))
 , _usernames(std::make_unique<Api::Usernames>(this))
@@ -1441,7 +1445,9 @@ void ApiWrap::markContentsRead(
 		QVector<MTPint>>();
 	markedIds.reserve(items.size());
 	for (const auto &item : items) {
-		if (!item->markContentsRead(true) || !item->isRegular()) {
+		if (readReceipts().deferContents(item)
+			|| !item->markContentsRead(true)
+			|| !item->isRegular()) {
 			continue;
 		}
 		if (const auto channel = item->history()->peer->asChannel()) {
@@ -1466,7 +1472,9 @@ void ApiWrap::markContentsRead(
 }
 
 void ApiWrap::markContentsRead(not_null<HistoryItem*> item) {
-	if (!item->markContentsRead(true) || !item->isRegular()) {
+	if (readReceipts().deferContents(item)
+		|| !item->markContentsRead(true)
+		|| !item->isRegular()) {
 		return;
 	}
 	const auto ids = MTP_vector<MTPint>(1, MTP_int(item->id));
@@ -2847,6 +2855,7 @@ void ApiWrap::refreshFileReference(
 	};
 	v::match(origin.data, [&](Data::FileOriginMessage data) {
 		if (const auto item = _session->data().message(data)) {
+			if (item->isLocalQuickReply()) return fail();
 			if (const auto iv = item->Get<HistoryMessageMediaForInstantView>()) {
 				if (!iv->url.isEmpty()) {
 					return refreshFileReference(
@@ -3765,6 +3774,7 @@ mtpRequestId ApiWrap::requestGlobalMedia(
 }
 
 void ApiWrap::sendAction(const SendAction &action) {
+	if (Api::IsLocalQuickReplyContext(action.options)) return;
 	if (!action.options.scheduled
 		&& !action.options.shortcutId
 		&& !action.replaceMediaOf) {
@@ -3789,6 +3799,7 @@ void ApiWrap::sendAction(const SendAction &action) {
 }
 
 void ApiWrap::finishForwarding(const SendAction &action) {
+	if (Api::IsLocalQuickReplyContext(action.options)) return;
 	const auto history = action.history;
 	const auto topicRootId = action.replyTo.topicRootId;
 	const auto monoforumPeerId = action.replyTo.monoforumPeerId;
@@ -3796,6 +3807,62 @@ void ApiWrap::finishForwarding(const SendAction &action) {
 		topicRootId,
 		monoforumPeerId);
 	if (!toForward.items.empty()) {
+		const auto localCount = ranges::count_if(
+			toForward.items,
+			&HistoryItem::isLocalQuickReply);
+		if (localCount && localCount != int(toForward.items.size())) {
+			sendMessageFail(
+				u"LOCAL_QUICK_REPLY_MIXED_FORWARD"_q,
+				history->peer);
+			return;
+		}
+		if (localCount) {
+			const auto &view = history->owner().localQuickReplyView();
+			const auto stage = view.stageLease(toForward.items.front());
+			if (!stage || !stage->valid()
+				|| ranges::any_of(toForward.items, [&](const auto item) {
+					return view.stageLease(item) != stage;
+				})) {
+				sendMessageFail(u"LOCAL_QUICK_REPLY_UNAVAILABLE"_q, history->peer);
+				return;
+			}
+			const auto reference = stage->reference();
+			if (!_localQuickReplySends.emplace(reference).second) return;
+			auto ids = MessageIdsList();
+			auto selected = QStringList();
+			for (const auto item : toForward.items) {
+				const auto source = view.message(item);
+				if (!source) {
+					_localQuickReplySends.remove(reference);
+					sendMessageFail(u"LOCAL_QUICK_REPLY_UNAVAILABLE"_q, history->peer);
+					return;
+				}
+				ids.push_back(item->fullId());
+				selected.push_back(source->id);
+			}
+			const auto options = toForward.options;
+			Api::SendLocalQuickReplyMessages(stage, selected, options, action,
+				crl::guard(_session, [=] {
+					_localQuickReplySends.remove(reference);
+					const auto current = history->resolveForwardDraft(
+						topicRootId, monoforumPeerId);
+					if (!stage->valid() || current.options != options
+						|| current.items.size() != ids.size()) return false;
+					for (auto i = 0; i != int(ids.size()); ++i) {
+						if (current.items[i]->fullId() != ids[i]) return false;
+					}
+					history->setForwardDraft(topicRootId, monoforumPeerId, {});
+					return true;
+				}),
+				crl::guard(_session, [=](QString error) {
+					_localQuickReplySends.remove(reference);
+					if (const auto show = ShowForPeer(history->peer)
+						; show && !error.isEmpty()) {
+						show->showToast(error);
+					}
+				}));
+			return;
+		}
 		const auto error = GetErrorForSending(
 			history->peer,
 			{
@@ -3824,6 +3891,7 @@ void ApiWrap::forwardMessages(
 		Data::ResolvedForwardDraft &&draft,
 		SendAction action,
 		FnMut<void()> &&successCallback) {
+	if (Api::IsLocalQuickReplyContext(action.options)) return;
 	Expects(!draft.items.empty());
 
 	auto &histories = _session->data().histories();
@@ -4129,6 +4197,7 @@ void ApiWrap::sendSharedContact(
 		UserId userId,
 		const SendAction &action,
 		Fn<void(bool)> done) {
+	if (Api::IsLocalQuickReplyContext(action.options)) return;
 	sendAction(action);
 
 	const auto history = action.history;
@@ -4187,6 +4256,7 @@ void ApiWrap::sendVoiceMessage(
 		crl::time duration,
 		bool video,
 		const SendAction &action) {
+	if (Api::IsLocalQuickReplyContext(action.options)) return;
 	const auto caption = TextWithTags();
 	const auto to = FileLoadTaskOptions(action);
 	_fileLoader->addTask(
@@ -4206,6 +4276,7 @@ void ApiWrap::editMedia(
 		SendMediaType type,
 		TextWithTags &&caption,
 		const SendAction &action) {
+	if (Api::IsLocalQuickReplyContext(action.options)) return;
 	if (list.files.empty()) return;
 
 	auto &file = list.files.front();
@@ -4213,6 +4284,7 @@ void ApiWrap::editMedia(
 	const auto existing = to.replaceMediaOf
 		? session().data().message(action.history->peer, to.replaceMediaOf)
 		: nullptr;
+	if (existing && existing->isLocalQuickReply()) return;
 	if (existing && existing->computeSuggestionActions()
 		== SuggestionActions::AcceptAndDecline) {
 		to.replyTo.messageId = {
@@ -4259,11 +4331,27 @@ void ApiWrap::editMedia(
 	}));
 }
 
+void ApiWrap::sendPreparedFiles(
+		const std::vector<std::shared_ptr<FilePrepareResult>> &files) {
+	for (const auto &file : files) {
+		if (!file || Api::IsLocalQuickReplyContext(file->to.options)) return;
+	}
+	for (const auto &file : files) {
+		if (file->album) {
+			_sendingAlbums.emplace(file->album->groupId, file->album);
+		}
+	}
+	for (const auto &file : files) {
+		Api::SendConfirmedFile(_session, file);
+	}
+}
+
 void ApiWrap::sendFiles(
 		Ui::PreparedList &&list,
 		SendMediaType type,
 		std::shared_ptr<SendingAlbum> album,
 		SendAction action) {
+	if (Api::IsLocalQuickReplyContext(action.options)) return;
 	const auto &ephemeral = _session->ephemeralMessages();
 	if (album && !ephemeral.isEphemeralBotReply(action.replyTo.messageId)) {
 		const auto peer = action.history->peer;
@@ -4347,6 +4435,7 @@ void ApiWrap::sendFile(
 		const QByteArray &fileContent,
 		SendMediaType type,
 		const SendAction &action) {
+	if (Api::IsLocalQuickReplyContext(action.options)) return;
 	const auto to = FileLoadTaskOptions(action);
 	auto caption = TextWithTags();
 	const auto spoiler = false;
@@ -4371,6 +4460,8 @@ void ApiWrap::sendUploadedPhoto(
 		Api::RemoteFileInfo info,
 		Api::SendOptions options) {
 	if (const auto item = _session->data().message(localId)) {
+		if (item->isLocalQuickReply()
+			|| Api::IsLocalQuickReplyContext(options)) return;
 		const auto media = Api::PrepareUploadedPhoto(item, std::move(info));
 		if (const auto groupId = item->groupId()) {
 			uploadAlbumMedia(item, groupId, media);
@@ -4385,12 +4476,29 @@ void ApiWrap::sendUploadedDocument(
 		Api::RemoteFileInfo info,
 		Api::SendOptions options) {
 	if (const auto item = _session->data().message(localId)) {
+		if (item->isLocalQuickReply()
+			|| Api::IsLocalQuickReplyContext(options)) return;
 		if (!item->media() || !item->media()->document()) {
 			return;
 		}
-		const auto media = Api::PrepareUploadedDocument(
-			item,
-			std::move(info));
+		auto media = Api::PrepareUploadedDocument(item, std::move(info));
+		if (const auto snapshot = options.localQuickReplyOutgoingMedia) {
+			if (media.type() != mtpc_inputMediaUploadedDocument) return;
+			const auto &data = media.c_inputMediaUploadedDocument();
+			using Flag = MTPDinputMediaUploadedDocument::Flag;
+			const auto flags = data.vflags().v
+				| (snapshot->videoTimestamp ? Flag::f_video_timestamp : Flag());
+			media = MTP_inputMediaUploadedDocument(
+				MTP_flags(flags),
+				data.vfile(),
+				data.vthumb() ? *data.vthumb() : MTPInputFile(),
+				data.vmime_type(),
+				MTP_vector<MTPDocumentAttribute>(snapshot->attributes),
+				data.vstickers() ? *data.vstickers() : MTPVector<MTPInputDocument>(),
+				data.vvideo_cover() ? *data.vvideo_cover() : MTPInputPhoto(),
+				MTP_int(snapshot->videoTimestamp),
+				MTP_int(data.vttl_seconds().value_or_empty()));
+		}
 		const auto groupId = item->groupId();
 		if (groupId) {
 			uploadAlbumMedia(item, groupId, media);
@@ -4428,6 +4536,7 @@ void ApiWrap::sendRichMessage(
 		std::shared_ptr<const Iv::RichPage> page,
 		const MTPInputRichMessage &richMessage,
 		SendAction action) {
+	if (Api::IsLocalQuickReplyContext(action.options)) return;
 	Expects(page != nullptr);
 
 	const auto history = action.history;
@@ -4489,6 +4598,7 @@ void ApiWrap::sendRichMessage(
 		not_null<HistoryItem*> item,
 		const MTPInputRichMessage &richMessage,
 		SendAction action) {
+	if (Api::IsLocalQuickReplyContext(action.options)) return;
 	Expects(item->history() == action.history);
 
 	action.generateLocal = true;
@@ -4683,6 +4793,7 @@ void ApiWrap::sendRichMessage(
 void ApiWrap::sendMessage(
 		MessageToSend &&message,
 		std::optional<MsgId> localMessageId) {
+	if (Api::IsLocalQuickReplyContext(message.action.options)) return;
 	const auto history = message.action.history;
 	const auto peer = history->peer;
 	const auto &textWithTags = message.textWithTags;
@@ -5041,6 +5152,7 @@ void ApiWrap::sendInlineResult(
 		SendAction action,
 		std::optional<MsgId> localMessageId,
 		Fn<void(bool)> done) {
+	if (Api::IsLocalQuickReplyContext(action.options)) return;
 	StripEphemeralReply(_session, action.replyTo);
 	sendAction(action);
 
@@ -5152,6 +5264,7 @@ void ApiWrap::uploadAlbumMedia(
 		not_null<HistoryItem*> item,
 		const MessageGroupId &groupId,
 		const MTPInputMedia &media) {
+	if (item->isLocalQuickReply()) return;
 	const auto localId = item->fullId();
 	const auto failed = [=] {
 
@@ -5247,6 +5360,12 @@ void ApiWrap::sendMedia(
 		const MTPInputMedia &media,
 		Api::SendOptions options,
 		Fn<void(bool)> done) {
+	if (item->isLocalQuickReply()
+		|| Api::IsLocalQuickReplyContext(options)) {
+		if (done) done(false);
+		return;
+	}
+
 	if (options.welcomeTemplate) {
 		const auto owned = _session->welcomeMessages().owns(item);
 		if (owned) {
@@ -5270,6 +5389,12 @@ void ApiWrap::sendMediaWithRandomId(
 		Api::SendOptions options,
 		uint64 randomId,
 		Fn<void(bool)> done) {
+	if (item->isLocalQuickReply()
+		|| Api::IsLocalQuickReplyContext(options)) {
+		if (done) done(false);
+		return;
+	}
+
 	if (options.welcomeTemplate) {
 		const auto owned = _session->welcomeMessages().owns(item);
 		if (owned) {
@@ -5834,6 +5959,10 @@ Api::Ringtones &ApiWrap::ringtones() {
 
 Api::ComposeWithAi &ApiWrap::composeWithAi() {
 	return *_composeWithAi;
+}
+
+Api::ReadReceipts &ApiWrap::readReceipts() {
+	return *_readReceipts;
 }
 
 Api::Transcribes &ApiWrap::transcribes() {

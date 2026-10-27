@@ -8,7 +8,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_read_metrics.h"
 
 #include "apiwrap.h"
+#include "api/api_read_receipts.h"
 #include "data/data_peer.h"
+#include "main/main_session.h"
 
 namespace Api {
 namespace {
@@ -25,6 +27,9 @@ ReadMetrics::ReadMetrics(not_null<ApiWrap*> api)
 void ReadMetrics::add(
 		not_null<PeerData*> peer,
 		FinalizedReadMetric metric) {
+	if (peer->session().api().readReceipts().enabled()) {
+		return;
+	}
 	_pending[peer].push_back(metric);
 	if (!_timer.isActive()) {
 		_timer.callOnce(kSendTimeout);
@@ -33,6 +38,10 @@ void ReadMetrics::add(
 
 void ReadMetrics::send() {
 	for (auto i = _pending.begin(); i != _pending.end();) {
+		if (i->first->session().api().readReceipts().enabled()) {
+			i = _pending.erase(i);
+			continue;
+		}
 		if (_requests.contains(i->first)) {
 			++i;
 			continue;

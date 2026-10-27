@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "data/local_quick_reply_media.h"
 #include "history/view/controls/history_view_compose_media_edit_manager.h"
 #include "ui/layers/box_content.h"
 #include "ui/chat/attach/attach_prepare.h"
@@ -48,7 +49,8 @@ public:
 		bool spoilered,
 		bool invertCaption,
 		Ui::PreparedList &&list,
-		Fn<void()> saved);
+		Fn<void()> saved,
+		std::shared_ptr<const Data::LocalQuickReplyMessage> source = nullptr);
 	~EditCaptionBox();
 
 	static void StartMediaReplace(
@@ -58,7 +60,8 @@ public:
 		SuggestOptions suggest,
 		bool spoilered,
 		bool invertCaption,
-		Fn<void()> saved);
+		Fn<void()> saved,
+		std::shared_ptr<const Data::LocalQuickReplyMessage> source = nullptr);
 	static void StartMediaReplace(
 		not_null<Window::SessionController*> controller,
 		FullMsgId itemId,
@@ -67,7 +70,8 @@ public:
 		SuggestOptions suggest,
 		bool spoilered,
 		bool invertCaption,
-		Fn<void()> saved);
+		Fn<void()> saved,
+		std::shared_ptr<const Data::LocalQuickReplyMessage> source = nullptr);
 	static void StartPhotoEdit(
 		not_null<Window::SessionController*> controller,
 		std::shared_ptr<Data::PhotoMedia> media,
@@ -76,7 +80,8 @@ public:
 		SuggestOptions suggest,
 		bool spoilered,
 		bool invertCaption,
-		Fn<void()> saved);
+		Fn<void()> saved,
+		std::shared_ptr<const Data::LocalQuickReplyMessage> source = nullptr);
 
 	void showFinished() override;
 
@@ -113,6 +118,8 @@ private:
 	bool validateLength(const QString &text) const;
 	void applyChanges();
 	void save();
+	void saveLocal();
+	void persistLocal();
 	void closeAfterSave();
 
 	bool fileFromClipboard(not_null<const QMimeData*> data);
@@ -126,7 +133,7 @@ private:
 	bool setPreparedList(Ui::PreparedList &&list);
 
 	const not_null<Window::SessionController*> _controller;
-	const not_null<HistoryItem*> _historyItem;
+	HistoryItem *_historyItem = nullptr;
 	const SuggestOptions _suggest;
 	const bool _isAllowedEditMedia;
 	const Ui::AlbumType _albumType;
@@ -154,6 +161,12 @@ private:
 	HistoryView::MediaEditManager _mediaEditManager;
 
 	mtpRequestId _saveRequestId = 0;
+	std::optional<Data::LocalQuickReplyMessage> _localSource;
+	std::optional<Data::PreparedLocalQuickReplyMedia> _localPrepared;
+	std::unique_ptr<Data::LocalQuickReplyMedia> _localMedia;
+	std::unique_ptr<Data::LocalQuickReplyMediaOperation> _localOperation;
+	bool _localSaving = false;
+	bool _localRecoveryApproved = false;
 
 	base::Timer _checkChangedTimer;
 	bool _isPhoto = false;

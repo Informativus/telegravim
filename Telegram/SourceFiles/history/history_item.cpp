@@ -924,11 +924,16 @@ HistoryItem::HistoryItem(
 , _from((fields.flags & MessageFlag::HasFromId && fields.from)
 	? history->owner().peer(fields.from)
 	: history->peer)
-, _flags(FinalizeMessageFlags(history, fields.flags))
+, _flags(FinalizeMessageFlags(history, fields.flags
+	| (fields.localQuickReply ? MessageFlag::ShortcutMessage : MessageFlag())))
 , _date(fields.date)
 , _starsPaid(fields.starsPaid)
 , _shortcutId(fields.shortcutId)
+, _localQuickReply(fields.localQuickReply)
 , _effectId(fields.effectId) {
+	if (_localQuickReply) {
+		_flags &= ~(MessageFlag::HistoryEntry | MessageFlag::ReactionsAreTags);
+	}
 	Expects(!_shortcutId
 		|| isSending()
 		|| _history->owner().shortcutMessages().lookupId(this));
@@ -1252,6 +1257,41 @@ void HistoryItem::setGroupId(MessageGroupId groupId) {
 
 	_groupId = groupId;
 	_history->owner().groups().registerMessage(this);
+}
+
+void HistoryItem::updateLocalQuickReplyRelations(
+		uint64 groupedId,
+		FullReplyTo replyTo) {
+	if (!isLocalQuickReply()) {
+		return;
+	}
+	const auto nextGroup = groupedId
+		? MessageGroupId::FromRaw(_history->peer->id, groupedId, false)
+		: MessageGroupId();
+	if (_groupId != nextGroup) {
+		if (_groupId) {
+			_history->owner().groups().unregisterMessage(this);
+			_groupId = MessageGroupId();
+		}
+		if (nextGroup) {
+			setGroupId(nextGroup);
+		}
+	}
+	if (replyTo.messageId) {
+		if (!Has<HistoryMessageReply>()) {
+			AddComponents(HistoryMessageReply::Bit());
+		}
+		setReplyFields(
+			replyTo.messageId.msg,
+			replyTo.topicRootId
+				? replyTo.topicRootId
+				: replyTo.messageId.msg,
+			false);
+	} else if (Has<HistoryMessageReply>()) {
+		RemoveComponents(HistoryMessageReply::Bit());
+	}
+	_history->owner().groups().refreshMessage(this);
+	_history->owner().requestItemViewRefresh(this);
 }
 
 bool HistoryItem::checkDiscussionLink(ChannelId id) const {
@@ -2272,18 +2312,24 @@ BusinessShortcutId HistoryItem::shortcutId() const {
 	return _shortcutId;
 }
 
+bool HistoryItem::isLocalQuickReply() const {
+	return _localQuickReply;
+}
+
 bool HistoryItem::isBusinessShortcut() const {
 	return _shortcutId != 0;
 }
 
 bool HistoryItem::isWelcomeTemplate() const {
-	return !isHistoryEntry()
+	return !isLocalQuickReply()
+		&& !isHistoryEntry()
 		&& !isAdminLogEntry()
 		&& (Data::IsWelcomeMsgId(id)
 			|| history()->session().welcomeMessages().owns(this));
 }
 
 void HistoryItem::setRealShortcutId(BusinessShortcutId id) {
+	Expects(!isLocalQuickReply());
 	_shortcutId = id;
 }
 
@@ -3123,6 +3169,7 @@ void HistoryItem::markTextAppearingStarted() {
 }
 
 void HistoryItem::setRealId(MsgId newId) {
+	Expects(!isLocalQuickReply());
 	Expects(isSending() || textAppearing());
 	Expects(IsClientMsgId(id));
 
@@ -3197,6 +3244,7 @@ bool HistoryItem::isTooOldForEdit(TimeId now) const {
 	return !_history->peer->canEditMessagesIndefinitely()
 		&& !isScheduled()
 		&& !isWelcomeTemplate()
+		&& !isLocalQuickReply()
 		&& (now - date() >= _history->session().serverConfig().editTimeLimit);
 }
 
@@ -3224,6 +3272,7 @@ bool HistoryItem::canBeEdited() const {
 	if ((!isRegular()
 			&& !isScheduled()
 			&& !isBusinessShortcut()
+			&& !isLocalQuickReply()
 			&& !isWelcomeTemplate())
 		|| Has<HistoryMessageVia>()
 		|| Has<HistoryMessageForwarded>()) {
@@ -3293,6 +3342,7 @@ bool HistoryItem::canDelete() const {
 	} else if (!isHistoryEntry()
 		&& !isScheduled()
 		&& !isBusinessShortcut()
+		&& !isLocalQuickReply()
 		&& !isWelcomeTemplate()) {
 		return false;
 	}
@@ -4694,7 +4744,7 @@ bool HistoryItem::isEmpty() const {
 }
 
 Data::SavedSublist *HistoryItem::savedSublist() const {
-	if (isBusinessShortcut() || isScheduled()) {
+	if (isLocalQuickReply() || isBusinessShortcut() || isScheduled()) {
 		return nullptr;
 	} else if (const auto saved = Get<HistoryMessageSaved>()) {
 		if (saved->savedMessagesSublist) {
@@ -4937,7 +4987,8 @@ void HistoryItem::createComponents(CreateConfig &&config) {
 		mask |= HistoryMessageSchedulePeriod::Bit();
 	}
 	const auto requiresMonoforumPeer = _history->peer->amMonoforumAdmin();
-	if (!isBusinessShortcut()
+	if (!isLocalQuickReply()
+		&& !isBusinessShortcut()
 		&& !isScheduled()
 		&& (_history->peer->isSelf()
 			|| config.savedSublistPeer

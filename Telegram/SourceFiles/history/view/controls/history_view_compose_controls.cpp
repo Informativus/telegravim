@@ -36,6 +36,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/tabbed_selector.h"
 #include "chat_helpers/field_autocomplete.h"
 #include "core/application.h"
+#include "core/vim_keymap.h"
 #include "core/click_handler_types.h"
 #include "core/core_settings.h"
 #include "core/shortcuts.h"
@@ -45,6 +46,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_birthday.h"
 #include "data/data_changes.h"
 #include "data/data_drafts.h"
+#include "data/local_quick_reply_view.h"
 #include "data/data_group_call.h"
 #include "data/data_messages.h"
 #include "data/data_message_reactions.h"
@@ -212,7 +214,8 @@ public:
 	FieldHeader(
 		QWidget *parent,
 		std::shared_ptr<ChatHelpers::Show> show,
-		Fn<bool()> hasSendText);
+		Fn<bool()> hasSendText,
+		bool localQuickReply);
 
 	void setHistory(const SetHistoryArgs &args);
 	void updateTopicRootId(MsgId topicRootId);
@@ -305,6 +308,7 @@ private:
 
 	const std::shared_ptr<ChatHelpers::Show> _show;
 	const Fn<bool()> _hasSendText;
+	const bool _localQuickReply = false;
 
 	History *_history = nullptr;
 	MsgId _topicRootId = 0;
@@ -357,10 +361,12 @@ private:
 FieldHeader::FieldHeader(
 	QWidget *parent,
 	std::shared_ptr<ChatHelpers::Show> show,
-	Fn<bool()> hasSendText)
+	Fn<bool()> hasSendText,
+	bool localQuickReply)
 : RpWidget(parent)
 , _show(std::move(show))
 , _hasSendText(std::move(hasSendText))
+, _localQuickReply(localQuickReply)
 , _forwardPanel(
 	std::make_unique<ForwardPanel>([=] { customEmojiRepaint(); }))
 , _data(&_show->session().data())
@@ -638,6 +644,7 @@ void FieldHeader::setShownMessage(HistoryItem *item) {
 }
 
 void FieldHeader::resolveMessageData() {
+	if (_localQuickReply) return;
 	const auto id = isEditingMessage()
 		? _editMsgId.current()
 		: displayedReplyingToMessage().messageId;
@@ -1231,6 +1238,7 @@ ComposeControls::ComposeControls(
 , _selector((_regularWindow && _features.commonTabbedPanel)
 	? _regularWindow->tabbedSelector()
 	: not_null(_ownedSelector.get()))
+, _localQuickReplyRef(std::move(descriptor.localQuickReplyRef))
 , _mode(descriptor.mode)
 , _wrap(std::make_unique<Ui::RpWidget>(_parent))
 , _send(std::make_shared<Ui::SendButton>(_wrap.get(), _st.send))
@@ -1289,7 +1297,8 @@ ComposeControls::ComposeControls(
 , _header(std::make_unique<FieldHeader>(
 	_wrap.get(),
 	_show,
-	[=] { return _field->isVisible() && HasSendText(_field); }))
+	[=] { return _field->isVisible() && HasSendText(_field); },
+	!_localQuickReplyRef.isEmpty()))
 , _voiceRecordBar(std::make_unique<VoiceRecordBar>(
 	_wrap.get(),
 	Controls::VoiceRecordBarDescriptor{
@@ -1494,6 +1503,11 @@ void ComposeControls::updateShortcutId(BusinessShortcutId shortcutId) {
 }
 
 void ComposeControls::setHistory(SetHistoryArgs &&args) {
+	if (_history != *args.history
+		|| _topicRootId != args.topicRootId
+		|| _monoforumPeerId != args.monoforumPeerId) {
+		_voiceRecordBar->closeReview();
+	}
 	_showSlowmodeError = std::move(args.showSlowmodeError);
 	_showScheduleSendError = std::move(args.showScheduleSendError);
 	_sendActionFactory = std::move(args.sendActionFactory);
@@ -1558,7 +1572,11 @@ void ComposeControls::setHistory(SetHistoryArgs &&args) {
 			_wrap.get(),
 			peer->asChannel());
 	}
-	session().local().readDraftsWithCursors(_history);
+	if (_localQuickReplyRef.isEmpty()) {
+		session().local().readDraftsWithCursors(_history);
+	} else {
+		loadLocalQuickReplyDrafts();
+	}
 	applyDraft();
 	orderControls();
 	_field->setMode(args.videoStream
@@ -2252,6 +2270,13 @@ rpl::producer<std::optional<bool>> ComposeControls::attachRequests() const {
 }
 
 void ComposeControls::setMimeDataHook(MimeDataHook hook) {
+	_insertQuickReplyFiles = hook ? Fn<bool(QStringList)>([=](QStringList paths) {
+		auto data = QMimeData();
+		auto urls = QList<QUrl>();
+		for (const auto &path : paths) urls.push_back(QUrl::fromLocalFile(path));
+		data.setUrls(urls);
+		return hook(&data, Ui::InputField::MimeAction::Insert);
+	}) : nullptr;
 	const auto large = (_sendAsFile != nullptr);
 	_field->setMimeDataHook(
 		WrappedMessageFieldMimeHook(
@@ -2342,6 +2367,49 @@ void ComposeControls::showRichEditorWithPaste(
 	_pendingRichPaste = nullptr;
 }
 
+void ComposeControls::applyLocalQuickReplyText(
+		const TextWithTags &text,
+		int cursorPosition) {
+	setFieldText(text, TextUpdateEvent::SaveDraft, FieldHistoryAction::NewEntry);
+	_field->setCursorPosition(cursorPosition);
+}
+
+auto ComposeControls::localQuickReplyEditSource() const
+-> std::shared_ptr<const Data::LocalQuickReplyMessage> {
+	return _localEditSource;
+}
+
+void ComposeControls::localQuickReplyEditSaved(
+		const Data::LocalQuickReplyMessage &source) {
+	if (!_localEditSource || _localEditSource->id != source.id
+		|| _localEditSource->replyRef != source.replyRef
+		|| _localEditSource->retained.value(u"version_vector"_q)
+			!= source.retained.value(u"version_vector"_q)
+		|| _localEditSource->legacyParentRevision != source.legacyParentRevision) {
+		return;
+	}
+	const auto reply = session().data().localQuickReplies().find(source.replyRef);
+	if (!reply) return;
+	const auto saved = ranges::find(reply->messages, source.id,
+		&Data::LocalQuickReplyMessage::id);
+	if (saved == reply->messages.end()) return;
+	_localEditSource = std::make_shared<Data::LocalQuickReplyMessage>(*saved);
+	saveDraftWithTextNow();
+}
+
+Fn<void()> ComposeControls::editCompletion() {
+	const auto id = _editingId;
+	const auto text = _field->getTextWithTags();
+	const auto source = _localEditSource;
+	return crl::guard(_wrap.get(), [=] {
+		if (_editingId == id && source) localQuickReplyEditSaved(*source);
+		const auto current = _field->getTextWithTags();
+		if (_editingId == id && current.text == text.text && current.tags == text.tags) {
+			cancelEditMessage();
+		}
+	});
+}
+
 bool ComposeControls::confirmMediaEdit(Ui::PreparedList &list) {
 	if (!isEditingMessage() || !_regularWindow) {
 		return false;
@@ -2355,7 +2423,7 @@ bool ComposeControls::confirmMediaEdit(Ui::PreparedList &list) {
 			_header->suggestOptions(),
 			queryToEdit.spoilered,
 			queryToEdit.options.invertCaption,
-			crl::guard(_wrap.get(), [=] { cancelEditMessage(); }));
+			editCompletion(), _localEditSource);
 	} else {
 		_show->showToast(tr::lng_edit_caption_attach(tr::now));
 	}
@@ -2504,8 +2572,9 @@ void ComposeControls::saveFieldToHistoryLocalDraft(bool save) {
 	if (bypassNormalDraftHandling()) {
 		return;
 	}
+	const auto type = isEditingMessage() ? DraftType::Edit : DraftType::Normal;
 	const auto key = draftKeyCurrent();
-	if (!_history || !key) {
+	if (!_history || (!key && _localQuickReplyRef.isEmpty())) {
 		return;
 	}
 	const auto id = _header->getDraftReply();
@@ -2513,17 +2582,17 @@ void ComposeControls::saveFieldToHistoryLocalDraft(bool save) {
 		? _currentSuggest()
 		: SuggestOptions();
 	if (shouldShowRichDraftPreview()) {
-		_history->clearDraft(key);
+		clearComposeDraft(type);
 	} else if (_preview && (id || suggest.exists || !_field->empty())) {
-		_history->setDraft(
-			key,
+		setComposeDraft(
+			type,
 			std::make_unique<Data::Draft>(
 				_field,
 				id,
 				suggest,
 				_preview->draft()));
 	} else {
-		_history->clearDraft(key);
+		clearComposeDraft(type);
 	}
 	if (save) {
 		saveDraftWithTextNow();
@@ -2565,7 +2634,7 @@ bool ComposeControls::isShortcutComposeEligible() const {
 		&& (_mode == Mode::Normal)
 		&& (_currentDialogsEntryState.section
 			== Dialogs::EntryState::Section::ShortcutMessages)
-		&& (_shortcutId > 0);
+		&& ((_shortcutId > 0) || !_localQuickReplyRef.isEmpty());
 }
 
 bool ComposeControls::isWelcomeComposeEligible() const {
@@ -2579,7 +2648,7 @@ bool ComposeControls::isWelcomeComposeEligible() const {
 
 bool ComposeControls::hasEditDraft() const {
 	return _history
-		&& (_history->draft(draftKey(DraftType::Edit)) != nullptr);
+		&& (composeDraft(DraftType::Edit) != nullptr);
 }
 
 bool ComposeControls::bypassNormalDraftHandling() const {
@@ -2657,7 +2726,7 @@ void ComposeControls::migrateScheduledFieldToRichEditor() {
 
 	cancelPendingDraftSaves();
 	clearFieldText();
-	_history->clearDraft(draftKey(DraftType::Normal));
+	clearComposeDraft(DraftType::Normal);
 }
 
 void ComposeControls::migrateShortcutFieldToRichEditor(
@@ -2804,7 +2873,7 @@ void ComposeControls::init() {
 			_header->suggestOptions(),
 			queryToEdit.spoilered,
 			queryToEdit.options.invertCaption,
-			crl::guard(_wrap.get(), [=] { cancelEditMessage(); }));
+			editCompletion(), _localEditSource);
 	}, _wrap->lifetime());
 
 	_header->editOptionsRequests(
@@ -2825,10 +2894,12 @@ void ComposeControls::init() {
 			} else {
 				cancelReplyMessage();
 			}
-			history->setForwardDraft(
-				topicRootId,
-				monoforumPeerId,
-				std::move(forward));
+			if (_localQuickReplyRef.isEmpty()) {
+				history->setForwardDraft(
+					topicRootId,
+					monoforumPeerId,
+					std::move(forward));
+			}
 			_preview->apply(webpage);
 			_field->setFocus();
 		};
@@ -2905,6 +2976,13 @@ void ComposeControls::init() {
 
 	_header->editMsgIdValue(
 	) | rpl::on_next([=](const auto &id) {
+		if (_history && !_localQuickReplyRef.isEmpty() && _editingId != id) {
+			const auto item = _history->owner().message(id);
+			const auto source = item
+				? _history->owner().localQuickReplyView().message(item) : std::nullopt;
+			_localEditSource = source
+				? std::make_shared<Data::LocalQuickReplyMessage>(*source) : nullptr;
+		}
 		_editingId = id;
 	}, _wrap->lifetime());
 
@@ -2912,7 +2990,8 @@ void ComposeControls::init() {
 	) | rpl::filter([=](not_null<const HistoryItem*> item) {
 		return (_editingId == item->fullId());
 	}) | rpl::on_next([=] {
-		cancelEditMessage();
+		if (!_localQuickReplyRef.isEmpty()) retainLocalQuickReplyEditDraft();
+		else cancelEditMessage();
 	}, _wrap->lifetime());
 
 	Core::App().materializeLocalDraftsRequests(
@@ -3217,6 +3296,9 @@ void ComposeControls::initFieldAutocomplete() {
 				_processShortcut(shortcut);
 			})
 			: nullptr),
+		.insertQuickReplyFiles = [=](QStringList paths) {
+			return _insertQuickReplyFiles && _insertQuickReplyFiles(paths);
+		},
 		.moderateKeyActivateCallback = (_moderateKeyActivateCallback
 			? Fn<bool(int)>([=](int key) {
 				return _moderateKeyActivateCallback(key);
@@ -3335,6 +3417,7 @@ void ComposeControls::updateSilentBroadcast() {
 }
 
 bool ComposeControls::suppressSendAction() const {
+	if (!_localQuickReplyRef.isEmpty()) return true;
 	if (!_history) {
 		return false;
 	}
@@ -3418,6 +3501,7 @@ void ComposeControls::saveDraftDelayed() {
 }
 
 Data::DraftKey ComposeControls::draftKey(DraftType type) const {
+	if (!_localQuickReplyRef.isEmpty()) return Data::DraftKey::None();
 	using Section = Dialogs::EntryState::Section;
 	using Key = Data::DraftKey;
 
@@ -3472,6 +3556,10 @@ void ComposeControls::saveDraft(bool delayed) {
 }
 
 void ComposeControls::saveCloudDraft() {
+	if (!_localQuickReplyRef.isEmpty()) {
+		_saveCloudDraftTimer.cancel();
+		return;
+	}
 	if (bypassNormalDraftHandling()) {
 		_saveCloudDraftTimer.cancel();
 		return;
@@ -3644,6 +3732,14 @@ void ComposeControls::updateFieldVisibility() {
 }
 
 void ComposeControls::writeDrafts() {
+	if (!_localQuickReplyRef.isEmpty()) {
+		_saveDraftStart = 0;
+		_saveDraftText = false;
+		_saveDraftTimer.cancel();
+		_saveCloudDraftTimer.cancel();
+		writeLocalQuickReplyDrafts();
+		return;
+	}
 	if (bypassNormalDraftHandling()) {
 		cancelPendingDraftSaves();
 		return;
@@ -3685,17 +3781,17 @@ void ComposeControls::applyDraft(FieldHistoryAction fieldHistoryAction) {
 		updateFieldVisibility();
 		return;
 	}
-	if (_voiceRecordBar->isActive()) {
+	if (_voiceRecordBar->isActive() || _voiceRecordBar->isReviewing()) {
 		return;
 	}
 
-	const auto editDraft = _history->draft(draftKey(DraftType::Edit));
+	const auto editDraft = composeDraft(DraftType::Edit);
 	const auto richDraft = (!editDraft && shouldShowRichDraftPreview())
 		? cloudDraft()
 		: nullptr;
 	const auto draft = editDraft
 		? editDraft
-		: _history->draft(draftKey(DraftType::Normal));
+		: composeDraft(DraftType::Normal);
 	const auto editingId = (draft && draft == editDraft)
 		? draft->reply.messageId
 		: FullMsgId();
@@ -3814,7 +3910,7 @@ void ComposeControls::applyDraft(FieldHistoryAction fieldHistoryAction) {
 			_header->editMessage(editingId, SuggestOptions(), false);
 			return false;
 		};
-		if (!resolve()) {
+		if (!resolve() && _localQuickReplyRef.isEmpty()) {
 			const auto callback = crl::guard(_header.get(), [=] {
 				if (_header->editMsgId() == editingId
 					&& resolve()
@@ -3843,6 +3939,7 @@ void ComposeControls::applyDraft(FieldHistoryAction fieldHistoryAction) {
 }
 
 void ComposeControls::cancelForward() {
+	if (!_localQuickReplyRef.isEmpty()) return;
 	_history->setForwardDraft(_topicRootId, _monoforumPeerId, {});
 	updateForwarding();
 }
@@ -4343,7 +4440,9 @@ void ComposeControls::initVoiceRecordBar() {
 			if (peer) {
 				if (const auto error = Data::RestrictionError(
 						peer,
-						ChatRestriction::SendVoiceMessages)) {
+						(_send->type() == Ui::SendButton::Type::Transcribe)
+							? ChatRestriction::SendOther
+							: ChatRestriction::SendVoiceMessages)) {
 					return error;
 				}
 			}
@@ -4371,8 +4470,8 @@ void ComposeControls::initVoiceRecordBar() {
 
 	_voiceRecordBar->recordingTipRequests(
 	) | rpl::on_next([=] {
-		Core::App().settings().setRecordVideoMessages(
-			!Core::App().settings().recordVideoMessages());
+		_voiceRecordBar->cycleRecordButtonType(
+			_recordAvailability == Webrtc::RecordAvailability::VideoAndAudio);
 		updateSendButtonType();
 		switch (_send->type()) {
 		case Ui::SendButton::Type::Record: {
@@ -4383,6 +4482,9 @@ void ComposeControls::initVoiceRecordBar() {
 		} break;
 		case Ui::SendButton::Type::Round:
 			_show->showToast(tr::lng_record_video_tip(tr::now));
+			break;
+		case Ui::SendButton::Type::Transcribe:
+			_show->showToast(tr::lng_local_dictation_tip(tr::now));
 			break;
 		}
 	}, _wrap->lifetime());
@@ -4412,7 +4514,7 @@ void ComposeControls::initVoiceRecordBar() {
 
 	_voiceRecordBar->cancelRequests(
 	) | rpl::on_next([=] {
-		if (_history && _history->draft(draftKey(DraftType::Normal))) {
+		if (_history && composeDraft(DraftType::Normal)) {
 			applyDraft();
 		}
 	}, _wrap->lifetime());
@@ -4543,6 +4645,24 @@ void ComposeControls::showRichEditor() {
 	if (!_regularWindow || !_history || !_sendActionFactory) {
 		return;
 	}
+	if (!_localQuickReplyRef.isEmpty() && !isEditingMessage()) {
+		const auto text = _field->getTextWithTags();
+		const auto reply = replyingToMessage();
+		using Options = Iv::Editor::ComposeBoxOptions;
+		Iv::Editor::ShowComposeBox(
+			_regularWindow, _history->peer, _sendActionFactory(), {},
+			getTextWithAppliedMarkdown(), nullptr,
+			Options{
+				.scope = Options::Scope::Detached,
+				.initialPaste = _pendingRichPaste,
+				.localSaved = crl::guard(_wrap.get(), [=] {
+					const auto current = _field->getTextWithTags();
+					if (!isEditingMessage() && replyingToMessage() == reply
+						&& current.text == text.text && current.tags == text.tags) clear();
+				}),
+			});
+		return;
+	}
 	if (isEditingMessage()) {
 		const auto item = _history->owner().message(_header->editMsgId());
 		if (item) {
@@ -4551,9 +4671,7 @@ void ComposeControls::showRichEditor() {
 				item,
 				_sendActionFactory(),
 				getTextWithAppliedMarkdown(),
-				crl::guard(_wrap.get(), [=] {
-					cancelEditMessage();
-				}));
+				editCompletion(), _localEditSource);
 		}
 		return;
 	}
@@ -4757,10 +4875,7 @@ auto ComposeControls::computeSendButtonType() const {
 		return Type::Cancel;
 	} else if (showRecordButton()) {
 		const auto both = Webrtc::RecordAvailability::VideoAndAudio;
-		const auto video = Core::App().settings().recordVideoMessages();
-		return (video && _recordAvailability == both)
-			? Type::Round
-			: Type::Record;
+		return _voiceRecordBar->recordButtonType(_recordAvailability == both);
 	} else if (showEditStarsButton()) {
 		return Type::EditPrice;
 	}
@@ -4822,13 +4937,15 @@ void ComposeControls::updateSendButtonType() {
 		? Type::Stop
 		: computeSendButtonType();
 	const auto forbidden = [&] {
-		if (type != Type::Record && type != Type::Round) {
+		if (!Ui::SendButton::IsRecordingType(type)) {
 			return false;
 		}
 		if (!_history) {
 			return false;
 		}
-		const auto restriction = (type == Type::Record)
+		const auto restriction = (type == Type::Transcribe)
+			? ChatRestriction::SendOther
+			: (type == Type::Record)
 			? ChatRestriction::SendVoiceMessages
 			: ChatRestriction::SendVideoMessages;
 		return !!Data::RestrictionError(_history->peer, restriction);
@@ -4878,8 +4995,7 @@ void ComposeControls::updateSendButtonType() {
 	});
 	_send->setDisabled(_sendDisabledBySlowmode.current()
 		&& (type == Type::Send
-			|| type == Type::Record
-			|| type == Type::Round));
+			|| Ui::SendButton::IsRecordingType(type)));
 	updateSendLockBadge();
 }
 
@@ -5160,7 +5276,8 @@ bool ComposeControls::canShowRichEditor() const {
 		&& (composeEligible || isEditingMessage())
 		&& !textExceedsMaxSize()
 		&& !(media && !media->webpage())
-		&& Iv::Editor::CanAuthorRichMessages(&_show->session());
+		&& (!_localQuickReplyRef.isEmpty()
+			|| Iv::Editor::CanAuthorRichMessages(&_show->session()));
 }
 
 void ComposeControls::updateExpandButtonVisibility() {
@@ -5670,6 +5787,18 @@ bool ComposeControls::returnTabbedSelector() {
 	return true;
 }
 
+bool ComposeControls::vimKeymapFocusEmojiPanel() {
+	if (_field->isHidden() || !_history) {
+		return false;
+	}
+	if (_tabbedPanel) {
+		_tabbedPanel->showAnimated();
+	}
+	_selector->vimKeymapFocusPanel();
+	Core::VimKeymap::SetNormalMode(true);
+	return true;
+}
+
 void ComposeControls::createTabbedPanel() {
 	using namespace ChatHelpers;
 	auto descriptor = TabbedPanelDescriptor{
@@ -5765,8 +5894,22 @@ void ComposeControls::editMessage(
 
 void ComposeControls::editMessage(not_null<HistoryItem*> item) {
 	Expects(_history != nullptr);
+	if (item->isLocalQuickReply()) {
+		const auto source = _history->owner().localQuickReplyView().message(item);
+		const auto error = source ? Data::QuickReplyMessageEditError(*source)
+			: tr::lng_local_replies_edit_draft_missing(tr::now);
+		if (!error.isEmpty()) {
+			_show->showToast(error);
+			return;
+		}
+	}
+	if (!_localQuickReplyDeferredEditDraft.isEmpty()) {
+		showLocalQuickReplyDraftRecovery();
+		return;
+	}
 
-	if (draftKey(DraftType::Edit) == Data::DraftKey::None()) {
+	if (_localQuickReplyRef.isEmpty()
+		&& draftKey(DraftType::Edit) == Data::DraftKey::None()) {
 		return;
 	}
 	if (item->richPage()) {
@@ -5797,8 +5940,8 @@ void ComposeControls::editMessage(not_null<HistoryItem*> item) {
 		Ui::kQFixedMax
 	};
 	const auto key = draftKey(DraftType::Edit);
-	_history->setDraft(
-		key,
+	setComposeDraft(
+		DraftType::Edit,
 		std::make_unique<Data::Draft>(
 			editData,
 			FullReplyTo{
@@ -5847,7 +5990,7 @@ bool ComposeControls::updateReplaceMediaButton() {
 				_header->suggestOptions(),
 				queryToEdit.spoilered,
 				queryToEdit.options.invertCaption,
-				crl::guard(_wrap.get(), [=] { cancelEditMessage(); }));
+				editCompletion(), _localEditSource);
 		});
 	});
 	return true;
@@ -5855,7 +5998,8 @@ bool ComposeControls::updateReplaceMediaButton() {
 
 void ComposeControls::cancelEditMessage() {
 	Expects(_history != nullptr);
-	Expects(draftKeyCurrent() != Data::DraftKey::None());
+	Expects(!_localQuickReplyRef.isEmpty()
+		|| draftKeyCurrent() != Data::DraftKey::None());
 
 	_canReplaceMedia = _canAddMedia = false;
 	_photoEditMedia = nullptr;
@@ -5864,7 +6008,7 @@ void ComposeControls::cancelEditMessage() {
 	if (_preview) {
 		_preview->setDisabled(false);
 	}
-	_history->clearDraft(draftKey(DraftType::Edit));
+	clearComposeDraft(DraftType::Edit);
 	applyDraft();
 	saveDraftWithTextNow();
 	updateControlsVisibility();
@@ -5895,7 +6039,8 @@ void ComposeControls::maybeCancelEditMessage() {
 void ComposeControls::replyToMessage(FullReplyTo id) {
 	Expects(_history != nullptr);
 
-	if (draftKey(DraftType::Normal) == Data::DraftKey::None()) {
+	if (_localQuickReplyRef.isEmpty()
+		&& draftKey(DraftType::Normal) == Data::DraftKey::None()) {
 		return;
 	}
 	id.topicRootId = _topicRootId;
@@ -5908,11 +6053,11 @@ void ComposeControls::replyToMessage(FullReplyTo id) {
 		const auto key = draftKey(DraftType::Normal);
 		Assert(key.topicRootId() == id.topicRootId);
 		Assert(key.monoforumPeerId() == id.monoforumPeerId);
-		if (const auto localDraft = _history->draft(key)) {
+		if (const auto localDraft = composeDraft(DraftType::Normal)) {
 			localDraft->reply = id;
 		} else {
-			_history->setDraft(
-				key,
+			setComposeDraft(
+				DraftType::Normal,
 				std::make_unique<Data::Draft>(
 					TextWithTags(),
 					id,
@@ -5940,11 +6085,10 @@ void ComposeControls::cancelReplyMessage() {
 	const auto wasReply = replyingToMessage();
 	_header->replyToMessage({});
 	if (_history) {
-		const auto key = draftKey(DraftType::Normal);
-		if (const auto localDraft = _history->draft(key)) {
+		if (const auto localDraft = composeDraft(DraftType::Normal)) {
 			if (localDraft->reply.messageId) {
 				if (localDraft->textWithTags.text.isEmpty()) {
-					_history->clearDraft(key);
+					clearComposeDraft(DraftType::Normal);
 				} else {
 					localDraft->reply = {};
 				}
@@ -5968,6 +6112,7 @@ void ComposeControls::cancelReplyMessageExternal() {
 }
 
 void ComposeControls::updateForwarding() {
+	if (!_localQuickReplyRef.isEmpty()) return;
 	const auto thread = (_history && (_topicRootId || _monoforumPeerId))
 		? _history->threadFor(_topicRootId, _monoforumPeerId)
 		: (Data::Thread*)_history;
@@ -6112,6 +6257,7 @@ void ComposeControls::initWebpageProcess() {
 }
 
 void ComposeControls::initForwardProcess() {
+	if (!_localQuickReplyRef.isEmpty()) return;
 	using EntryUpdateFlag = Data::EntryUpdate::Flag;
 	session().changes().entryUpdates(
 		EntryUpdateFlag::ForwardDraft
@@ -6167,7 +6313,7 @@ FullReplyTo ComposeControls::draftReplyingToMessage() const {
 	auto result = replyingToMessage();
 	if (!result.messageId && _history) {
 		// Compose box owns the field, applyDraft() leaves header empty.
-		if (const auto draft = _history->draft(draftKey(DraftType::Normal))) {
+		if (const auto draft = composeDraft(DraftType::Normal)) {
 			result.messageId = draft->reply.messageId;
 		}
 	}
@@ -6231,8 +6377,7 @@ bool ComposeControls::isRecordingPressed() const {
 	return !_voiceRecordBar->isRecordingLocked()
 		&& (!_voiceRecordBar->isHidden()
 			|| (_send->isDown()
-				&& (_send->type() == Ui::SendButton::Type::Record
-					|| _send->type() == Ui::SendButton::Type::Round)));
+				&& Ui::SendButton::IsRecordingType(_send->type())));
 }
 
 rpl::producer<bool> ComposeControls::recordingActiveValue() const {

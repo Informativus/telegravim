@@ -37,6 +37,7 @@ public:
 		Save,
 		Record,
 		Round,
+		Transcribe,
 		Cancel,
 		Slowmode,
 		EditPrice,
@@ -52,6 +53,11 @@ public:
 	};
 	[[nodiscard]] Type type() const {
 		return _state.type;
+	}
+	[[nodiscard]] static bool IsRecordingType(Type type) {
+		return type == Type::Record
+			|| type == Type::Round
+			|| type == Type::Transcribe;
 	}
 	[[nodiscard]] State state() const {
 		return _state;
@@ -89,6 +95,7 @@ private:
 
 	void paintRecord(QPainter &p, bool over);
 	void paintRound(QPainter &p, bool over);
+	void paintTranscribe(QPainter &p, bool over);
 	void paintSave(QPainter &p, bool over);
 	void paintCancel(QPainter &p, bool over);
 	void paintSend(QPainter &p, bool over);

@@ -46,9 +46,11 @@ public:
 		std::shared_ptr<ChatHelpers::Show> show);
 	void reupload(Fn<void(PhotoData*)> done);
 	void reset();
+	void detachLocalItem();
 
 	[[nodiscard]] Image *preview() const;
 	[[nodiscard]] PhotoData *photo() const;
+	[[nodiscard]] std::shared_ptr<Ui::PreparedFile> localPrepared() const;
 	[[nodiscard]] bool uploading() const;
 
 	void paintUploading(Painter &p, QRect to);
@@ -76,6 +78,7 @@ private:
 	FullMsgId _uploadId;
 	mtpRequestId _requestId = 0;
 	std::shared_ptr<FilePrepareResult> _prepared;
+	std::shared_ptr<Ui::PreparedFile> _localPrepared;
 	Fn<void(PhotoData*)> _reuploadDone;
 	Ui::InfiniteRadialAnimation _radial;
 	std::unique_ptr<TaskQueue> _prepareQueue;

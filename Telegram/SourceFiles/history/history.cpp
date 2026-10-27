@@ -55,6 +55,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_updates.h"
 #include "data/data_poll.h"
 #include "data/data_todo_list.h"
+#include "data/local_quick_reply_view.h"
 #include "lang/lang_keys.h"
 #include "apiwrap.h"
 #include "api/api_chat_participants.h"
@@ -532,6 +533,7 @@ Data::ResolvedForwardDraft History::resolveForwardDraft(
 	return Data::ResolvedForwardDraft{
 		.items = owner().idsToItems(draft.ids),
 		.options = draft.options,
+		.localQuickReplyStages = draft.localQuickReplyStages,
 	};
 }
 
@@ -553,6 +555,15 @@ void History::setForwardDraft(
 		MsgId topicRootId,
 		PeerId monoforumPeerId,
 		Data::ForwardDraft &&draft) {
+	auto stages = std::vector<std::shared_ptr<const Data::LocalQuickReplyStage>>();
+	for (const auto id : draft.ids) {
+		if (const auto item = owner().message(id)) {
+			if (const auto stage = owner().localQuickReplyView().stageLease(item)) {
+				if (!ranges::contains(stages, stage)) stages.push_back(stage);
+			}
+		}
+	}
+	draft.localQuickReplyStages = std::move(stages);
 	auto changed = false;
 	const auto key = Data::DraftKey::Local(topicRootId, monoforumPeerId);
 	if (draft.ids.empty()) {

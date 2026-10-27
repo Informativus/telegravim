@@ -32,6 +32,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/controls/history_view_compose_ai_button.h"
 #include "history/view/history_view_schedule_box.h"
 #include "core/mime_type.h"
+#include "core/vim_keymap.h"
+#include "core/vim_keymap_bindings.h"
+#include "core/vim_keymap_widgets.h"
 #include "core/ui_integration.h"
 #include "base/event_filter.h"
 #include "base/call_delayed.h"
@@ -82,6 +85,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_menu_icons.h"
 
 #include <QtCore/QMimeData>
+#include <QtWidgets/QApplication>
 
 namespace {
 
@@ -2228,12 +2232,100 @@ void SendFilesBox::setupEmojiPanel() {
 	};
 	_emojiFilter.reset(base::install_event_filter(container, filterCallback));
 
+	const auto selector = _emojiPanel->selector();
+	Core::VimKeymap::SetKeyboardScopeProxy(this, _emojiPanel);
+	base::install_event_filter(this, _emojiPanel, [=](not_null<QEvent*> event) {
+		if (event->type() == QEvent::Show && Core::VimKeymap::Enabled()) {
+			_emojiPanel->setFocusPolicy(Qt::StrongFocus);
+			_emojiPanel->setFocus(Qt::ShortcutFocusReason);
+			selector->vimKeymapFocusPanel();
+			Core::VimKeymap::SetNormalMode(true);
+		}
+		return base::EventFilterResult::Continue;
+	});
+	base::install_event_filter(this, qApp, [=](not_null<QEvent*> event) {
+		const auto type = event->type();
+		if ((type == QEvent::KeyPress || type == QEvent::ShortcutOverride)
+			&& vimKeymapHandleEmojiKey(static_cast<QKeyEvent*>(event.get()))) {
+			event->accept();
+			return base::EventFilterResult::Cancel;
+		}
+		return base::EventFilterResult::Continue;
+	});
+
 	_emojiToggle.create(this, _st.files.emoji);
 	_emojiToggle->setVisible(!_caption->isHidden());
 	_emojiToggle->installEventFilter(_emojiPanel);
 	_emojiToggle->addClickHandler([=] {
 		_emojiPanel->toggleAnimated();
 	});
+}
+
+bool SendFilesBox::vimKeymapHandleEmojiKey(not_null<QKeyEvent*> event) {
+	using namespace Core::VimKeymap;
+	if (!Enabled() || !isVisible() || _caption->isHidden()
+		|| !window()->isActiveWindow()
+		|| Core::App().passcodeLocked()
+		|| QApplication::activePopupWidget() || QApplication::activeModalWidget()) {
+		return false;
+	}
+	const auto selector = _emojiPanel->selector();
+	const auto scope = FindKeyboardScope(window());
+	if (!scope || (scope != _emojiPanel && !KeyHandlerInScope(this, scope))) {
+		return false;
+	}
+	const auto open = FocusEmojiKey(event) || EmojiPanelKey(event);
+	const auto visible = !_emojiPanel->isHidden() && !_emojiPanel->hiding();
+	const auto focused = visible && Ui::InFocusChain(_emojiPanel);
+	const auto close = visible && (FocusChatKey(event) || CancelEditKey(event));
+	const auto escape = focused && Bindings::IsPlainEscape(event);
+	const auto tab = focused && Bindings::TabNavigationDelta(event);
+	const auto modifiers = Bindings::CleanModifiers(event);
+	const auto activate = focused
+		&& (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter
+			|| (event->key() == Qt::Key_Space && modifiers == Qt::NoModifier
+				&& !selector->vimKeymapSearchHasFocus()));
+	const auto search = focused && Bindings::Matches(
+		u"Ctrl+F, Ctrl+ф, Ctrl+J, Ctrl+о, Ctrl+K, Ctrl+л"_q,
+		event,
+		{ .allowExtraShift = true });
+	const auto move = focused && !selector->vimKeymapSearchHasFocus()
+		&& modifiers == Qt::NoModifier
+		&& (Bindings::KeyIs(event, Qt::Key_H, u"h"_q, u"р"_q)
+			|| Bindings::KeyIs(event, Qt::Key_J, u"j"_q, u"о"_q)
+			|| Bindings::KeyIs(event, Qt::Key_K, u"k"_q, u"л"_q)
+			|| Bindings::KeyIs(event, Qt::Key_L, u"l"_q, u"д"_q));
+	if (!open && !close && !escape && !tab && !activate && !search && !move) {
+		return false;
+	} else if (event->type() == QEvent::ShortcutOverride) {
+		return true;
+	} else if (event->isAutoRepeat() && (open || close || escape || tab || activate)) {
+		return true;
+	}
+	if (open) {
+		_emojiPanel->showAnimated();
+		_emojiPanel->setFocusPolicy(Qt::StrongFocus);
+		_emojiPanel->setFocus(Qt::ShortcutFocusReason);
+		selector->vimKeymapFocusPanel();
+		SetNormalMode(true);
+	} else if (close || (escape && !selector->vimKeymapSearchHasFocus())) {
+		_emojiPanel->hideAnimated();
+		_caption->setFocusFast();
+		SetNormalMode(false);
+	} else if (escape || (activate && selector->vimKeymapSearchHasFocus())) {
+		selector->vimKeymapFocusPanel();
+		SetNormalMode(true);
+	} else if (tab) {
+		if (selector->vimKeymapSearchHasFocus()) {
+			selector->vimKeymapFocusPanel();
+			SetNormalMode(true);
+		} else {
+			selector->vimKeymapFocusSearch();
+		}
+	} else if (selector->vimKeymapHandleKey(event)) {
+		return true;
+	}
+	return true;
 }
 
 void SendFilesBox::emojiFilterForGeometry(not_null<QEvent*> event) {

@@ -41,7 +41,14 @@ void MediaEditManager::start(
 	_lifetime = item->history()->owner().itemRemoved(
 	) | rpl::on_next([=](not_null<const HistoryItem*> removed) {
 		if (removed == _item) {
-			cancel();
+			if (_item->isLocalQuickReply()) {
+				_coverUploader.detachLocalItem();
+				_menu = nullptr;
+				_item = nullptr;
+				_lifetime.destroy();
+			} else {
+				cancel();
+			}
 		}
 	});
 	if (CanEditVideoCover(item) && media->videoCover()) {
@@ -166,6 +173,7 @@ Api::VideoCoverEdit MediaEditManager::videoCover() {
 	const auto weak = base::make_weak(&_coverUploader);
 	return {
 		.photo = photo,
+		.localPrepared = _coverUploader.localPrepared(),
 		.cleared = _coverCleared && !photo,
 		.refresh = [weak](Fn<void(PhotoData*)> done) {
 			if (const auto strong = weak.get()) {
@@ -198,6 +206,7 @@ SendMenu::Details MediaEditManager::sendMenuDetails(
 				&& (editDocument->isVideoFile() || editDocument->isGifv())));
 	const auto canEditCover = CanEditVideoCover(_item);
 	const auto hasCover = (_coverUploader.photo() != nullptr)
+		|| (_coverUploader.localPrepared() != nullptr)
 		|| _coverUploader.uploading()
 		|| (media->videoCover() && !_coverCleared);
 	return {

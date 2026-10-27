@@ -9,8 +9,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "settings/settings_type.h"
 
+#include <QtCore/QString>
+
+#include <variant>
+
 namespace Settings {
 
 [[nodiscard]] Type ShortcutMessagesId(int shortcutId);
+[[nodiscard]] Type ShortcutMessagesId(QString replyId);
 
 } // namespace Settings

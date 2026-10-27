@@ -63,6 +63,8 @@ class ForumIcons;
 class AiComposeTones;
 class ChatFilters;
 class LocalPinnedDialogs;
+class LocalQuickReplies;
+class LocalQuickReplyView;
 class CloudThemes;
 class Streaming;
 class MediaRotation;
@@ -191,6 +193,8 @@ public:
 	[[nodiscard]] AiComposeTones &aiComposeTones() const {
 		return *_aiComposeTones;
 	}
+	[[nodiscard]] LocalQuickReplies &localQuickReplies() const;
+	[[nodiscard]] LocalQuickReplyView &localQuickReplyView() const;
 	[[nodiscard]] LocalPinnedDialogs &localPinnedDialogs() const;
 	[[nodiscard]] LocalPinnedDialogs *localPinnedDialogsLoaded() const;
 	[[nodiscard]] ChatFilters &chatsFilters() const {
@@ -1438,6 +1442,8 @@ private:
 	Groups _groups;
 	const std::unique_ptr<AiComposeTones> _aiComposeTones;
 	std::unique_ptr<LocalPinnedDialogs> _localPinnedDialogs;
+	std::unique_ptr<LocalQuickReplies> _localQuickReplies;
+	std::unique_ptr<LocalQuickReplyView> _localQuickReplyView;
 	const std::unique_ptr<ChatFilters> _chatsFilters;
 	const std::unique_ptr<CloudThemes> _cloudThemes;
 	const std::unique_ptr<SendActionManager> _sendActionManager;

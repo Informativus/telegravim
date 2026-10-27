@@ -28,6 +28,26 @@ These rules supersede the old `vim-keymap` branch and rebase workflow in
 historical fork plans. The separate `ai-tdesktop` task repository retains its
 own branch rules.
 
+## Cumulative delivery and preservation
+
+The product baseline is cumulative. Before building or packaging a task, inspect
+the current source snapshot and the accepted task history; an artifact must
+contain all previously accepted product changes that are still in scope. Never
+prepare a new DMG from an older partial snapshot, replace a feature branch with
+stale upstream files, or restore one omitted module by dropping another module.
+
+Integrate task branches additively. When branches overlap, preserve both sets of
+behavior and resolve the conflict explicitly, then compare the resulting source
+inventory with the previous verified snapshot before compiling. Record the exact
+source refs and artifact hash for each delivery so a missing feature is detected
+before it reaches a user.
+
+Every completed task must be delivered through `task branch -> PR -> develop`
+and then the normal `develop -> main` merge-commit release path. Do not leave a
+completed change only in a worktree, and do not push directly to `main`.
+Rollback or reconstruction is allowed only to a named backup or tag and must
+retain all accepted changes unless the user explicitly approves removing them.
+
 ## Native Telegram behavior for local features
 
 Local equivalents of Telegram features must preserve Telegram's native user
