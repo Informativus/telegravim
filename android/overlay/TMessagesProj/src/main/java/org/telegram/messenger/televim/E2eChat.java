@@ -190,7 +190,13 @@ public final class E2eChat {
             return state.encryptedId(peer, message.id) ? LocaleController.getString(R.string.TelevimE2eUnavailable) : null;
         }
         try {
-            if (message.fwd_from != null || message.via_bot_id != 0) throw new Exception("Forwarded encrypted frame");
+            long sender = message.out ? UserConfig.getInstance(account).getClientUserId() : peer;
+            if (message.fwd_from != null || message.via_bot_id != 0 || message.via_business_bot_id != 0
+                    || message.guestchat_via_from != null
+                    || message.via_bot_name != null && !message.via_bot_name.isEmpty()
+                    || message.from_id != null && message.from_id.user_id != sender) {
+                throw new Exception("Unexpected encrypted frame sender");
+            }
             if (wire.startsWith("TVE2.KEY.")) {
                 boolean changed = state.observeKey(peer, wire, live && !message.out);
                 return LocaleController.getString(message.out ? R.string.TelevimE2eKeySent
