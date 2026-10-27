@@ -1608,7 +1608,9 @@ object_ptr<Ui::RpWidget> CreatePollBox::setupContent() {
 	const auto state = lifetime().make_state<State>();
 	state->prepareQueue = std::make_unique<TaskQueue>();
 	state->webpageResolver = std::make_shared<
-		HistoryView::Controls::WebpageResolver>(&_controller->session());
+		HistoryView::Controls::WebpageResolver>(
+			&_controller->session(),
+			_peer->id);
 
 	auto result = object_ptr<Ui::VerticalLayout>(this);
 	const auto container = result.data();

@@ -52,7 +52,9 @@ struct WebpageParsed {
 
 class WebpageResolver final {
 public:
-	explicit WebpageResolver(not_null<Main::Session*> session);
+	explicit WebpageResolver(
+		not_null<Main::Session*> session,
+		PeerId peerId = PeerId());
 
 	[[nodiscard]] std::optional<WebPageData*> lookup(
 			const QString &link) const;
@@ -67,12 +69,14 @@ public:
 
 private:
 	const not_null<Main::Session*> _session;
+	const PeerId _peerId;
 	MTP::Sender _api;
 	base::flat_map<QString, WebPageData*> _cache;
 	rpl::event_stream<QString> _resolved;
 
 	QString _requestLink;
 	mtpRequestId _requestId = 0;
+	rpl::lifetime _lifetime;
 
 };
 

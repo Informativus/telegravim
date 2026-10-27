@@ -10,6 +10,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/local_pinned_dialogs.h"
 #include "data/local_quick_replies.h"
 #include "data/local_quick_reply_view.h"
+#include "e2e/e2e_chat.h"
+
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
 #include "main/main_app_config.h"
@@ -313,6 +315,42 @@ void EnumerateStaticMediaPhotos(
 
 Session::Session(not_null<Main::Session*> session)
 : _session(session)
+void Session::applyE2eMessage(
+		not_null<HistoryItem*> item,
+		const MTPDmessage &message,
+		bool live) {
+	const auto session = &item->history()->session();
+	const auto peerId = item->history()->peer->id;
+	const auto wireText = qs(message.vmessage());
+	const auto outgoing = message.is_out();
+	if (E2E::Chat::IsKeyExchange(wireText)) {
+		item->setText({ session->e2e().controlNotice(
+			peerId, wireText, outgoing, live), {} });
+	} else if (E2E::Chat::IsEnvelope(wireText)) {
+		const auto received = session->e2e().receive(
+			peerId, item->id, outgoing, live, wireText);
+		if (!received) {
+			item->setText({ u"Encrypted message unavailable"_q, {} });
+			return;
+		}
+		item->setText({ received->text, {} });
+		if (!received->replies.empty()) {
+			crl::on_main(session, [=, replies = received->replies] {
+				for (const auto &reply : replies) {
+					auto action = Api::SendAction(session->data().history(peerId));
+					action.clearDraft = false;
+					auto response = Api::MessageToSend(action);
+					response.e2eControl = true;
+					response.textWithTags = { reply, {} };
+					session->api().sendMessage(std::move(response));
+				}
+			});
+		}
+	} else if (session->e2e().isEncrypted(peerId, item->id)) {
+		item->setText({ u"Encrypted message unavailable"_q, {} });
+	}
+}
+
 , _cache(Core::App().databases().get(
 	_session->local().cachePath(),
 	_session->local().cacheSettings()))
@@ -2164,7 +2202,6 @@ bool Session::queryDocumentVisibility(
 	return false;
 }
 
-
 [[nodiscard]] auto Session::itemVisibilityQueries() const
 -> rpl::producer<Session::ItemVisibilityQuery> {
 	return _itemVisibilityQueries.events();
@@ -3136,6 +3173,7 @@ void Session::updateEditedMessage(const MTPMessage &data) {
 
 void Session::processMessages(
 		const QVector<MTPMessage> &data,
+	applyE2eMessage(existing, data, false);
 		NewMessageType type) {
 	auto indices = base::flat_map<uint64, int>();
 	for (int i = 0, l = data.size(); i != l; ++i) {
@@ -3165,6 +3203,7 @@ void Session::processMessages(
 	processMessages(data.v, type);
 }
 
+		applyE2eMessage(existing, data, false);
 void Session::processExistingMessages(
 		ChannelData *channel,
 		const MTPmessages_Messages &data) {

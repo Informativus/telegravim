@@ -42,6 +42,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "webview/webview_interface.h"
 #include "window/themes/window_theme.h"
 
+#include <QtCore/QSaveFile>
+
 namespace Storage {
 namespace {
 
@@ -49,6 +51,7 @@ using namespace details;
 using Database = Cache::Database;
 
 constexpr auto kDelayedWriteTimeout = crl::time(1000);
+constexpr auto kMaximumE2eStateSize = 64 * 1024 * 1024;
 constexpr auto kWriteSearchSuggestionsDelay = 5 * crl::time(1000);
 constexpr auto kMaxSavedPlaybackPositions = 256;
 
@@ -277,6 +280,7 @@ base::flat_set<QString> Account::collectGoodNames() const {
 		"map1",
 		"maps",
 		"configs",
+		u"e2e-state"_q,
 	};
 	const auto push = [&](FileKey key) {
 		if (!key) {
@@ -3728,6 +3732,48 @@ Webview::StorageId TonSiteStorageId() {
 	return result;
 }
 
+std::optional<QByteArray> Account::readE2eState() const {
+	if (!_localKey) {
+		return std::nullopt;
+	}
+	auto file = QFile(_basePath + u"e2e-state"_q);
+	if (!file.exists()) {
+		return QByteArray();
+	}
+	if (!file.open(QIODevice::ReadOnly)
+		|| file.size() > kMaximumE2eStateSize) {
+		return std::nullopt;
+	}
+	auto decrypted = EncryptedDescriptor();
+	if (!DecryptLocal(decrypted, file.readAll(), _localKey)) {
+		return std::nullopt;
+	}
+	auto state = QByteArray();
+	decrypted.stream >> state;
+	if (decrypted.stream.status() != QDataStream::Ok
+		|| !decrypted.stream.atEnd()) {
+		return std::nullopt;
+	}
+	return state;
+}
+
+bool Account::writeE2eState(const QByteArray &state) {
+	if (!_localKey || state.isEmpty()
+		|| state.size() > kMaximumE2eStateSize - 64) {
+		return false;
+	}
+	auto data = EncryptedDescriptor(state.size() + sizeof(quint32));
+	data.stream << state;
+	const auto encrypted = PrepareEncrypted(data, _localKey);
+	auto file = QSaveFile(_basePath + u"e2e-state"_q);
+	if (!file.open(QIODevice::WriteOnly)
+		|| !file.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner)
+		|| file.write(encrypted) != encrypted.size()) {
+		return false;
+	}
+	return file.commit();
+}
+
 void Account::clearPref(std::string_view key) {
 	const auto i = _prefs.find(QByteArray(key.data(), key.size()));
 	if (i == end(_prefs)) {
@@ -3841,6 +3887,19 @@ std::optional<bool> Account::readPrefImpl<bool>(std::string_view key) {
 template <>
 void Account::writePrefImpl<bool>(std::string_view key, bool value) {
 	writePrefGeneric(key, value ? "\x1"_q : QByteArray());
+}
+
+template <>
+std::optional<QByteArray> Account::readPrefImpl<QByteArray>(
+		std::string_view key) {
+	return readPrefGeneric(key);
+}
+
+template <>
+void Account::writePrefImpl<QByteArray>(
+		std::string_view key,
+		QByteArray value) {
+	writePrefGeneric(key, value);
 }
 
 } // namespace Storage
