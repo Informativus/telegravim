@@ -14,6 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "data/data_forum.h"
 #include "data/data_forum_topic.h"
+#include "data/local_quick_reply_view.h"
 
 namespace Data {
 namespace {
@@ -84,7 +85,10 @@ void Groups::refreshMessage(
 		_data->requestItemViewRefresh(item);
 		return;
 	}
-	if (!item->isRegular() && !item->isScheduled() && !item->isUploading()) {
+	if (!item->isRegular()
+		&& !item->isScheduled()
+		&& !item->isUploading()
+		&& !item->isLocalQuickReply()) {
 		return;
 	}
 	const auto groupId = item->groupId();
@@ -124,6 +128,15 @@ HistoryItemsList::const_iterator Groups::findPositionForItem(
 		const HistoryItemsList &group,
 		not_null<HistoryItem*> item) {
 	const auto last = end(group);
+	if (item->isLocalQuickReply()) {
+		for (auto result = begin(group); result != last; ++result) {
+			if ((*result)->isLocalQuickReply()
+				&& _data->localQuickReplyView().less(item, *result)) {
+				return result;
+			}
+		}
+		return last;
+	}
 	const auto itemId = item->id;
 	for (auto result = begin(group); result != last; ++result) {
 		if ((*result)->id > itemId) {

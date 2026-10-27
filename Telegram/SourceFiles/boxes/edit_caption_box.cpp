@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/edit_caption_box.h"
 
+#include "data/local_quick_reply_view.h"
+
 #include "api/api_editing.h"
 #include "api/api_text_entities.h"
 #include "apiwrap.h"
@@ -75,6 +77,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QMimeData>
 
 namespace {
+
 
 constexpr auto kChangesDebounceTimeout = crl::time(1000);
 
@@ -246,7 +249,8 @@ EditCaptionBox::EditCaptionBox(
 	bool spoilered,
 	bool invertCaption,
 	Ui::PreparedList &&list,
-	Fn<void()> saved)
+	Fn<void()> saved,
+	std::shared_ptr<const Data::LocalQuickReplyMessage> source)
 : _controller(controller)
 , _historyItem(item)
 , _suggest(suggest)
@@ -272,11 +276,23 @@ EditCaptionBox::EditCaptionBox(
 	_sendLargePhotos = Core::App().settings().sendFilesWay().sendLargePhotos();
 
 	_mediaEditManager.start(item, spoilered, invertCaption);
+	if (item->isLocalQuickReply()) {
+		_localSource = source ? std::make_optional(*source)
+			: item->history()->owner().localQuickReplyView().message(item);
+		_localMedia = std::make_unique<Data::LocalQuickReplyMedia>(
+			&controller->session());
+	}
 
 	_controller->session().data().itemRemoved(
 		_historyItem->fullId()
 	) | rpl::on_next([=] {
-		closeBox();
+		if (_localSource) {
+			_historyItem = nullptr;
+			_error = tr::lng_edit_deleted(tr::now);
+			update();
+		} else {
+			closeBox();
+		}
 	}, lifetime());
 }
 
@@ -289,13 +305,21 @@ void EditCaptionBox::StartMediaReplace(
 		SuggestOptions suggest,
 		bool spoilered,
 		bool invertCaption,
-		Fn<void()> saved) {
+		Fn<void()> saved,
+		std::shared_ptr<const Data::LocalQuickReplyMessage> source) {
 	const auto session = &controller->session();
 	const auto item = session->data().message(itemId);
 	if (!item) {
 		return;
 	}
+	if (!source && item->isLocalQuickReply()) {
+		if (const auto message = session->data().localQuickReplyView().message(item)) {
+			source = std::make_shared<Data::LocalQuickReplyMessage>(*message);
+		}
+	}
 	const auto show = [=](Ui::PreparedList &&list) mutable {
+		const auto item = session->data().message(itemId);
+		if (!item) return;
 		controller->show(Box<EditCaptionBox>(
 			controller,
 			item,
@@ -304,7 +328,7 @@ void EditCaptionBox::StartMediaReplace(
 			spoilered,
 			invertCaption,
 			std::move(list),
-			std::move(saved)));
+			std::move(saved), source));
 	};
 	ChooseReplacement(
 		controller,
@@ -320,11 +344,17 @@ void EditCaptionBox::StartMediaReplace(
 		SuggestOptions suggest,
 		bool spoilered,
 		bool invertCaption,
-		Fn<void()> saved) {
+		Fn<void()> saved,
+		std::shared_ptr<const Data::LocalQuickReplyMessage> source) {
 	const auto session = &controller->session();
 	const auto item = session->data().message(itemId);
 	if (!item) {
 		return;
+	}
+	if (!source && item->isLocalQuickReply()) {
+		if (const auto message = session->data().localQuickReplyView().message(item)) {
+			source = std::make_shared<Data::LocalQuickReplyMessage>(*message);
+		}
 	}
 	const auto type = ComputeAlbumType(item);
 	const auto showError = [=](tr::phrase<> t) {
@@ -357,7 +387,7 @@ void EditCaptionBox::StartMediaReplace(
 			spoilered,
 			invertCaption,
 			std::move(list),
-			std::move(saved)));
+			std::move(saved), source));
 	}
 }
 
@@ -369,11 +399,17 @@ void EditCaptionBox::StartPhotoEdit(
 		SuggestOptions suggest,
 		bool spoilered,
 		bool invertCaption,
-		Fn<void()> saved) {
+		Fn<void()> saved,
+		std::shared_ptr<const Data::LocalQuickReplyMessage> source) {
 	const auto session = &controller->session();
 	const auto item = session->data().message(itemId);
 	if (!item) {
 		return;
+	}
+	if (!source && item->isLocalQuickReply()) {
+		if (const auto message = session->data().localQuickReplyView().message(item)) {
+			source = std::make_shared<Data::LocalQuickReplyMessage>(*message);
+		}
 	}
 	EditPhotoImage(
 		controller,
@@ -393,7 +429,7 @@ void EditCaptionBox::StartPhotoEdit(
 				spoilered,
 				invertCaption,
 				std::move(list),
-				std::move(saved)));
+				std::move(saved), source));
 		});
 }
 
@@ -472,6 +508,7 @@ void EditCaptionBox::prepare() {
 }
 
 void EditCaptionBox::rebuildPreview() {
+	_localPrepared.reset();
 	const auto gifPaused = [controller = _controller] {
 		return controller->isGifPausedAtLeastFor(
 			Window::GifPauseReason::Layer);
@@ -480,6 +517,7 @@ void EditCaptionBox::rebuildPreview() {
 	applyChanges();
 
 	if (_preparedList.files.empty()) {
+		if (!_historyItem) return;
 		const auto media = _historyItem->media();
 		const auto photo = media->photo();
 		const auto document = media->document();
@@ -1053,7 +1091,8 @@ void EditCaptionBox::setupEmojiPanel() {
 		st::emojiPanMinHeight / 2,
 		st::emojiPanMinHeight);
 	_emojiPanel->hide();
-	_emojiPanel->selector()->setCurrentPeer(_historyItem->history()->peer);
+	_emojiPanel->selector()->setCurrentPeer(_historyItem
+		? _historyItem->history()->peer : _controller->session().user());
 	_emojiPanel->selector()->emojiChosen(
 	) | rpl::on_next([=](ChatHelpers::EmojiChosen data) {
 		Ui::InsertEmojiAtCursor(_field->textCursor(), data.emoji);
@@ -1267,6 +1306,7 @@ void EditCaptionBox::setInnerFocus() {
 }
 
 bool EditCaptionBox::validateLength(const QString &text) const {
+	if (_localSource) return true;
 	const auto session = &_controller->session();
 	const auto limit = Data::PremiumLimits(session).captionLengthCurrent();
 	const auto remove = int(text.size()) - limit;
@@ -1286,6 +1326,10 @@ void EditCaptionBox::applyChanges() {
 }
 
 void EditCaptionBox::save() {
+	if (_localSource) {
+		saveLocal();
+		return;
+	}
 	if (_saveRequestId) {
 		return;
 	}
@@ -1373,6 +1417,117 @@ void EditCaptionBox::save() {
 	});
 
 	_saveRequestId = Api::EditCaption(item, sending, options, done, fail);
+}
+
+void EditCaptionBox::saveLocal() {
+	if (_localSaving) return;
+	if (!_localSource || !_localMedia) {
+		_error = tr::lng_edit_deleted(tr::now);
+		update();
+		return;
+	}
+	if (!_localRecoveryApproved) {
+		const auto parent = _controller->session().data().localQuickReplies().find(
+			_localSource->replyRef);
+		if (parent && ranges::none_of(parent->messages, [&](const auto &message) {
+			return message.id == _localSource->id;
+		})) {
+			_controller->show(Ui::MakeConfirmBox({
+				.text = tr::lng_local_replies_media_deleted(),
+				.confirmed = crl::guard(this, [=](Fn<void()> close) {
+					close();
+					_localRecoveryApproved = true;
+					_localPrepared.reset();
+					saveLocal();
+				}),
+				.confirmText = tr::lng_settings_save(),
+			}));
+			return;
+		}
+	}
+	const auto error = Data::QuickReplyMessageEditError(*_localSource);
+	if (!error.isEmpty()) {
+		_error = error;
+		update();
+		return;
+	}
+	if (_localPrepared) {
+		persistLocal();
+		return;
+	}
+	const auto text = _field->getTextWithAppliedMarkdown();
+	if (!validateLength(text.text)) return;
+	Storage::ApplyModifications(_preparedList);
+	applyChanges();
+	auto request = Data::LocalQuickReplyMediaRequest{
+		.target = {
+			.replyRef = _localSource->replyRef,
+			.firstPosition = _localSource->position,
+			.previous = _localRecoveryApproved ? std::nullopt : _localSource,
+		},
+		.caption = { text.text, TextUtilities::ConvertTextTagsToEntities(text.tags) },
+		.options = {
+			.spoiler = _mediaEditManager.spoilered(),
+			.invertCaption = _mediaEditManager.invertCaption(),
+		},
+	};
+	if (!_preparedList.files.empty()) {
+		_preparedList.files.front().caption = text;
+		auto bundle = Ui::MakeSingleFileBundle(std::move(_preparedList));
+		bundle->way.setSendImagesAsPhotos(!_asFile);
+		request.source = Data::LocalQuickReplyFileBundle{ std::move(bundle) };
+	} else {
+		const auto cover = _mediaEditManager.videoCover();
+		request.source = Data::LocalQuickReplyMediaPatch{
+			.cover = cover.localPrepared
+				? Data::LocalQuickReplyCover(cover.localPrepared)
+				: cover.cleared
+				? Data::LocalQuickReplyCover(Data::LocalQuickReplyRemoveCover())
+				: Data::LocalQuickReplyCover(Data::LocalQuickReplyKeepCover()),
+		};
+	}
+	_localSaving = true;
+	setEnabled(false);
+	_localOperation = _localMedia->prepare(request,
+		crl::guard(this, [=](Data::LocalQuickReplyMediaResult result) {
+			_localSaving = false;
+			setEnabled(true);
+			_localOperation.reset();
+			if (const auto error = std::get_if<Data::LocalQuickReplyMediaError>(&result)) {
+				_error = error->detail;
+				update();
+				return;
+			}
+			_localPrepared = std::get<Data::PreparedLocalQuickReplyMedia>(std::move(result));
+			persistLocal();
+		}));
+	if (const auto bundle = std::get_if<Data::LocalQuickReplyFileBundle>(&request.source)) {
+		_preparedList = std::move(bundle->bundle->groups.front().list);
+	}
+
+}
+
+void EditCaptionBox::persistLocal() {
+	Expects(_localPrepared.has_value());
+	const auto text = _field->getTextWithAppliedMarkdown();
+	for (auto &message : _localPrepared->messages) {
+		message.message = { text.text, TextUtilities::ConvertTextTagsToEntities(text.tags) };
+		message.media.insert(u"spoiler"_q, _mediaEditManager.spoilered());
+		message.media.insert(u"invert_caption"_q, _mediaEditManager.invertCaption());
+	}
+	_localSaving = true;
+	setEnabled(false);
+	const auto replies = &_controller->session().data().localQuickReplies();
+	replies->saveMessages(_localSource->replyRef, _localPrepared->messages,
+		crl::guard(this, [=](bool ok) {
+			_localSaving = false;
+			setEnabled(true);
+			if (ok) closeAfterSave();
+			else {
+				_error = replies->error();
+				update();
+			}
+		}), _localPrepared->assets);
 }
 
 void EditCaptionBox::closeAfterSave() {

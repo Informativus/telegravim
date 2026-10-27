@@ -800,6 +800,29 @@ void ScheduledWidget::sendVoice(const Controls::VoiceToSend &data) {
 void ScheduledWidget::sendVoice(
 		const Controls::VoiceToSend &data,
 		Api::SendOptions options) {
+	if (!data.transcription.isEmpty()) {
+		auto message = Api::MessageToSend(prepareSendAction(options));
+		message.textWithTags = { data.transcription };
+		const auto error = GetErrorForSending(_history->peer, {
+			.topicRootId = _forumTopic ? _forumTopic->topicRootId() : MsgId(),
+			.text = &message.textWithTags,
+			.ignoreSlowmodeCountdown = true,
+		});
+		if (error) {
+			Data::ShowSendErrorToast(controller(), _history->peer, error);
+			return;
+		}
+		session().api().sendMessage(std::move(message));
+		_composeControls->clearListenState();
+		return;
+	}
+	if (const auto error = Data::RestrictionError(_history->peer,
+			data.video
+				? ChatRestriction::SendVideoMessages
+				: ChatRestriction::SendVoiceMessages)) {
+		Data::ShowSendErrorToast(controller(), _history->peer, error);
+		return;
+	}
 	session().api().sendVoiceMessage(
 		data.bytes,
 		data.waveform,

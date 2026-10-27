@@ -1483,6 +1483,9 @@ defaultRecordBar: RecordBar {
 	remove: historyRecordDelete;
 }
 
+historyRecordTranscribeIcon: icon{{ "chat/voice_to_text", historyRecordVoiceFg }};
+historyRecordTranscribeIconOver: icon{{ "chat/voice_to_text", historyRecordVoiceFgOver }};
+
 historySend: SendButton {
 	sendIconPosition: point(10px, 11px);
 	inner: IconButton(historyAttach) {

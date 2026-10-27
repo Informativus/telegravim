@@ -106,6 +106,7 @@ public:
 	}
 
 	bool setFileName(const QString &filename); // set filename for loaders to cache
+	[[nodiscard]] bool setTemporaryOutput(const QString &filename);
 	void permitLoadFromCloud();
 	void increaseLoadSize(int64 size, bool autoLoading);
 
@@ -172,6 +173,7 @@ protected:
 	QString _filename;
 	QFile _file;
 	bool _fileIsOpen = false;
+	bool _temporaryOutput = false;
 
 	LoadToCacheSetting _toCache;
 	LoadFromCloudSetting _fromCloud;

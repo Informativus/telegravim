@@ -34,6 +34,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_chat_participant_status.h"
 #include "data/data_drafts.h"
 #include "data/data_document.h"
+#include "data/data_document_media.h"
+#include "core/file_location.h"
 #include "data/data_file_origin.h"
 #include "data/data_forum_topic.h"
 #include "data/data_location.h"
@@ -43,6 +45,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_premium_limits.h"
 #include "data/data_saved_sublist.h"
 #include "data/data_session.h"
+#include "data/local_quick_reply_view.h"
+#include "data/local_quick_reply_media.h"
+#include "data/local_quick_reply_rich_codec.h"
+
+#include <QtCore/QJsonDocument>
 #include "data/data_user.h"
 #include "data/stickers/data_custom_emoji.h"
 #include "data/stickers/data_stickers.h"
@@ -599,6 +606,9 @@ public:
 		auto composeThreadKey = std::optional<ComposeThreadKey>();
 		auto page = std::make_shared<RichPage>();
 		auto hasRichDraft = false;
+		if (Api::IsLocalQuickReplyContext(action.options)) {
+			options.scope = ComposeBoxOptions::Scope::Detached;
+		}
 		if (options.scope == ComposeBoxOptions::Scope::Thread) {
 			const auto topicRootId = action.replyTo.topicRootId;
 			const auto monoforumPeerId = action.replyTo.monoforumPeerId;
@@ -633,7 +643,7 @@ public:
 				} else {
 					*page = std::move(migrated);
 				}
-				if (onMigrated) {
+				if (onMigrated && !Api::IsLocalQuickReplyContext(action.options)) {
 					onMigrated();
 				}
 			}
@@ -692,15 +702,22 @@ public:
 			Api::SendAction action,
 			std::optional<TextWithTags> fieldTextOverride,
 			Fn<void()> fieldMigratedOverride,
-			base::weak_ptr<Window::SessionController> controller) {
+			base::weak_ptr<Window::SessionController> controller,
+			std::shared_ptr<const ::Data::LocalQuickReplyMessage> localSource) {
 		const auto session = &item->history()->session();
 		if (ActivateEditWindow(session, item->fullId())) {
 			return;
 		}
 		auto page = std::make_shared<RichPage>();
+		auto options = ComposeBoxOptions();
+		if (item->isLocalQuickReply()) {
+			options.scope = ComposeBoxOptions::Scope::Detached;
+			options.localSaved = fieldMigratedOverride;
+			options.localSource = std::move(localSource);
+		}
 		if (fieldTextOverride) {
 			*page = SplitTextIntoRichPage(*fieldTextOverride);
-			if (fieldMigratedOverride) {
+			if (fieldMigratedOverride && !item->isLocalQuickReply()) {
 				fieldMigratedOverride();
 			}
 		}
@@ -712,7 +729,7 @@ public:
 			std::move(page),
 			std::move(action),
 			{},
-			{},
+			std::move(options),
 			EditedItemSnapshot{
 				.item = item,
 				.inlinePage = item->richPage(),
@@ -863,7 +880,24 @@ private:
 	, _richDraftAutosaveTimer([=] {
 		saveRichDraftNow();
 	}) {
-		subscribeToUploader();
+		if (const auto item = _session->data().message(_articleId)
+			; item && item->isLocalQuickReply()) {
+			_localTemplate = true;
+			_localSource = _composeOptions.localSource
+				? std::make_optional(*_composeOptions.localSource)
+				: _session->data().localQuickReplyView().message(item);
+		}
+		if (localContext()) {
+			_localMedia = std::make_unique<::Data::LocalQuickReplyMedia>(_session);
+		} else {
+			subscribeToUploader();
+		}
+	}
+
+	[[nodiscard]] bool localContext() const {
+		return _localTemplate || _localSource.has_value()
+			|| (_composeAction
+				&& Api::IsLocalQuickReplyContext(_composeAction->options));
 	}
 
 	void setEditorShow(std::shared_ptr<ChatHelpers::Show> show) {
@@ -1074,6 +1108,10 @@ private:
 			showEmptySubmittedPageToast();
 			return false;
 		}
+		if (localContext()) {
+			submitLocal();
+			return false;
+		}
 		if (showDetachedScheduleBox()) {
 			return false;
 		}
@@ -1142,6 +1180,144 @@ private:
 		_backgroundHold = shared_from_this();
 		maybeContinueSubmittedRequest();
 		return true;
+	}
+
+	[[nodiscard]] QByteArray localPageSnapshot(const RichPage &page) const {
+		auto resolved = page;
+		const auto resolve = [&](auto &item) {
+			if (!item.photo && item.photoId) {
+				item.photo = _session->data().photo(item.photoId);
+			}
+			if constexpr (requires { item.document; item.documentId; }) {
+				if (!item.document && item.documentId) {
+					item.document = _session->data().document(item.documentId);
+				}
+			}
+		};
+		const auto resolveBlocks = [&](const auto &self, auto &blocks) -> void {
+			for (auto &block : blocks) {
+				resolve(block);
+				for (auto &media : block.mediaItems) resolve(media);
+				for (auto &article : block.relatedArticles) resolve(article);
+				for (auto &item : block.listItems) self(self, item.blocks);
+				self(self, block.blocks);
+			}
+		};
+		resolveBlocks(resolveBlocks, resolved.blocks);
+		auto identities = QJsonArray();
+		auto encoded = ::Data::EncodeLocalQuickReplyRich(resolved,
+			[&](PhotoData *photo) -> std::optional<int> {
+				identities.push_back(QString::number(photo->id));
+				return int(identities.size()) - 1;
+			}, [&](DocumentData *document) -> std::optional<int> {
+				identities.push_back(QString::number(document->id));
+				return int(identities.size()) - 1;
+			});
+		if (const auto error = std::get_if<QString>(&encoded)) return {};
+		return QJsonDocument(QJsonObject{
+			{ u"page"_q, std::get<QJsonObject>(encoded) },
+			{ u"media"_q, identities },
+		}).toJson(QJsonDocument::Compact);
+	}
+
+	void submitLocal() {
+		if (_localSaving || !_localMedia) return;
+		if (_mode == Mode::Edit && !_localSource) {
+			showToast(tr::lng_local_replies_edit_draft_missing(tr::now));
+			return;
+		}
+		if (_localSource) {
+			const auto error = ::Data::QuickReplyMessageEditError(*_localSource);
+			if (!error.isEmpty()) {
+				showToast(error);
+				return;
+			}
+		}
+		auto page = std::make_shared<RichPage>(_state->richPage());
+		const auto snapshot = localPageSnapshot(*page);
+		if (snapshot.isEmpty()) {
+			showToast(tr::lng_local_replies_newer(tr::now));
+			return;
+		}
+		auto target = ::Data::LocalQuickReplyMediaTarget();
+		target.previous = _localRecoveryApproved ? std::nullopt : _localSource;
+		target.replyRef = _localSource ? _localSource->replyRef
+			: _composeAction->options.localQuickReplyRef;
+		const auto replies = &_session->data().localQuickReplies();
+		const auto parent = replies->find(target.replyRef);
+		if (!parent) {
+			showToast(tr::lng_local_replies_edit_draft_missing(tr::now));
+			return;
+		}
+		if (_localSource && !_localRecoveryApproved
+			&& ranges::none_of(parent->messages, [&](const auto &message) {
+				return message.id == _localSource->id;
+			})) {
+			if (const auto show = resolveShow()) {
+				show->show(Ui::MakeConfirmBox({
+					.text = tr::lng_local_replies_media_deleted(),
+					.confirmed = [weak = weak_from_this()](Fn<void()> close) {
+						close();
+						if (const auto strong = weak.lock()) {
+							strong->_localRecoveryApproved = true;
+							strong->submitLocal();
+						}
+					},
+					.confirmText = tr::lng_settings_save(),
+				}));
+			}
+			return;
+		}
+		for (const auto &message : parent->messages) {
+			target.firstPosition = std::max(target.firstPosition,
+				message.position + (message.position < std::numeric_limits<int>::max()));
+		}
+		if (_composeAction && _composeAction->replyTo.messageId) {
+			if (const auto item = _session->data().message(_composeAction->replyTo.messageId)) {
+				if (const auto source = _session->data().localQuickReplyView().message(item)) {
+					target.replyToRef = source->id;
+				}
+			}
+		}
+		_localSaving = true;
+		_localOperation = _localMedia->prepare({
+			.target = target,
+			.caption = Iv::FlattenRichPageSummary(page),
+			.source = ::Data::LocalQuickReplyRich{ page, _localFiles },
+		}, [weak = weak_from_this(), replies, snapshot, target](
+				::Data::LocalQuickReplyMediaResult result) {
+			const auto strong = weak.lock();
+			if (!strong) return;
+			strong->_localOperation.reset();
+			if (const auto error = std::get_if<::Data::LocalQuickReplyMediaError>(&result)) {
+				strong->_localSaving = false;
+				strong->showToast(error->detail);
+				return;
+			}
+			auto prepared = std::get<::Data::PreparedLocalQuickReplyMedia>(std::move(result));
+			const auto id = prepared.messages.front().id;
+			replies->saveMessages(target.replyRef, std::move(prepared.messages),
+				[weak, replies, snapshot, replyRef = target.replyRef, id](bool ok) {
+					const auto strong = weak.lock();
+					if (!strong) return;
+					strong->_localSaving = false;
+					if (!ok) {
+						strong->showToast(replies->error());
+						return;
+					}
+					if (const auto parent = replies->find(replyRef)) {
+						for (const auto &message : parent->messages) {
+							if (message.id == id) {
+								strong->_localSource = message;
+								strong->_localRecoveryApproved = false;
+							}
+						}
+					}
+					if (snapshot != strong->localPageSnapshot(strong->_state->richPage())) return;
+					if (strong->_composeOptions.localSaved) strong->_composeOptions.localSaved();
+					if (strong->_windowHost) strong->_windowHost->close();
+				}, prepared.assets);
+		});
 	}
 
 	[[nodiscard]] bool submitSimpleText(TextWithEntities text) {
@@ -1232,6 +1408,7 @@ private:
 	}
 
 	[[nodiscard]] bool cancelRequested() {
+		if (localContext()) return !_localSaving;
 		_submitDeferred = false;
 		return detachedCompose()
 			? deliverDetachedReturnText()
@@ -1695,6 +1872,7 @@ private:
 
 	void setupSubmitButton(not_null<Ui::RpWidget*> button) {
 		_submitButton = button;
+		if (localContext()) return;
 		if (_mode != Mode::Compose) {
 			return;
 		}
@@ -1799,7 +1977,8 @@ private:
 				_composeAction->replyTo.topicRootId,
 				_composeAction->replyTo.monoforumPeerId);
 		} else if (_edited) {
-			const auto item = _edited->item;
+			const auto item = _session->data().message(_articleId);
+			if (!item) return nullptr;
 			if (const auto topic = item->topic()) {
 				return topic;
 			} else if (const auto sublist = item->savedSublist()) {
@@ -1842,7 +2021,9 @@ private:
 			.peer = _peer,
 			.state = _state,
 			.title = windowTitle(),
-			.submitType = _submitType,
+			.submitType = localContext()
+				? ShowWindowDescriptor::SubmitType::Save : _submitType,
+			.localQuickReply = localContext(),
 			.centerOver = [&] {
 				const auto controller = _controller.get();
 				return controller
@@ -1865,7 +2046,7 @@ private:
 			.cancelled = [session = shared_from_this()] {
 				return session->cancelRequested();
 			},
-			.changedCancelled = _composeAction
+			.changedCancelled = (_composeAction && !localContext())
 				? Fn<bool()>([session = shared_from_this()] {
 					return session->changedCancelRequested();
 				})
@@ -2884,8 +3065,29 @@ private:
 			_originalMediaImages[record.localMediaId] = std::move(originalImage);
 		}
 
+		if (localContext()) {
+			record.state = AttachmentState::Ready;
+			_localFiles[record.localMediaId] = { prepared };
+			if (prepared->type == SendMediaType::Photo) {
+				const auto photo = _session->data().processPhoto(
+					prepared->photo, prepared->photoThumbs);
+				_localPhotoViews.push_back(photo->createMediaView());
+			} else {
+				const auto document = _session->data().processDocument(prepared->document);
+				if (!prepared->filepath.isEmpty()) {
+					document->setLocation(Core::FileLocation(prepared->filepath));
+				}
+				auto view = document->createMediaView();
+				if (!prepared->content.isEmpty()) view->setBytes(prepared->content);
+				if (!prepared->thumb.isNull()) view->setThumbnail(prepared->thumb);
+				if (!prepared->goodThumbnail.isNull()) {
+					view->setGoodThumbnail(prepared->goodThumbnail);
+				}
+				_localDocumentViews.push_back(std::move(view));
+			}
+		}
 		_attachments.push_back(std::move(record));
-		_session->uploader().upload(uploadId, prepared);
+		if (!localContext()) _session->uploader().upload(uploadId, prepared);
 		return uploadId;
 	}
 
@@ -4284,6 +4486,15 @@ private:
 	std::shared_ptr<ArticleSession> _backgroundHold;
 	std::shared_ptr<const RichPage> _submittedPage;
 	std::vector<AttachmentRecord> _attachments;
+	std::optional<::Data::LocalQuickReplyMessage> _localSource;
+	std::unique_ptr<::Data::LocalQuickReplyMedia> _localMedia;
+	std::unique_ptr<::Data::LocalQuickReplyMediaOperation> _localOperation;
+	std::map<uint64, ::Data::LocalQuickReplyPrepared> _localFiles;
+	bool _localSaving = false;
+	bool _localTemplate = false;
+	bool _localRecoveryApproved = false;
+	std::vector<std::shared_ptr<::Data::PhotoMedia>> _localPhotoViews;
+	std::vector<std::shared_ptr<::Data::DocumentMedia>> _localDocumentViews;
 	base::flat_map<uint64, QImage> _originalMediaImages;
 	base::flat_map<uint64, PendingPhotoEditSource> _pendingPhotoEditSources;
 	std::deque<QueuedPrepare> _prepareQueue;
@@ -5032,6 +5243,22 @@ void ShowComposeBox(
 void ShowEditBox(
 		not_null<Window::SessionController*> controller,
 		not_null<HistoryItem*> item) {
+	if (item->isLocalQuickReply()) {
+		const auto source = item->history()->owner().localQuickReplyView().message(item);
+		if (!source) return;
+		const auto error = ::Data::QuickReplyMessageEditError(*source);
+		if (!error.isEmpty()) {
+			controller->showToast(error);
+			return;
+		}
+		const auto page = item->fullRichPage() ? item->fullRichPage() : item->richPage();
+		if (!page || page->part) {
+			controller->showToast(u"The complete rich message is unavailable locally."_q);
+			return;
+		}
+		ArticleSession::ShowEdit(item, page, base::make_weak(controller));
+		return;
+	}
 	if (!CanAuthorRichMessages(&controller->session())) {
 		return;
 	}
@@ -5062,13 +5289,15 @@ void ShowEditFromFieldBox(
 		not_null<HistoryItem*> item,
 		Api::SendAction action,
 		std::optional<TextWithTags> fieldTextOverride,
-		Fn<void()> fieldMigratedOverride) {
+		Fn<void()> fieldMigratedOverride,
+		std::shared_ptr<const ::Data::LocalQuickReplyMessage> localSource) {
 	ArticleSession::ShowEditFromField(
 		item,
 		std::move(action),
 		std::move(fieldTextOverride),
 		std::move(fieldMigratedOverride),
-		base::make_weak(controller));
+		base::make_weak(controller),
+		std::move(localSource));
 }
 
 bool IsComposeBoxOpen(

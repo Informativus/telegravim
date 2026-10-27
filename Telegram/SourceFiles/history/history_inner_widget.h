@@ -488,6 +488,7 @@ private:
 	[[nodiscard]] bool vimKeymapHandleTextSelectionKey(
 		not_null<QKeyEvent*> e);
 	[[nodiscard]] bool vimKeymapBeginMessageSelection(not_null<Element*> view);
+	void vimKeymapToggleMessageSelection(not_null<Element*> view);
 	[[nodiscard]] bool vimKeymapHandleMessageSelectionKey(
 		not_null<QKeyEvent*> e);
 	void vimKeymapMoveMessageSelection(int direction);
@@ -604,8 +605,13 @@ private:
 		DeleteMessage,
 		SelectMessageText,
 		SelectMessages,
+		ToggleMessages,
 		PickMessageLinks,
 		ActivateLink,
+	};
+	struct VimKeymapAlbumPhoto {
+		FullMsgId itemId;
+		PhotoData *photo = nullptr;
 	};
 	struct VimKeymapHint {
 		QString label;
@@ -618,8 +624,10 @@ private:
 		QPoint clickPoint;
 		bool useClickPoint = false;
 		QPointer<QWidget> widget;
+		std::vector<VimKeymapAlbumPhoto> album;
 	};
 	void vimKeymapClearHints();
+	void vimKeymapInvalidateHints();
 	void vimKeymapBuildMessageHints(VimKeymapHintMode mode);
 	void vimKeymapBuildLinkHints(not_null<Element*> view);
 	void vimKeymapBuildVisibleLinkHints();
@@ -631,6 +639,8 @@ private:
 	void vimKeymapTriggerHint(VimKeymapHint hint);
 	void vimKeymapPaintHints(Painter &p) const;
 	[[nodiscard]] bool vimKeymapCopyItem(not_null<HistoryItem*> item);
+	void vimKeymapCopyAlbum(const VimKeymapHint &hint);
+	void vimKeymapDeleteAlbum(const VimKeymapHint &hint);
 	[[nodiscard]] bool vimKeymapReplyToItem(not_null<HistoryItem*> item);
 	[[nodiscard]] bool vimKeymapReactToItem(not_null<HistoryItem*> item);
 	[[nodiscard]] bool vimKeymapEditItem(not_null<HistoryItem*> item);
@@ -790,6 +800,7 @@ private:
 	rpl::lifetime _vimKeymapPhotoCopyLifetime;
 	std::vector<VimKeymapHint> _vimKeymapHints;
 	QString _vimKeymapHintPrefix;
+	bool _vimKeymapIndividualSelection = false;
 	std::vector<QPointer<QWidget>> _vimKeymapWidgetHintRoots;
 	rpl::lifetime _vimKeymapWidgetHintsLifetime;
 

@@ -1,0 +1,5 @@
+--- a/buildSrc/src/main/kotlin/org/telegram/plugin/TelegramBuildPlugin.kt
++++ b/buildSrc/src/main/kotlin/org/telegram/plugin/TelegramBuildPlugin.kt
+@@ -24 +24 @@
+-                        include("values-*/strings.xml")
++                        include("values-*/strings.xml", "values-*/televim.xml")

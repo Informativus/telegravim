@@ -137,7 +137,8 @@ Main::Session &FileLoader::session() const {
 void FileLoader::finishWithBytes(const QByteArray &data) {
 	_data = OwningBytes(data);
 	_localStatus = LocalStatus::Loaded;
-	if (!_filename.isEmpty() && _toCache == LoadToCacheAsWell) {
+	if (!_filename.isEmpty()
+		&& (_toCache == LoadToCacheAsWell || _temporaryOutput)) {
 		if (!_fileIsOpen) _fileIsOpen = _file.open(QIODevice::WriteOnly);
 		if (!_fileIsOpen) {
 			cancel(FailureReason::FileWriteFailure);
@@ -201,6 +202,18 @@ bool FileLoader::setFileName(const QString &fileName) {
 	return true;
 }
 
+bool FileLoader::setTemporaryOutput(const QString &filename) {
+	if (filename.isEmpty() || _finished || _fileIsOpen
+		|| _localStatus != LocalStatus::NotTried || !_data.isEmpty()) {
+		return false;
+	}
+	_filename = filename;
+	_file.setFileName(filename);
+	_toCache = LoadToFileOnly;
+	_temporaryOutput = true;
+	return true;
+}
+
 void FileLoader::permitLoadFromCloud() {
 	_fromCloud = LoadFromCloudOrLocal;
 }
@@ -229,7 +242,8 @@ void FileLoader::localLoaded(
 	}
 	const auto partial = result.data.startsWith("partial:");
 	constexpr auto kPrefix = 8;
-	if (partial	&& result.data.size() < _loadSize + kPrefix) {
+	if (partial && ((_temporaryOutput && !_loadSize)
+		|| result.data.size() < _loadSize + kPrefix)) {
 		_localStatus = LocalStatus::NotFound;
 		if (checkForOpen()) {
 			startLoadingWithPartial(result.data);
@@ -275,7 +289,8 @@ bool FileLoader::checkForOpen() {
 }
 
 void FileLoader::loadLocal(const Storage::Cache::Key &key) {
-	const auto readImage = (_locationType != AudioFileLocation);
+	const auto readImage = !_temporaryOutput
+		&& (_locationType != AudioFileLocation);
 	auto done = [=, guard = _localLoading.make_guard()](
 			QByteArray &&value,
 			QImage &&image,
@@ -323,7 +338,7 @@ bool FileLoader::tryLoadLocal() {
 		return true;
 	}
 
-	if (_toCache == LoadToCacheAsWell) {
+	if (_toCache == LoadToCacheAsWell || _temporaryOutput) {
 		const auto key = cacheKey();
 		if (key.low || key.high) {
 			loadLocal(key);
@@ -460,7 +475,7 @@ bool FileLoader::finalizeResult() {
 	}
 	if (_localStatus == LocalStatus::NotFound) {
 		if (const auto key = fileLocationKey()) {
-			if (!_filename.isEmpty()) {
+			if (!_filename.isEmpty() && !_temporaryOutput) {
 				_session->local().writeFileLocation(
 					*key,
 					Core::FileLocation(_filename));

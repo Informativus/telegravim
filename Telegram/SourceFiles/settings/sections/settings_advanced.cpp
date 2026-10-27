@@ -43,6 +43,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings/sections/settings_main.h"
 #include "settings/sections/settings_chat.h"
 #include "settings/settings_experimental.h"
+#include "settings/settings_local_transcription.h"
 #include "settings/settings_power_saving.h"
 #include "settings/sections/settings_privacy_security.h"
 #include "storage/localstorage.h"
@@ -1355,6 +1356,15 @@ const auto kMeta = BuildHelper({
 	}
 	BuildDataStorageSection(builder);
 	BuildAutoDownloadSection(builder);
+	builder.addButton({
+		.id = u"advanced/local_transcription"_q,
+		.title = tr::lng_local_transcribe_title(),
+		.icon = { &st::menuIconDownload },
+		.onClick = [controller = builder.controller()] {
+			ShowLocalTranscriptionSettings(controller);
+		},
+		.keywords = { u"transcription"_q, u"voice"_q, u"offline"_q, u"model"_q },
+	});
 	BuildWindowTitleSection(builder);
 #if !defined Q_OS_WIN && !defined Q_OS_MAC
 	BuildWindowCloseBehaviorSection(builder);

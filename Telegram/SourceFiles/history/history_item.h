@@ -104,6 +104,7 @@ struct HistoryItemCommonFields {
 	bool ignoreForwardFrom = false;
 	bool ignoreForwardCaptions = false;
 	bool mediaSpoiler = false;
+	bool localQuickReply = false;
 };
 
 enum class HistoryReactionSource : char {
@@ -215,6 +216,7 @@ public:
 	[[nodiscard]] bool isSavedMusicItem() const;
 	[[nodiscard]] BusinessShortcutId shortcutId() const;
 	[[nodiscard]] bool isBusinessShortcut() const;
+	[[nodiscard]] bool isLocalQuickReply() const;
 	[[nodiscard]] bool isWelcomeTemplate() const;
 	void setRealShortcutId(BusinessShortcutId id);
 	void setCustomServiceLink(ClickHandlerPtr link);
@@ -465,6 +467,9 @@ public:
 		MsgId replyTo,
 		MsgId replyToTop,
 		bool isForumPost);
+	void updateLocalQuickReplyRelations(
+		uint64 groupedId,
+		FullReplyTo replyTo);
 	void setPostAuthor(const QString &author);
 	void setRealId(MsgId newId);
 	void markEphemeralSent();
@@ -823,6 +828,7 @@ private:
 	int _boostsApplied = 0;
 	int _starsPaid = 0;
 	BusinessShortcutId _shortcutId = 0;
+	bool _localQuickReply = false;
 
 	MessageGroupId _groupId = MessageGroupId();
 	EffectId _effectId = 0;

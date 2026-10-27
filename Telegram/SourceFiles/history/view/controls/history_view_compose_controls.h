@@ -21,6 +21,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/effects/animations.h"
 #include "ui/widgets/fields/input_field.h"
 
+#include <QtCore/QJsonObject>
+
 class History;
 class DocumentData;
 class Image;
@@ -45,6 +47,7 @@ class FieldAutocomplete;
 } // namespace ChatHelpers
 
 namespace Data {
+struct LocalQuickReplyMessage;
 struct MessagePosition;
 struct Draft;
 class DraftKey;
@@ -119,6 +122,7 @@ using AiTooltipManager = ComposeTooltipManager;
 namespace HistoryView {
 
 class FieldHeader;
+class LocalQuickReplyDraftWriter;
 
 enum class ComposeControlsMode {
 	Normal,
@@ -139,6 +143,7 @@ struct ComposeControlsDescriptor {
 	QWidget *panelsParent = nullptr;
 	ChatHelpers::PauseReason panelsLevel = kDefaultPanelsLevel;
 	QString voiceCustomCancelText;
+	QString localQuickReplyRef;
 	bool voiceLockFromBottom = false;
 	ChatHelpers::ComposeFeatures features;
 	rpl::producer<bool> scheduledToggleValue;
@@ -258,6 +263,7 @@ public:
 		not_null<Data::Thread*> thread,
 		const Window::SectionShow &params);
 	bool returnTabbedSelector();
+	bool vimKeymapFocusEmojiPanel();
 
 	[[nodiscard]] bool isEditingMessage() const;
 	[[nodiscard]] rpl::producer<FullMsgId> editMsgIdValue() const;
@@ -293,6 +299,10 @@ public:
 	void tryProcessKeyInput(not_null<QKeyEvent*> e);
 
 	[[nodiscard]] TextWithTags getTextWithAppliedMarkdown() const;
+	void applyLocalQuickReplyText(const TextWithTags &text, int cursorPosition);
+	[[nodiscard]] std::shared_ptr<const Data::LocalQuickReplyMessage>
+	localQuickReplyEditSource() const;
+	void localQuickReplyEditSaved(const Data::LocalQuickReplyMessage &source);
 	[[nodiscard]] Data::WebPageDraft webPageDraft() const;
 	[[nodiscard]] std::shared_ptr<const Iv::RichPage> shownRichMessage() const;
 	void setText(const TextWithTags &text);
@@ -429,6 +439,7 @@ private:
 
 	void escape();
 	void fieldChanged();
+	[[nodiscard]] Fn<void()> editCompletion();
 	[[nodiscard]] bool suppressSendAction() const;
 	void toggleTabbedSelectorMode();
 	void createTabbedPanel();
@@ -470,6 +481,14 @@ private:
 	// Request to show results in the emoji panel.
 	void applyInlineBotQuery(UserData *bot, const QString &query);
 
+	[[nodiscard]] Data::Draft *composeDraft(DraftType type) const;
+	void setComposeDraft(DraftType type, std::unique_ptr<Data::Draft> draft);
+	void clearComposeDraft(DraftType type);
+	void loadLocalQuickReplyDrafts();
+	void restoreLocalQuickReplyDrafts();
+	void writeLocalQuickReplyDrafts();
+	void showLocalQuickReplyDraftRecovery();
+	void retainLocalQuickReplyEditDraft();
 	[[nodiscard]] Data::DraftKey draftKey(
 		DraftType type = DraftType::Normal) const;
 	[[nodiscard]] Data::DraftKey draftKeyCurrent() const;
@@ -532,6 +551,14 @@ private:
 	MsgId _topicRootId = 0;
 	PeerId _monoforumPeerId = 0;
 	BusinessShortcutId _shortcutId = 0;
+	const QString _localQuickReplyRef;
+	std::unique_ptr<Data::Draft> _localQuickReplyNormalDraft;
+	std::unique_ptr<Data::Draft> _localQuickReplyEditDraft;
+	QString _localQuickReplyNormalMessageRef;
+	QString _localQuickReplyEditMessageRef;
+	std::shared_ptr<LocalQuickReplyDraftWriter> _localQuickReplyDraftWriter;
+	QJsonObject _localQuickReplyDeferredEditDraft;
+	bool _localQuickReplyDraftsLoaded = false;
 	Fn<bool()> _showSlowmodeError;
 	Fn<bool()> _showScheduleSendError;
 	Fn<Api::SendAction()> _sendActionFactory;
@@ -613,6 +640,7 @@ private:
 	const Fn<SendMenu::Details()> _sendMenuDetails;
 	const Fn<SuggestOptions()> _currentSuggest;
 	const Fn<void(QString)> _processShortcut;
+	Fn<bool(QStringList)> _insertQuickReplyFiles;
 	const Fn<bool(int)> _moderateKeyActivateCallback;
 	const Fn<void(not_null<DocumentData*>)> _unavailableEmojiPasted;
 
@@ -663,6 +691,7 @@ private:
 	Webrtc::RecordAvailability _recordAvailability = {};
 
 	FullMsgId _editingId;
+	std::shared_ptr<const Data::LocalQuickReplyMessage> _localEditSource;
 	std::shared_ptr<Data::PhotoMedia> _photoEditMedia;
 	bool _canReplaceMedia = false;
 	bool _canAddMedia = false;
