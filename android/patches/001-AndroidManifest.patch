@@ -1,0 +1,29 @@
+--- a/TMessagesProj/src/main/AndroidManifest.xml
++++ b/TMessagesProj/src/main/AndroidManifest.xml
+@@ -89,0 +90 @@
++        <provider android:authorities="com.android.externalstorage.documents" />
+@@ -99,3 +100,2 @@
+-        android:allowBackup="true"
+-        android:restoreAnyVersion="true"
+-        android:backupAgent=".BackupAgent"
++        android:allowBackup="false"
++        android:restoreAnyVersion="false"
+@@ -218,0 +219,18 @@
++            <intent-filter>
++                <action android:name="android.intent.action.VIEW" />
++                <category android:name="android.intent.category.DEFAULT" />
++                <category android:name="android.intent.category.BROWSABLE" />
++                <data android:scheme="televim" />
++            </intent-filter>
++            <intent-filter>
++                <action android:name="android.intent.action.VIEW" />
++                <category android:name="android.intent.category.DEFAULT" />
++                <data android:scheme="content" />
++                <data android:mimeType="application/x-televim-settings" />
++                <data android:mimeType="application/json" />
++            </intent-filter>
++            <intent-filter>
++                <action android:name="android.intent.action.VIEW" />
++                <category android:name="android.intent.category.DEFAULT" />
++                <data android:scheme="content" android:host="*" android:pathPattern=".*\\.tgv" android:mimeType="application/octet-stream" />
++            </intent-filter>

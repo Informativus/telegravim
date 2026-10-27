@@ -7,7 +7,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/controls/history_view_voice_record_bar.h"
 
+#include "api/api_local_transcription.h"
 #include "api/api_send_progress.h"
+#include "api/api_transcribes.h"
+#include "apiwrap.h"
 #include "base/event_filter.h"
 #include "base/random.h"
 #include "base/unixtime.h"
@@ -15,6 +18,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "calls/calls_instance.h"
 #include "chat_helpers/compose/compose_show.h"
 #include "core/application.h"
+#include "core/core_settings.h"
 #include "data/data_document.h"
 #include "data/data_document_media.h"
 #include "data/data_session.h"
@@ -37,11 +41,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/effects/animation_value.h"
 #include "ui/effects/animation_value_f.h"
 #include "ui/effects/ripple_animation.h"
+#include "ui/layers/generic_box.h"
 #include "ui/text/format_values.h"
 #include "ui/text/text_utilities.h"
 #include "ui/dynamic_image.h"
 #include "ui/painter.h"
 #include "ui/widgets/fields/input_field.h" // ShouldSubmit.
+#include "ui/widgets/labels.h"
 #include "ui/widgets/tooltip.h"
 #include "ui/rect.h"
 #include "ui/ui_utility.h"
@@ -2110,7 +2116,13 @@ VoiceRecordBar::VoiceRecordBar(
 , _lock(std::make_unique<RecordLock>(_outerContainer, _st.lock))
 , _level(std::make_unique<VoiceRecordButton>(_outerContainer, _st))
 , _cancel(std::make_unique<CancelButton>(this, _st, descriptor.recorderHeight))
-, _startTimer([=] { startRecording(); })
+, _startTimer([=] {
+	if (_startRecordingFilter && _startRecordingFilter()) {
+		_recordingTipRequire = 0;
+		return;
+	}
+	startRecording();
+})
 , _message(
 	st::historyRecordTextStyle,
 	(!descriptor.customCancelText.isEmpty()
@@ -2138,9 +2150,41 @@ VoiceRecordBar::VoiceRecordBar(
 }
 
 VoiceRecordBar::~VoiceRecordBar() {
+	closeReview();
 	if (isActive()) {
 		stopRecording(StopType::Cancel);
 	}
+}
+
+Ui::SendButton::Type VoiceRecordBar::recordButtonType(bool videoAvailable) const {
+	auto &settings = Core::App().settings();
+	auto &session = _show->session();
+	if (session.api().transcribes().local().dictationEnabled()
+		&& settings.readPref<bool>(
+			"local_dictation_mode_" + std::to_string(session.uniqueId()))) {
+		return Ui::SendButton::Type::Transcribe;
+	}
+	return (videoAvailable && settings.recordVideoMessages())
+		? Ui::SendButton::Type::Round
+		: Ui::SendButton::Type::Record;
+}
+
+void VoiceRecordBar::cycleRecordButtonType(bool videoAvailable) {
+	using Type = Ui::SendButton::Type;
+	const auto current = recordButtonType(videoAvailable);
+	auto &session = _show->session();
+	const auto dictation = session.api().transcribes().local().dictationEnabled();
+	const auto next = (current == Type::Record && videoAvailable)
+		? Type::Round
+		: (current != Type::Transcribe && dictation)
+		? Type::Transcribe
+		: Type::Record;
+	auto &settings = Core::App().settings();
+	settings.setRecordVideoMessages(next == Type::Round);
+	settings.writePref<bool>(
+		"local_dictation_mode_" + std::to_string(session.uniqueId()),
+		next == Type::Transcribe);
+	Core::App().saveSettingsDelayed();
 }
 
 void VoiceRecordBar::updateMessageGeometry() {
@@ -2435,9 +2479,6 @@ void VoiceRecordBar::init() {
 				|| e->type() == QEvent::MouseButtonRelease);
 	}) | rpl::on_next([=](not_null<QEvent*> e) {
 		if (e->type() == QEvent::MouseButtonPress) {
-			if (_startRecordingFilter && _startRecordingFilter()) {
-				return;
-			}
 			prepareOnSendPress();
 			_startTimer.callOnce(st::universalDuration);
 		} else if (e->type() == QEvent::MouseButtonRelease) {
@@ -2469,8 +2510,10 @@ void VoiceRecordBar::init() {
 }
 
 void VoiceRecordBar::prepareOnSendPress() {
+	closeReview();
 	_recordingTipRequire = crl::now();
 	_recordingVideo = (_send->type() == Ui::SendButton::Type::Round);
+	_recordingTranscription = (_send->type() == Ui::SendButton::Type::Transcribe);
 	_fullRecord = false;
 	_ttlButton = nullptr;
 	clearResumeState();
@@ -2753,8 +2796,7 @@ void VoiceRecordBar::startRecording() {
 	}) | rpl::on_next([=] {
 		auto keyFilterCallback = [=](not_null<QEvent*> e) {
 			using Result = base::EventFilterResult;
-			if (_send->type() != Ui::SendButton::Type::Record
-				&& _send->type() != Ui::SendButton::Type::Round) {
+			if (!isTypeRecord()) {
 				return Result::Continue;
 			}
 			switch(e->type()) {
@@ -2810,7 +2852,7 @@ void VoiceRecordBar::recordUpdated(quint16 level, int samples) {
 void VoiceRecordBar::stop(bool send) {
 	if (isHidden() && !send) {
 		return;
-	} else if (send && _pauseInsteadSend) {
+	} else if (send && _pauseInsteadSend && !_recordingTranscription) {
 		_fullRecord = true;
 		stopRecording(StopType::Listen);
 		_lockShowing = false;
@@ -2850,6 +2892,7 @@ void VoiceRecordBar::finish() {
 }
 
 void VoiceRecordBar::hideFast() {
+	closeReview();
 	hide();
 	_lock->hide();
 	_level->hide();
@@ -2928,6 +2971,8 @@ Ui::RoundVideoResult VoiceRecordBar::mergeWithResumePrefix(
 
 void VoiceRecordBar::stopRecording(StopType type, bool ttlBeforeHide) {
 	using namespace ::Media::Capture;
+	const auto generation = _reviewGeneration;
+	const auto transcribe = _recordingTranscription;
 	if (type == StopType::Cancel) {
 		clearResumeState();
 		if (_videoRecorder) {
@@ -3018,6 +3063,9 @@ void VoiceRecordBar::stopRecording(StopType type, bool ttlBeforeHide) {
 			});
 		}
 		instance()->stop(crl::guard(this, [=](Result &&data) {
+			if (transcribe && generation != _reviewGeneration) {
+				return;
+			}
 			_pausedRawDuration = 0;
 			auto combined = mergeWithResumePrefix(
 				ToRoundVideoResult(std::move(data)));
@@ -3036,7 +3084,7 @@ void VoiceRecordBar::stopRecording(StopType type, bool ttlBeforeHide) {
 					? std::numeric_limits<int>::max()
 					: 0),
 			};
-			_sendVoiceRequests.fire({
+			reviewOrSend({
 				.bytes = _data.content,
 				.waveform = _data.waveform,
 				.duration = _data.duration,
@@ -3107,7 +3155,7 @@ void VoiceRecordBar::requestToSendWithOptions(Api::SendOptions options) {
 			_listen->prepareForSendAnimation();
 			_listen->applyTrimBeforeSend();
 		}
-		_sendVoiceRequests.fire({
+		reviewOrSend({
 			.bytes = _data.content,
 			.waveform = _data.waveform,
 			.duration = _data.duration,
@@ -3115,6 +3163,112 @@ void VoiceRecordBar::requestToSendWithOptions(Api::SendOptions options) {
 			.video = !_data.minithumbs.isNull(),
 		});
 	}
+}
+
+void VoiceRecordBar::reviewOrSend(VoiceToSend data) {
+	if (!_recordingTranscription || data.video) {
+		_sendVoiceRequests.fire(std::move(data));
+		return;
+	} else if (_review) {
+		return;
+	}
+	const auto local = &_show->session().api().transcribes().local();
+	_show->showBox(Box([=](not_null<Ui::GenericBox*> box) {
+		_review = box;
+		box->setTitle(tr::lng_local_dictation_review());
+		box->setWidth(st::localDictationWidth);
+		box->addRow(object_ptr<Ui::FlatLabel>(
+			box,
+			tr::lng_local_dictation_private(),
+			st::boxLabel));
+		struct State {
+			Ui::RoundVideoResult audio;
+			std::unique_ptr<ListenWrap> preview;
+			rpl::variable<QString> status;
+			uint64 request = 0;
+			bool chosen = false;
+		};
+		const auto state = box->lifetime().make_state<State>();
+		state->audio = {
+			.content = data.bytes,
+			.waveform = data.waveform,
+			.duration = data.duration,
+		};
+		const auto preview = box->addRow(object_ptr<Ui::RpWidget>(box));
+		preview->resize(preview->width(), st::localDictationPreviewHeight);
+		state->preview = std::make_unique<ListenWrap>(
+			preview,
+			_st,
+			_send,
+			&_show->session(),
+			&state->audio,
+			false,
+			st::historyRecordFont);
+		state->preview->requestPaintProgress(1.);
+		state->preview->stopRequests(
+		) | rpl::on_next([=] { box->closeBox(); }, box->lifetime());
+		const auto field = box->addRow(object_ptr<Ui::InputField>(
+			box,
+			st::defaultInputField,
+			Ui::InputField::Mode::MultiLine,
+			tr::lng_local_dictation_placeholder()));
+		field->setMinHeight(st::localDictationFieldMinHeight);
+		field->setMaxHeight(st::localDictationFieldMaxHeight);
+		field->setDisabled(true);
+		state->status = tr::lng_local_transcribe_waiting(tr::now);
+		box->addRow(object_ptr<Ui::FlatLabel>(
+			box, state->status.value(), st::boxLabel));
+		const auto choose = crl::guard(this, [=](bool text) {
+			if (state->chosen || (text && field->getLastText().trimmed().isEmpty())) {
+				return;
+			}
+			state->chosen = true;
+			auto result = data;
+			if (text) {
+				result.transcription = field->getLastText().trimmed();
+				result.options.ttlSeconds = 0;
+			}
+			_review = nullptr;
+			box->closeBox();
+			_sendVoiceRequests.fire(std::move(result));
+		});
+		const auto sendText = box->addButton(
+			tr::lng_local_dictation_send_text(), [=] { choose(true); });
+		sendText->setDisabled(true);
+		field->changes() | rpl::on_next([=] {
+			sendText->setDisabled(field->getLastText().trimmed().isEmpty());
+		}, box->lifetime());
+		box->addButton(
+			tr::lng_local_dictation_send_voice(), [=] { choose(false); });
+		box->addLeftButton(tr::lng_cancel(), [=] { box->closeBox(); });
+		box->boxClosing() | rpl::on_next(crl::guard(local, [=] {
+			local->cancelRecording(state->request);
+			state->preview = nullptr;
+		}), box->lifetime());
+		state->request = local->enqueueRecording(data.bytes, crl::guard(box,
+			[=](QString text, bool finished, bool failed) {
+				state->status = (finished && !failed) ? QString() : text;
+				if (finished) {
+					field->setDisabled(false);
+					if (!failed) {
+						field->setText(text);
+					}
+					field->setFocusFast();
+				}
+			}));
+	}));
+}
+
+void VoiceRecordBar::closeReview() {
+	_startTimer.cancel();
+	++_reviewGeneration;
+	if (const auto box = std::exchange(_review, nullptr)) {
+		box->closeBox();
+	}
+}
+
+bool VoiceRecordBar::isReviewing() const {
+	return !_review.isNull();
 }
 
 rpl::producer<SendActionUpdate> VoiceRecordBar::sendActionUpdates() const {
@@ -3178,7 +3332,9 @@ rpl::producer<> VoiceRecordBar::updateSendButtonTypeRequests() const {
 			// Perhaps a voice is recording from another place.
 			return !isActive();
 		}) | rpl::to_empty,
-		_listenChanges.events());
+		_listenChanges.events(),
+		_show->session().api().transcribes().local().modelStateValue(
+		) | rpl::skip(1));
 }
 
 rpl::producer<> VoiceRecordBar::recordingTipRequests() const {
@@ -3198,8 +3354,7 @@ bool VoiceRecordBar::isListenState() const {
 }
 
 bool VoiceRecordBar::isTypeRecord() const {
-	return (_send->type() == Ui::SendButton::Type::Record)
-		|| (_send->type() == Ui::SendButton::Type::Round);
+	return Ui::SendButton::IsRecordingType(_send->type());
 }
 
 bool VoiceRecordBar::isRecordingByAnotherBar() const {
@@ -3222,6 +3377,7 @@ float64 VoiceRecordBar::activeAnimationRatio() const {
 }
 
 void VoiceRecordBar::clearListenState() {
+	closeReview();
 	if (isListenState()) {
 		hideAnimated();
 	}

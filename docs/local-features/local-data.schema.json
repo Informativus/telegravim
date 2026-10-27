@@ -45,8 +45,549 @@
       "required": ["records"],
       "properties": {"records": {"type": "array", "maxItems": 1000000, "items": {"$ref": "#/$defs/chatFolderRecord"}}}
     }
+  }, {
+    "if": {
+      "properties": {
+        "module_id": {
+          "const": "quick_replies"
+        },
+        "schema_version": {
+          "const": 1
+        }
+      },
+      "required": [
+        "module_id",
+        "schema_version"
+      ]
+    },
+    "then": {
+      "required": [
+        "records"
+      ],
+      "properties": {
+        "records": {
+          "type": "array",
+          "maxItems": 1000000,
+          "items": {
+            "$ref": "#/$defs/quickReplyRecord"
+          }
+        }
+      }
+    }
   }],
   "$defs": {
+    "quickReplyStickerSetHints": {
+      "type": "object",
+      "description": "Optional hints keyed by attached_stickers document ID; all IDs are canonical positive uint64 decimal strings and each key must occur in the unchanged attached_stickers array. Runtime validation enforces the uint64 maximum and sibling membership.",
+      "maxProperties": 1024,
+      "propertyNames": { "type": "string", "pattern": "^[1-9][0-9]{0,19}$" },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "pattern": "^[1-9][0-9]{0,19}$" },
+          "short_name": { "type": "string", "pattern": "^[A-Za-z0-9_]{1,64}$" }
+        },
+        "anyOf": [ { "required": ["id"] }, { "required": ["short_name"] } ],
+        "additionalProperties": true
+      }
+    },
+    "quickReplyMediaHints": {
+      "properties": {
+        "attached_sticker_sets": { "$ref": "#/$defs/quickReplyStickerSetHints" },
+        "cover_asset_media": { "$ref": "#/$defs/quickReplyMediaHints" },
+        "photo_asset_media": { "$ref": "#/$defs/quickReplyMediaHints" },
+        "document_asset_media": { "$ref": "#/$defs/quickReplyMediaHints" },
+        "rich_assets": {
+          "items": {
+            "properties": { "media": { "$ref": "#/$defs/quickReplyMediaHints" } }
+          }
+        }
+      }
+    },
+    "quickReplyDraftText": {
+      "type": "object",
+      "required": [
+        "text",
+        "tags"
+      ],
+      "properties": {
+        "text": {
+          "type": "string",
+          "maxLength": 32768
+        },
+        "tags": {
+          "type": "array",
+          "maxItems": 32768,
+          "items": {
+            "type": "object",
+            "required": [
+              "offset",
+              "length",
+              "id"
+            ],
+            "properties": {
+              "offset": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647
+              },
+              "length": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "quickReplyEditorDraft": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/quickReplyDraftText"
+        },
+        {
+          "type": "object",
+          "required": [
+            "message_ref",
+            "quote",
+            "quote_offset",
+            "cursor",
+            "webpage"
+          ],
+          "properties": {
+            "message_ref": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "source_version_vector": {
+              "description": "Original edited message revision; replaced atomically. Missing or null requires text recovery, unless the legacy parent baseline is present.",
+              "anyOf": [
+                { "$ref": "#/$defs/versionVector" },
+                { "type": "null" }
+              ]
+            },
+            "source_legacy_parent_version_vector": {
+              "description": "Original parent revision for an unmigrated legacy message; mutually exclusive with a message revision.",
+              "anyOf": [
+                { "$ref": "#/$defs/versionVector" },
+                { "type": "null" }
+              ]
+            },
+            "quote": {
+              "$ref": "#/$defs/quickReplyDraftText"
+            },
+            "quote_offset": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 32768
+            },
+            "cursor": {
+              "type": "object",
+              "required": [
+                "position",
+                "anchor",
+                "scroll"
+              ],
+              "properties": {
+                "position": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2147483647
+                },
+                "anchor": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2147483647
+                },
+                "scroll": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2147483647
+                }
+              },
+              "additionalProperties": true
+            },
+            "webpage": {
+              "type": "object",
+              "required": [
+                "url",
+                "large",
+                "small",
+                "invert",
+                "manual",
+                "removed"
+              ],
+              "properties": {
+                "url": {
+                  "type": "string"
+                },
+                "large": {
+                  "type": "boolean"
+                },
+                "small": {
+                  "type": "boolean"
+                },
+                "invert": {
+                  "type": "boolean"
+                },
+                "manual": {
+                  "type": "boolean"
+                },
+                "removed": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "not": {
+            "required": ["source_version_vector", "source_legacy_parent_version_vector"],
+            "properties": {
+              "source_version_vector": { "type": "object" },
+              "source_legacy_parent_version_vector": { "type": "object" }
+            }
+          },
+          "additionalProperties": true
+        }
+      ]
+    },
+    "quickReplyRecord": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/record"
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "reply"
+              },
+              "deleted": {
+                "const": false
+              }
+            },
+            "required": [
+              "kind",
+              "deleted"
+            ]
+          },
+          "then": {
+            "required": [
+              "title",
+              "shortcut",
+              "category",
+              "text",
+              "entities",
+              "variables",
+              "attachments",
+              "position"
+            ],
+            "properties": {
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "shortcut": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32
+              },
+              "category": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 32768
+              },
+              "entities": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "offset",
+                    "length",
+                    "data"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "length": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "data": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "variables": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "name",
+                    "default"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 32
+                    },
+                    "default": {
+                      "type": "string",
+                      "maxLength": 32768
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "attachments": {
+                "type": "array",
+                "maxItems": 10,
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "sha256",
+                    "size",
+                    "filename",
+                    "mime"
+                  ],
+                  "properties": {
+                    "sha256": {
+                      "$ref": "#/$defs/sha256"
+                    },
+                    "size": {
+                      "type": "string",
+                      "pattern": "^(0|[1-9][0-9]{0,18})$"
+                    },
+                    "filename": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 255,
+                      "pattern": "^[^/\\\\]+$",
+                      "not": {
+                        "enum": [
+                          ".",
+                          ".."
+                        ]
+                      }
+                    },
+                    "mime": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "position": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "message"
+              },
+              "deleted": {
+                "const": false
+              }
+            },
+            "required": [
+              "kind",
+              "deleted"
+            ]
+          },
+          "then": {
+            "required": [
+              "reply_ref",
+              "text",
+              "entities",
+              "attachments",
+              "position",
+              "media"
+            ],
+            "properties": {
+              "text": {
+                "type": "string",
+                "maxLength": 32768
+              },
+              "entities": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "offset",
+                    "length",
+                    "data"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "length": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "data": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "attachments": {
+                "type": "array",
+                "maxItems": 8192,
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "sha256",
+                    "size",
+                    "filename",
+                    "mime"
+                  ],
+                  "properties": {
+                    "sha256": {
+                      "$ref": "#/$defs/sha256"
+                    },
+                    "size": {
+                      "type": "string",
+                      "pattern": "^(0|[1-9][0-9]{0,18})$"
+                    },
+                    "filename": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 255,
+                      "pattern": "^[^/\\\\]+$",
+                      "not": {
+                        "enum": [
+                          ".",
+                          ".."
+                        ]
+                      }
+                    },
+                    "mime": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "position": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647
+              },
+              "reply_ref": {
+                "$ref": "#/$defs/uuid"
+              },
+              "group_ref": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/uuid"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "reply_to_ref": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/uuid"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "media": {
+                "allOf": [ { "$ref": "#/$defs/quickReplyMediaHints" } ],
+                "type": "object",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "editor_draft"
+              },
+              "deleted": {
+                "const": false
+              }
+            },
+            "required": [
+              "kind",
+              "deleted"
+            ]
+          },
+          "then": {
+            "required": [
+              "reply_ref"
+            ],
+            "properties": {
+              "reply_ref": {
+                "$ref": "#/$defs/uuid"
+              },
+              "normal": {
+                "$ref": "#/$defs/quickReplyEditorDraft"
+              },
+              "edit": {
+                "$ref": "#/$defs/quickReplyEditorDraft"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      ]
+    },
     "uuid": {"type": "string", "format": "uuid", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
     "decimalId": {"type": "string", "pattern": "^[1-9][0-9]{0,19}$"},
     "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},

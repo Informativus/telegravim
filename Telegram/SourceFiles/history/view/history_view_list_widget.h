@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "core/vim_keymap.h"
+
 #include "base/timer.h"
 #include "ui/rp_widget.h"
 #include "ui/effects/animations.h"
@@ -369,13 +371,15 @@ public:
 	[[nodiscard]] TextForMimeData getSelectedText() const;
 	[[nodiscard]] Iv::RichPageBlocksSlice getSelectedRichBlocks() const;
 	void copySelectedText();
-		[[nodiscard]] Element *vimKeymapTargetView() const;
-		[[nodiscard]] bool vimKeymapCopyTarget();
-		[[nodiscard]] bool vimKeymapShareTarget();
-		[[nodiscard]] bool vimKeymapReplyToTarget();
-		[[nodiscard]] bool vimKeymapReactToTarget();
-		[[nodiscard]] bool vimKeymapEditTarget();
-		[[nodiscard]] MessageIdsList getSelectedIds() const;
+	[[nodiscard]] bool vimKeymapBeginHints(Core::VimKeymap::Action action);
+	[[nodiscard]] bool vimKeymapHandleKey(not_null<QKeyEvent*> e);
+	[[nodiscard]] Element *vimKeymapTargetView() const;
+	[[nodiscard]] bool vimKeymapCopyTarget();
+	[[nodiscard]] bool vimKeymapShareTarget();
+	[[nodiscard]] bool vimKeymapReplyToTarget();
+	[[nodiscard]] bool vimKeymapReactToTarget();
+	[[nodiscard]] bool vimKeymapEditTarget();
+	[[nodiscard]] MessageIdsList getSelectedIds() const;
 	[[nodiscard]] SelectedItems getSelectedItems() const;
 	[[nodiscard]] TextSelection getSelectedTextRange(
 		not_null<HistoryItem*> item) const;
@@ -792,11 +796,67 @@ private:
 		Data::MessagePosition attachPosition,
 		int delta,
 		AnimatedScroll type);
+	enum class VimKeymapHintMode {
+		None,
+		CopyMessage,
+		ShareMessage,
+		ReplyToMessage,
+		ReactToMessage,
+		EditMessage,
+		DeleteMessage,
+		SelectMessageText,
+		SelectMessages,
+		ToggleMessages,
+		PickMessageLinks,
+		ActivateLink,
+	};
+	struct VimKeymapAlbumPhoto {
+		FullMsgId itemId;
+		PhotoData *photo = nullptr;
+	};
+	struct VimKeymapHint {
+		QString label;
+		FullMsgId itemId;
+		QRect badge;
+		QRect target;
+		ClickHandlerPtr link;
+		PhotoData *photo = nullptr;
+		DocumentData *document = nullptr;
+		QPoint clickPoint;
+		bool useClickPoint = false;
+		QPointer<QWidget> widget;
+		std::vector<VimKeymapAlbumPhoto> album;
+	};
+	[[nodiscard]] bool vimKeymapHandleHintKey(not_null<QKeyEvent*> e);
+	void vimKeymapClearHints();
+	void vimKeymapInvalidateHints();
+	void vimKeymapBuildMessageHints(VimKeymapHintMode mode);
+	void vimKeymapBuildLinkHints(not_null<Element*> view);
+	void vimKeymapBuildVisibleLinkHints();
+	void vimKeymapAddLinkHints(not_null<Element*> view);
+	void vimKeymapAddUserpicHints(Element *onlyView = nullptr);
+	void vimKeymapAddWidgetHints();
+	void vimKeymapAssignHintLabels();
+	void vimKeymapUpdateWidgetHintPrefix();
+	void vimKeymapTriggerHint(VimKeymapHint hint);
+	void vimKeymapPaintHints(Painter &p) const;
+	[[nodiscard]] bool vimKeymapCopyItem(not_null<HistoryItem*> item);
+	void vimKeymapCopyAlbum(const VimKeymapHint &hint);
+	void vimKeymapDeleteAlbum(const VimKeymapHint &hint);
+	[[nodiscard]] bool vimKeymapReplyToItem(not_null<HistoryItem*> item);
+	[[nodiscard]] bool vimKeymapReactToItem(not_null<HistoryItem*> item);
+	[[nodiscard]] bool vimKeymapEditItem(not_null<HistoryItem*> item);
+	[[nodiscard]] bool vimKeymapDeleteItem(not_null<HistoryItem*> item);
+	void vimKeymapClearTextCursor();
+	void vimKeymapSetTextCursor(
+		not_null<Element*> view,
+		MessageSelectionFlatEndpoint cursor);
+	bool vimKeymapBeginTextSelection(not_null<Element*> view);
+	void vimKeymapPaintTextCursor(Painter &p);
+	bool vimKeymapHandleTextSelectionKey(not_null<QKeyEvent*> e);
 	void vimKeymapStartScroll(int direction);
-	[[nodiscard]] bool vimKeymapBeginSelectionHints();
-	void vimKeymapClearSelectionHints();
-	[[nodiscard]] bool vimKeymapHandleSelectionHintKey(not_null<QKeyEvent*> e);
-	void vimKeymapPaintSelectionHints(Painter &p) const;
+	void vimKeymapToggleMessageSelection(not_null<Element*> view);
+	[[nodiscard]] bool vimKeymapHandleScrollKey(not_null<QKeyEvent*> e);
 	[[nodiscard]] bool vimKeymapBeginMessageSelection(not_null<Element*> view);
 	[[nodiscard]] bool vimKeymapHandleMessageSelectionKey(
 		not_null<QKeyEvent*> e);
@@ -821,7 +881,8 @@ private:
 	void clearSelected();
 	void setTextSelection(
 		not_null<Element*> view,
-		MessageSelection selection);
+		MessageSelection selection,
+		bool vimVisualMode = false);
 	int itemMinimalHeight() const;
 
 	bool isGoodForSelection(
@@ -1111,8 +1172,18 @@ private:
 	base::Timer _touchScrollTimer;
 	Ui::MiddleClickAutoscroll _middleClickAutoscroll;
 	base::Timer _vimKeymapScrollTimer;
-	std::vector<FullMsgId> _vimKeymapSelectionHints;
-	QString _vimKeymapSelectionHintPrefix;
+	VimKeymapHintMode _vimKeymapHintMode = VimKeymapHintMode::None;
+	std::vector<VimKeymapHint> _vimKeymapHints;
+	QString _vimKeymapHintPrefix;
+	std::vector<QPointer<QWidget>> _vimKeymapWidgetHintRoots;
+	rpl::lifetime _vimKeymapWidgetHintsLifetime;
+	HistoryItem *_vimKeymapTextCursorItem = nullptr;
+	MessageSelectionFlatEndpoint _vimKeymapTextCursor;
+	std::optional<QRect> _vimKeymapTextCursorRect;
+	QSize _vimKeymapTextCursorViewSize;
+	bool _vimKeymapTextVisualMode = false;
+	bool _vimKeymapTextPendingStart = false;
+	bool _vimKeymapIndividualSelection = false;
 	rpl::lifetime _vimKeymapPhotoCopyLifetime;
 	int _vimKeymapScrollDirection = 0;
 	bool _vimKeymapScrollRepeating = false;

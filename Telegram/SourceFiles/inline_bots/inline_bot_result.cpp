@@ -53,6 +53,10 @@ Result::Result(not_null<Main::Session*> session, const Creator &creator)
 , _type(creator.type) {
 }
 
+const MTPBotInlineMessage *Result::nativeMessage() const {
+	return _nativeMessage ? &*_nativeMessage : nullptr;
+}
+
 std::shared_ptr<Result> Result::Create(
 		not_null<Main::Session*> session,
 		uint64 queryId,
@@ -167,6 +171,7 @@ std::shared_ptr<Result> Result::Create(
 		}
 	}
 
+	result->_nativeMessage = *message;
 	message->match([&](const MTPDbotInlineMessageMediaAuto &data) {
 		const auto message = qs(data.vmessage());
 		const auto entities = Api::EntitiesFromMTP(

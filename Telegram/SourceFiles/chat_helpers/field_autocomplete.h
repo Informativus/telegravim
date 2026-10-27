@@ -104,6 +104,7 @@ public:
 		not_null<UserData*> user;
 		QString command;
 		ChooseMethod method = ChooseMethod::ByEnter;
+		QString localId;
 	};
 	using StickerChosen = FileChosen;
 	enum class Type {
@@ -114,6 +115,7 @@ public:
 	};
 
 	bool chooseSelected(ChooseMethod method) const;
+	bool moveSelection(Qt::Key key);
 
 	[[nodiscard]] bool stickersShown() const {
 		return !_srows.empty();
@@ -228,6 +230,7 @@ struct FieldAutocompleteDescriptor {
 	Fn<void(TextWithTags)> setText;
 	Fn<void(QString)> sendBotCommand;
 	Fn<void(QString)> processShortcut;
+	Fn<bool(QStringList)> insertQuickReplyFiles;
 	Fn<bool(int)> moderateKeyActivateCallback;
 };
 void InitFieldAutocomplete(

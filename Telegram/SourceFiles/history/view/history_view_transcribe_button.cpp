@@ -23,6 +23,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/painter.h"
 #include "ui/rect.h"
 #include "api/api_transcribes.h"
+#include "api/api_local_transcription.h"
+#include "settings/settings_local_transcription.h"
 #include "apiwrap.h"
 #include "styles/style_chat.h"
 #include "window/window_session_controller.h"
@@ -82,7 +84,8 @@ void TranscribeButton::setLoading(bool loading) {
 				if (const auto item = session->data().message(itemId)) {
 					session->data().requestItemRepaint(
 						item,
-						_lastPaintedPoint.isNull()
+						(_lastPaintedPoint.isNull()
+							|| (!_roundview && !_summarize))
 							? QRect()
 							: (QRect(_lastPaintedPoint, size()))
 								+ Margins(st::lineWidth));
@@ -107,8 +110,8 @@ void TranscribeButton::paint(
 	auto hq = PainterHighQualityEnabler(p);
 	const auto opened = _openedAnimation.value(_opened ? 1. : 0.);
 	const auto stm = context.messageStyle();
+	_lastPaintedPoint = { x, y };
 	if (_roundview || _summarize) {
-		_lastPaintedPoint = { x, y };
 		const auto r = QRect(QPoint(x, y), size());
 
 		if (_ripple) {
@@ -338,6 +341,10 @@ bool TranscribeButton::hasLock() const {
 	if (_summarize) {
 		return transcribes->summary(_item).premiumRequired;
 	}
+	if (transcribes->local().enabled()
+		|| !transcribes->local().offerDismissed()) {
+		return false;
+	}
 	if (transcribes->freeFor(_item) || transcribes->trialsCount()) {
 		return false;
 	}
@@ -385,6 +392,18 @@ ClickHandlerPtr TranscribeButton::link() {
 				: transcribes.toggle(item);
 		}
 		const auto my = context.other.value<ClickHandlerContext>();
+		if (!summarize) {
+			auto &transcribes = session->api().transcribes();
+			if (transcribes.local().enabled()) {
+				transcribes.toggle(item);
+				return;
+			} else if (!transcribes.local().offerDismissed()) {
+				if (const auto controller = my.sessionWindow.get()) {
+					Settings::ShowLocalTranscriptionOffer(controller, id);
+				}
+				return;
+			}
+		}
 		if (hasLock()) {
 			if (const auto controller = my.sessionWindow.get()) {
 				if (summarize) {
@@ -397,8 +416,8 @@ ClickHandlerPtr TranscribeButton::link() {
 			}
 		} else {
 			const auto max = session->api().transcribes().trialsMaxLengthMs();
-			const auto doc = _item->media()
-				? _item->media()->document()
+			const auto doc = item->media()
+				? item->media()->document()
 				: nullptr;
 			if (doc && (doc->isVoiceMessage() || doc->isVideoMessage())) {
 				if (doc->duration() > max) {

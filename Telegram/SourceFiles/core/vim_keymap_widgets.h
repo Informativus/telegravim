@@ -29,6 +29,11 @@ enum class KeyboardHintMode {
 	ShowMessage,
 };
 
+enum class KeyboardFocusRootKind {
+	Controls,
+	Pane,
+};
+
 struct KeyboardHintActions {
 	Fn<void()> activate;
 	Fn<void()> close;
@@ -48,6 +53,9 @@ void SetKeyboardCloseTarget(not_null<QWidget*> widget);
 
 [[nodiscard]] bool KeyHandlerInScope(QObject *owner, QWidget *scope);
 [[nodiscard]] bool KeyboardInputActive(QObject *receiver);
+void SetKeyboardScopeProxy(
+	not_null<QWidget*> owner,
+	not_null<QWidget*> proxy);
 [[nodiscard]] QWidget *FindKeyboardScope(not_null<QWidget*> window);
 [[nodiscard]] bool KeyboardScopeHasTextInput(
 	not_null<QWidget*> scope,
@@ -57,7 +65,10 @@ void SetKeyboardCloseTarget(not_null<QWidget*> widget);
 	not_null<QWidget*> scope);
 [[nodiscard]] std::vector<QPointer<QWidget>> VisibleKeyboardHintTargets(
 	not_null<QWidget*> scope);
-void RegisterGlobalFocusRoot(not_null<QWidget*> root);
+void RegisterGlobalFocusRoot(
+	not_null<QWidget*> root,
+	KeyboardFocusRootKind kind = KeyboardFocusRootKind::Controls);
+[[nodiscard]] bool IsKeyboardPane(QWidget *widget);
 [[nodiscard]] std::vector<QPointer<QWidget>> GlobalFocusRoots(
 	not_null<QWidget*> window);
 [[nodiscard]] QWidget *GlobalFocusRoot(QWidget *widget);
@@ -89,7 +100,7 @@ public:
 	void focusTarget(not_null<QWidget*> target);
 	void activateHint(not_null<QWidget*> target);
 	void restoreFocus();
-	bool scroll(int delta, bool autoRepeat, int duration);
+	bool scroll(int delta, bool autoRepeat, int duration, bool byPage = false);
 	void showHints(
 		Fn<QString(int, int)> label,
 		QFont font,

@@ -14,6 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_global_privacy.h"
 #include "api/api_peer_photo.h"
 #include "api/api_premium.h"
+#include "api/api_read_receipts.h"
 #include "api/api_sensitive_content.h"
 #include "apiwrap.h"
 #include "base/call_delayed.h"
@@ -47,6 +48,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings/cloud_password/settings_cloud_password_input.h"
 #include "settings/settings_experimental.h"
 #include "settings/settings_vim_editor.h"
+#include "settings/settings_local_transcription.h"
+#include "settings/business/settings_quick_replies.h"
 #include "settings/sections/settings_advanced.h"
 #include "settings/sections/settings_business.h"
 #include "settings/sections/settings_calls.h"
@@ -75,6 +78,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/toast/toast.h"
 #include "ui/vertical_list.h"
 #include "ui/widgets/buttons.h"
+#include "ui/widgets/checkbox.h"
 #include "ui/widgets/continuous_sliders.h"
 #include "ui/widgets/menu/menu_add_action_callback.h"
 #include "ui/widgets/menu/menu_item_base.h"
@@ -417,6 +421,175 @@ bool VimKeymap::closeByOutsideClick() const {
 	return !_editor->dirty();
 }
 
+class Telegravim final : public Section<Telegravim> {
+public:
+	Telegravim(QWidget *parent, not_null<Window::SessionController*> controller);
+	[[nodiscard]] rpl::producer<QString> title() override;
+
+};
+
+class TelegravimLocal final : public Section<TelegravimLocal> {
+public:
+	TelegravimLocal(
+		QWidget *parent,
+		not_null<Window::SessionController*> controller);
+	[[nodiscard]] rpl::producer<QString> title() override;
+
+};
+
+class TelegravimPrivacy final : public Section<TelegravimPrivacy> {
+public:
+	TelegravimPrivacy(
+		QWidget *parent,
+		not_null<Window::SessionController*> controller);
+	[[nodiscard]] rpl::producer<QString> title() override;
+
+};
+
+const auto kTelegravimMeta = BuildHelper({
+	.id = Telegravim::Id(),
+	.parentId = MainId(),
+	.title = &tr::lng_telegravim_settings,
+	.icon = &st::menuIconManage,
+}, [](SectionBuilder &builder) {
+	builder.addSkip();
+	builder.addSectionButton({
+		.title = tr::lng_telegravim_vim(),
+		.targetSection = VimKeymap::Id(),
+		.icon = { &st::menuIconShortcut },
+		.keywords = { u"vim"_q, u"keyboard"_q, u"keymap"_q, u"hints"_q },
+	});
+	builder.addSectionButton({
+		.title = tr::lng_telegravim_local(),
+		.targetSection = TelegravimLocal::Id(),
+		.icon = { &st::menuIconShowInFolder },
+		.keywords = { u"free"_q, u"local"_q, u"tags"_q, u"replies"_q },
+	});
+	builder.addSectionButton({
+		.title = tr::lng_telegravim_privacy(),
+		.targetSection = TelegravimPrivacy::Id(),
+		.icon = { &st::menuIconLock },
+		.keywords = { u"read"_q, u"receipts"_q, u"privacy"_q },
+	});
+	builder.addSkip();
+});
+
+const auto kTelegravimLocalMeta = BuildHelper({
+	.id = TelegravimLocal::Id(),
+	.parentId = Telegravim::Id(),
+	.title = &tr::lng_telegravim_local,
+	.icon = &st::menuIconShowInFolder,
+}, [](SectionBuilder &builder) {
+	const auto controller = builder.controller();
+	const auto showOther = builder.showOther();
+	builder.addSkip();
+	builder.addSubsectionTitle(tr::lng_telegravim_local_free());
+	builder.addButton({
+		.id = u"telegravim/quick-replies"_q,
+		.title = tr::lng_business_subtitle_quick_replies(),
+		.icon = { &st::menuIconShortcut },
+		.onClick = [=] { showOther(QuickRepliesId()); },
+		.keywords = { u"templates"_q, u"replies"_q, u"free"_q },
+	});
+	builder.addButton({
+		.id = u"telegravim/transcription"_q,
+		.title = tr::lng_local_transcribe_title(),
+		.icon = { &st::menuIconUnmute },
+		.onClick = [=] { ShowLocalTranscriptionSettings(controller); },
+		.keywords = { u"transcription"_q, u"voice"_q, u"offline"_q },
+	});
+	builder.addButton({
+		.id = u"telegravim/folders"_q,
+		.title = tr::lng_telegravim_folders(),
+		.icon = { &st::menuIconShowInFolder },
+		.onClick = [=] { showOther(FoldersId()); },
+		.keywords = { u"folders"_q, u"tags"_q, u"colors"_q, u"pins"_q },
+	});
+	builder.addButton({
+		.id = u"telegravim/saved-tags"_q,
+		.title = tr::lng_telegravim_saved_tags(),
+		.icon = { &st::menuIconSavedMessages },
+		.onClick = [=] {
+			controller->showPeerHistory(controller->session().user());
+		},
+		.keywords = { u"saved"_q, u"tags"_q, u"pins"_q, u"reactions"_q },
+	});
+	builder.addDividerText(tr::lng_telegravim_local_about());
+	builder.addButton({
+		.id = u"telegravim/business"_q,
+		.title = tr::lng_telegravim_business(),
+		.icon = { &st::menuIconShop },
+		.onClick = [=] { showOther(BusinessId()); },
+		.keywords = { u"business"_q, u"premium"_q, u"subscription"_q },
+	});
+	builder.addSkip();
+});
+
+const auto kTelegravimPrivacyMeta = BuildHelper({
+	.id = TelegravimPrivacy::Id(),
+	.parentId = Telegravim::Id(),
+	.title = &tr::lng_telegravim_privacy,
+	.icon = &st::menuIconLock,
+}, [](SectionBuilder &builder) {
+	const auto receipts = &builder.session()->api().readReceipts();
+	builder.addSkip();
+	const auto toggle = builder.addCheckbox({
+		.id = u"telegravim/read-after-send"_q,
+		.title = tr::lng_telegravim_read_after_send(),
+		.checked = receipts->enabled(),
+		.keywords = { u"read"_q, u"unread"_q, u"voice"_q, u"receipts"_q },
+	});
+	if (toggle) {
+		toggle->checkedChanges() | rpl::on_next([=](bool enabled) {
+			receipts->setEnabled(enabled);
+		}, toggle->lifetime());
+		receipts->enabledValue() | rpl::on_next([=](bool enabled) {
+			toggle->setChecked(enabled);
+		}, toggle->lifetime());
+	}
+	builder.addDividerText(tr::lng_telegravim_read_after_send_about());
+	builder.addSkip();
+});
+
+Telegravim::Telegravim(
+	QWidget *parent,
+	not_null<Window::SessionController*> controller)
+: Section(parent, controller) {
+	const auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
+	build(content, kTelegravimMeta.build);
+	Ui::ResizeFitChild(this, content);
+}
+
+rpl::producer<QString> Telegravim::title() {
+	return tr::lng_telegravim_settings();
+}
+
+TelegravimLocal::TelegravimLocal(
+	QWidget *parent,
+	not_null<Window::SessionController*> controller)
+: Section(parent, controller) {
+	const auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
+	build(content, kTelegravimLocalMeta.build);
+	Ui::ResizeFitChild(this, content);
+}
+
+rpl::producer<QString> TelegravimLocal::title() {
+	return tr::lng_telegravim_local();
+}
+
+TelegravimPrivacy::TelegravimPrivacy(
+	QWidget *parent,
+	not_null<Window::SessionController*> controller)
+: Section(parent, controller) {
+	const auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
+	build(content, kTelegravimPrivacyMeta.build);
+	Ui::ResizeFitChild(this, content);
+}
+
+rpl::producer<QString> TelegravimPrivacy::title() {
+	return tr::lng_telegravim_privacy();
+}
+
 void BuildSectionButtons(SectionBuilder &builder) {
 	const auto session = builder.session();
 	const auto controller = builder.controller();
@@ -487,10 +660,10 @@ void BuildSectionButtons(SectionBuilder &builder) {
 	}
 
 	builder.addSectionButton({
-		.title = rpl::single(u"Vim keymap"_q),
-		.targetSection = VimKeymap::Id(),
-		.icon = { &st::menuIconShortcut },
-		.keywords = { u"vim"_q, u"keyboard"_q, u"keymap"_q, u"hints"_q },
+		.title = tr::lng_telegravim_settings(),
+		.targetSection = Telegravim::Id(),
+		.icon = { &st::menuIconManage },
+		.keywords = { u"telegravim"_q, u"vim"_q, u"local"_q, u"privacy"_q },
 	});
 
 	builder.addSectionButton({

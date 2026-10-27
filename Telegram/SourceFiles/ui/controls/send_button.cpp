@@ -96,6 +96,8 @@ void SendButton::setState(State state) {
 			return tr::lng_shortcuts_record_voice_message(tr::now);
 		case Type::Round:
 			return tr::lng_shortcuts_record_round_message(tr::now);
+		case Type::Transcribe:
+			return tr::lng_local_dictation_title(tr::now);
 		case Type::Cancel: return tr::lng_cancel(tr::now);
 		case Type::Save: return tr::lng_settings_save(tr::now);
 		case Type::Slowmode:
@@ -208,6 +210,7 @@ void SendButton::paintEvent(QPaintEvent *e) {
 	switch (_state.type) {
 	case Type::Record: paintRecord(p, over); break;
 	case Type::Round: paintRound(p, over); break;
+	case Type::Transcribe: paintTranscribe(p, over); break;
 	case Type::Save: paintSave(p, over); break;
 	case Type::Cancel: paintCancel(p, over); break;
 	case Type::Send:
@@ -254,6 +257,23 @@ void SendButton::paintRound(QPainter &p, bool over) {
 	if (_state.forbidden) {
 		p.setOpacity(1.);
 	}
+}
+
+void SendButton::paintTranscribe(QPainter &p, bool over) {
+	if (!isDisabled() && !_state.forbidden) {
+		paintRipple(
+			p,
+			(width() - _st.inner.rippleAreaSize) / 2,
+			_st.inner.rippleAreaPosition.y());
+	}
+	const auto &icon = (isDisabled() || !over)
+		? st::historyRecordTranscribeIcon
+		: st::historyRecordTranscribeIconOver;
+	if (_state.forbidden) {
+		p.setOpacity(kForbiddenOpacity);
+	}
+	icon.paintInCenter(p, rect());
+	p.setOpacity(1.);
 }
 
 void SendButton::paintLottieIcon(QPainter &p, int index, bool over) {
@@ -446,6 +466,7 @@ SendButton::RippleShape SendButton::currentRippleShape() const {
 	case Type::Save:
 	case Type::Record:
 	case Type::Round:
+	case Type::Transcribe:
 	case Type::Cancel:
 	case Type::Stop:
 	case Type::Slowmode:

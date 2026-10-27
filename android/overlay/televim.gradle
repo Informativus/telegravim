@@ -1,0 +1,49 @@
+import groovy.json.JsonOutput
+
+def privateConfig = new Properties()
+def privatePath = System.getenv('TELEVIM_CONFIG_FILE')
+if (privatePath) {
+    def source = file(privatePath)
+    if (!source.isFile() || source.length() > 65536) {
+        throw new GradleException('TELEVIM_CONFIG_FILE must name a readable private properties file.')
+    }
+    source.withInputStream { privateConfig.load(it) }
+}
+
+def setting = { String name ->
+    System.getenv(name) ?: privateConfig.getProperty(name, '')
+}
+def required = { String name, String pattern ->
+    def value = setting(name)
+    if (!(value ==~ pattern)) {
+        throw new GradleException("Set a valid ${name} in the environment or TELEVIM_CONFIG_FILE.")
+    }
+    value
+}
+
+ext.televimApiId = required('TELEVIM_API_ID', '[1-9][0-9]{0,8}')
+ext.televimApiHash = JsonOutput.toJson(required('TELEVIM_API_HASH', '[a-fA-F0-9]{32}'))
+ext.televimSigning = [
+    storeFile: setting('TELEVIM_KEYSTORE'),
+    storePassword: setting('TELEVIM_STORE_PASSWORD'),
+    keyAlias: setting('TELEVIM_KEY_ALIAS'),
+    keyPassword: setting('TELEVIM_KEY_PASSWORD'),
+]
+ext.televimSigningReady = televimSigning.values().every { !it.isEmpty() }
+ext.televimBuildRoot = file(System.getenv('TELEVIM_BUILD_ROOT') ?: '../.local/android-build')
+ext.televimAbis = (findProperty('televimAbis') ?: 'arm64-v8a').split(',').toList()
+ext.televimVersionName = findProperty('televimVersionName') ?: APP_VERSION_NAME + '-televim'
+ext.televimVersionCode = (findProperty('televimVersionCode') ?: APP_VERSION_CODE).toString()
+if (!(televimVersionCode ==~ '[1-9][0-9]{0,8}')
+        || televimVersionCode.toInteger() > 209999999
+        || !(televimVersionName ==~ '[A-Za-z0-9][A-Za-z0-9.+_-]{0,63}')) {
+    throw new GradleException('Invalid televimVersionName or televimVersionCode override.')
+}
+if (televimAbis.isEmpty() || !['armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'].containsAll(televimAbis)
+        || televimAbis.size() != televimAbis.toSet().size()) {
+    throw new GradleException('televimAbis must be a comma-separated list of supported Android ABIs.')
+}
+
+allprojects {
+    layout.buildDirectory = new File(rootProject.ext.televimBuildRoot, project.name)
+}

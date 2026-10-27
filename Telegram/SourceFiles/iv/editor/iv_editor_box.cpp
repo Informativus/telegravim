@@ -1942,7 +1942,7 @@ void WindowHost::Impl::setupWindow(ShowWindowDescriptor &&descriptor) {
 		const auto editor = not_null<Widget*>(_editor.data());
 		const auto premium = lock->lifetime().make_state<bool>(true);
 		const auto refresh = [=] {
-			const auto locked = !*premium
+			const auto locked = !descriptor.localQuickReply && !*premium
 				&& !state->articleEmpty()
 				&& !Iv::CanSerializeAsSimple(state->richPage(), session);
 			lock->setVisible(locked);

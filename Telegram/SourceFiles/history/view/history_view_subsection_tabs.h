@@ -87,6 +87,8 @@ private:
 	};
 
 	void track();
+	void setupNavigation();
+	void navigate(int direction, bool requestMore = true);
 	void setupHorizontal(not_null<QWidget*> parent, bool bottom);
 	void setupVertical(not_null<QWidget*> parent);
 	void toggleModes();
@@ -140,6 +142,7 @@ private:
 	int _afterLimit = 0;
 	int _afterAvailable = 0;
 	bool _loading = false;
+	bool _pendingNavigation = false;
 	bool _refreshScheduled = false;
 	std::optional<int> _beforeSkipped;
 	std::optional<int> _afterSkipped;
