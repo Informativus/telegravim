@@ -845,6 +845,9 @@ def reviewed_finding(run: dict, result: dict, source: Path, reviews: list) -> bo
         "Telegram/SourceFiles/history/history_drag_area.cpp": {
             "cpp/dead-code-goto",
         },
+        "Telegram/SourceFiles/history/view/controls/history_view_voice_record_bar.cpp": {
+            "cpp/poorly-documented-function",
+        },
         "Telegram/SourceFiles/history/view/history_view_element.cpp": {
             "cpp/constant-comparison",
         },
@@ -893,6 +896,9 @@ def reviewed_finding(run: dict, result: dict, source: Path, reviews: list) -> bo
             "cpp/poorly-documented-function",
         },
         "Telegram/SourceFiles/ui/chat/message_bar.cpp": {
+            "cpp/poorly-documented-function",
+        },
+        "Telegram/SourceFiles/ui/controls/send_button.cpp": {
             "cpp/poorly-documented-function",
         },
         "Telegram/SourceFiles/ui/controls/swipe_handler.cpp": {
