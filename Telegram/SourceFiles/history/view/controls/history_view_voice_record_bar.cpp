@@ -3260,10 +3260,15 @@ void VoiceRecordBar::reviewOrSend(VoiceToSend data) {
 }
 
 void VoiceRecordBar::closeReview() {
+	_startTimer.cancel();
 	++_reviewGeneration;
 	if (const auto box = std::exchange(_review, nullptr)) {
 		box->closeBox();
 	}
+}
+
+bool VoiceRecordBar::isReviewing() const {
+	return !_review.isNull();
 }
 
 rpl::producer<SendActionUpdate> VoiceRecordBar::sendActionUpdates() const {

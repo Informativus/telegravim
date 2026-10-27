@@ -3339,6 +3339,7 @@ bool HistoryWidget::applyDraft(FieldHistoryAction fieldHistoryAction) {
 	auto fieldAvailable = canWriteMessage();
 	const auto editMsgId = editDraft ? editDraft->reply.messageId.msg : 0;
 	if (_voiceRecordBar->isActive()
+		|| _voiceRecordBar->isReviewing()
 		|| (!_canSendTexts && !editMsgId && !richDraft)) {
 		if (!_canSendTexts) {
 			clearFieldText(0, fieldHistoryAction);
@@ -3965,6 +3966,9 @@ void HistoryWidget::showHistory(
 void HistoryWidget::setHistory(History *history) {
 	if (_history == history) {
 		return;
+	}
+	if (_voiceRecordBar) {
+		_voiceRecordBar->closeReview();
 	}
 	_pullToNext->setHistory(history);
 

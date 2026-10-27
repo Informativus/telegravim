@@ -88,6 +88,8 @@ public:
 	void hideAnimated();
 	void hideFast();
 	void clearListenState();
+	void closeReview();
+	[[nodiscard]] bool isReviewing() const;
 
 	void orderControls();
 
@@ -142,7 +144,6 @@ private:
 	void stop(bool send);
 	void stopRecording(StopType type, bool ttlBeforeHide = false);
 	void reviewOrSend(VoiceToSend data);
-	void closeReview();
 	void visibilityAnimate(bool show, Fn<void()> &&callback);
 
 	void drawDuration(QPainter &p);

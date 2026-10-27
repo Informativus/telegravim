@@ -1503,6 +1503,11 @@ void ComposeControls::updateShortcutId(BusinessShortcutId shortcutId) {
 }
 
 void ComposeControls::setHistory(SetHistoryArgs &&args) {
+	if (_history != *args.history
+		|| _topicRootId != args.topicRootId
+		|| _monoforumPeerId != args.monoforumPeerId) {
+		_voiceRecordBar->closeReview();
+	}
 	_showSlowmodeError = std::move(args.showSlowmodeError);
 	_showScheduleSendError = std::move(args.showScheduleSendError);
 	_sendActionFactory = std::move(args.sendActionFactory);
@@ -3776,7 +3781,7 @@ void ComposeControls::applyDraft(FieldHistoryAction fieldHistoryAction) {
 		updateFieldVisibility();
 		return;
 	}
-	if (_voiceRecordBar->isActive()) {
+	if (_voiceRecordBar->isActive() || _voiceRecordBar->isReviewing()) {
 		return;
 	}
 
