@@ -1,0 +1,6 @@
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/TranslateController.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/TranslateController.java
+@@ -139,0 +140 @@
++        if (messageObject != null && org.telegram.messenger.televim.E2eChat.protectedMessage(messageObject.currentAccount, messageObject.messageOwner)) return false;
+@@ -163,0 +165 @@
++        if (messageObject != null && org.telegram.messenger.televim.E2eChat.protectedMessage(messageObject.currentAccount, messageObject.messageOwner)) return false;

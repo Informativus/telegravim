@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="TelevimE2eTitle">Chat encryption</string>
+    <string name="TelevimE2eTextOnly">Encrypted mode supports text only. Turn it off to send other content. Scheduling and quick replies are unavailable.</string>
+    <string name="TelevimE2eNoEdit">Encrypted messages cannot be edited.</string>
+    <string name="TelevimE2eFailed">Encryption could not be completed. Check the keys and local storage. Nothing was sent.</string>
+    <string name="TelevimE2ePending">Waiting for your contact to enable encryption. Plaintext sending is blocked.</string>
+    <string name="TelevimE2eTooLong">Split this text into shorter messages before sending it encrypted.</string>
+    <string name="TelevimE2eUnavailable">Encrypted message unavailable: its key, identity or integrity could not be verified.</string>
+    <string name="TelevimE2eKeySent">You sent your public encryption key.</string>
+    <string name="TelevimE2eKeyChanged">The contact key changed. Verify the new fingerprint in Encryption keys before sending.</string>
+    <string name="TelevimE2eKeyReceived">Your contact sent an encryption key. Verify its fingerprint through a trusted second channel before enabling encryption.</string>
+    <string name="TelevimE2eRequested">You requested encrypted mode in this chat. Waiting for confirmation.</string>
+    <string name="TelevimE2ePeerRequested">Your contact requested encrypted mode. Verify their key and enable encryption here.</string>
+    <string name="TelevimE2eDisabled">You turned off encryption for new messages.</string>
+    <string name="TelevimE2ePeerDisabled">Your contact turned off encryption. Your sending mode has not changed.</string>
+    <string name="TelevimE2eAcknowledged">The encryption request was confirmed.</string>
+    <string name="TelevimE2eActive">Encryption is on for new text messages in this chat.</string>
+    <string name="TelevimE2eOff">New messages use ordinary Telegram chat mode. Encrypted history remains readable on this device.</string>
+    <string name="TelevimE2eEnable">Enable encryption</string>
+    <string name="TelevimE2eDisable">Turn off encryption</string>
+    <string name="TelevimE2eKeys">Encryption keys</string>
+    <string name="TelevimE2eRetry">Retry request</string>
+    <string name="TelevimE2eSetup">Send your public key below, paste your contact’s key, and compare the fingerprint through a trusted second channel. Both people then enable encryption in this same chat. Private keys stay on this device.</string>
+    <string name="TelevimE2ePeerKey">Paste the contact’s public key or full key message</string>
+    <string name="TelevimE2eVerified">I verified this fingerprint with my contact through a trusted second channel</string>
+    <string name="TelevimE2eFingerprint">Contact fingerprint</string>
+    <string name="TelevimE2eSendKey">Send my public key</string>
+    <string name="TelevimE2eVerifyFirst">Verify the fingerprint with your contact, then check the confirmation box.</string>
+</resources>
