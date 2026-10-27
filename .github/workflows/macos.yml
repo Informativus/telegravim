@@ -1,6 +1,10 @@
 name: macOS release package
 
 on:
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - '.github/workflows/macos.yml'
   workflow_dispatch:
     inputs:
       source_sha:
@@ -15,8 +19,36 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  syntax:
+    name: Validate macOS workflow syntax
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Parse workflow and embedded Python
+        run: |
+          ruby -r yaml -e 'YAML.parse_file(ARGV.fetch(0))' .github/workflows/macos.yml
+          python3 - <<'PY'
+          import ast
+          import pathlib
+          import re
+          import textwrap
+
+          source = pathlib.Path(".github/workflows/macos.yml").read_text()
+          blocks = re.findall(r"          python3 - <<'PY'\n(.*?)          PY(?:\n|$)", source, re.S)
+          for body in blocks:
+              ast.parse(textwrap.dedent(body))
+          print("Parsed embedded Python scripts:", len(blocks))
+          PY
+
   review-policy:
     name: Verify source and owner approval gate
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
