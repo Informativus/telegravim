@@ -1,0 +1,250 @@
+name: Android signed build artifact
+
+on:
+  workflow_dispatch:
+    inputs:
+      abi:
+        description: APK architectures
+        type: choice
+        options:
+          - arm64-v8a
+          - universal
+        default: arm64-v8a
+        required: true
+
+permissions: {}
+
+concurrency:
+  group: android-signed-build
+  cancel-in-progress: false
+
+jobs:
+  review-policy:
+    name: Verify the owner approval gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    steps:
+      - name: Require the existing protected environment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          url = (os.environ["GITHUB_API_URL"] + "/repos/"
+                 + os.environ["GITHUB_REPOSITORY"] + "/environments/network-review")
+          request = urllib.request.Request(url, headers={
+              "Authorization": "Bearer " + os.environ["GH_TOKEN"],
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+          })
+          with urllib.request.urlopen(request, timeout=30) as response:
+              environment = json.load(response)
+          rules = [rule for rule in environment.get("protection_rules", [])
+                   if rule.get("type") == "required_reviewers"]
+          reviewers = rules[0].get("reviewers", []) if len(rules) == 1 else []
+          valid = (len(reviewers) == 1
+                   and reviewers[0].get("type") == "User"
+                   and reviewers[0].get("reviewer", {}).get("login") == "Informativus"
+                   and rules[0].get("prevent_self_review") is False
+                   and environment.get("can_admins_bypass") is False)
+          if not valid:
+              raise SystemExit("The network-review environment does not enforce the required owner gate.")
+          PY
+
+  android:
+    name: Build signed Android APK
+    needs: review-policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    environment: network-review
+    permissions:
+      contents: read
+    env:
+      APK_ABI: ${{ inputs.abi }}
+      GRADLE_USER_HOME: ${{ github.workspace }}/.local/build-cache/gradle-android
+      TELEVIM_BUILD_ROOT: ${{ github.workspace }}/.local/android-build
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          submodules: false
+      - name: Check source identity and initialize Android dependencies
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git -c protocol.file.allow=never submodule update \
+            --init --recursive --depth 1 --jobs 2 -- android/upstream
+          python3 - <<'PY'
+          import subprocess
+
+          status = subprocess.check_output(
+              ["git", "submodule", "status", "--recursive", "--", "android/upstream"],
+              text=True,
+          )
+          if not status.strip() or any(line[0] != " " for line in status.splitlines()):
+              raise SystemExit("Android dependencies do not match the committed gitlinks.")
+          PY
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install the pinned Android toolchain
+        run: |
+          export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          sdkmanager="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$sdkmanager"
+          set +e
+          yes | "$sdkmanager" --licenses >/dev/null 2>&1
+          license_status=${PIPESTATUS[1]}
+          set -e
+          test "$license_status" -eq 0
+          "$sdkmanager" --install \
+            'platforms;android-36' 'build-tools;36.0.0' \
+            'ndk;27.2.12479018' 'cmake;3.22.1'
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends nasm
+      - name: Build with private Televim credentials
+        env:
+          TELEVIM_API_ID: ${{ secrets.TELEVIM_API_ID }}
+          TELEVIM_API_HASH: ${{ secrets.TELEVIM_API_HASH }}
+          TELEVIM_ANDROID_KEYSTORE_BASE64: ${{ secrets.TELEVIM_ANDROID_KEYSTORE_BASE64 }}
+          TELEVIM_STORE_PASSWORD: ${{ secrets.TELEVIM_ANDROID_STORE_PASSWORD }}
+          TELEVIM_KEY_ALIAS: ${{ secrets.TELEVIM_ANDROID_KEY_ALIAS }}
+          TELEVIM_KEY_PASSWORD: ${{ secrets.TELEVIM_ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in TELEVIM_API_ID TELEVIM_API_HASH TELEVIM_ANDROID_KEYSTORE_BASE64 \
+              TELEVIM_STORE_PASSWORD TELEVIM_KEY_ALIAS TELEVIM_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "Required private build setting is missing: $name" >&2
+              exit 1
+            fi
+          done
+          case "$APK_ABI" in
+            arm64-v8a) abis=arm64-v8a ;;
+            universal) abis=armeabi-v7a,arm64-v8a,x86,x86_64 ;;
+            *) echo 'Unsupported ABI selection.' >&2; exit 1 ;;
+          esac
+          umask 077
+          signing_directory="$(mktemp -d "$RUNNER_TEMP/televim-signing.XXXXXX")"
+          cleanup() {
+            rm -f -- "$signing_directory/release.keystore"
+            rmdir -- "$signing_directory"
+          }
+          trap cleanup EXIT
+          printf '%s' "$TELEVIM_ANDROID_KEYSTORE_BASE64" | base64 --decode \
+            > "$signing_directory/release.keystore"
+          chmod 600 "$signing_directory/release.keystore"
+          unset TELEVIM_ANDROID_KEYSTORE_BASE64
+          export TELEVIM_KEYSTORE="$signing_directory/release.keystore"
+          export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          android/build.sh release "$abis"
+      - name: Verify APK and record source metadata
+        run: |
+          export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import re
+          import shutil
+          import subprocess
+
+          apk = (pathlib.Path(os.environ["TELEVIM_BUILD_ROOT"])
+                 / "TMessagesProj_AppStandalone/outputs/apk/afat/standalone/app.apk")
+          tools = pathlib.Path(os.environ["ANDROID_SDK_ROOT"]) / "build-tools/36.0.0"
+          signatures = subprocess.check_output(
+              [str(tools / "apksigner"), "verify", "--print-certs", str(apk)], text=True)
+          certificates = re.findall(
+              r"^Signer #\d+ certificate SHA-256 digest: ([0-9a-fA-F]{64})$",
+              signatures, re.MULTILINE)
+          if len(certificates) != 1:
+              raise SystemExit("The APK must have one verifiable signing certificate.")
+          source_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+          dirty = subprocess.check_output(
+              ["git", "status", "--porcelain=v1", "--untracked-files=all", "--ignore-submodules=none"],
+              text=True)
+          if source_sha != os.environ["GITHUB_SHA"] or dirty:
+              raise SystemExit("The release source checkout changed during the build.")
+          status = subprocess.check_output(
+              ["git", "submodule", "status", "--recursive", "--", "android/upstream"], text=True)
+          dependencies = {}
+          for line in status.splitlines():
+              match = re.fullmatch(r" ([0-9a-f]{40}) ([^ ]+)(?: \(.*\))?", line)
+              if not match or match[2] in dependencies:
+                  raise SystemExit("Android dependency revisions no longer match the committed gitlinks.")
+              dependencies[match[2]] = match[1]
+          if "android/upstream" not in dependencies:
+              raise SystemExit("Android dependency metadata is missing.")
+          preparation_path = pathlib.Path(os.environ["TELEVIM_BUILD_ROOT"]) / "source-metadata.json"
+          preparation = json.loads(preparation_path.read_text(encoding="utf-8"))
+          nested_dependencies = {
+              path.removeprefix("android/upstream/"): commit
+              for path, commit in dependencies.items() if path != "android/upstream"
+          }
+          if (preparation.get("schema_version") != 1
+                  or preparation.get("monorepo_commit") != source_sha
+                  or preparation.get("monorepo_dirty") is not False
+                  or preparation.get("upstream_commit") != dependencies["android/upstream"]
+                  or preparation.get("dependencies") != nested_dependencies):
+              raise SystemExit("Prepared sources are dirty or do not match the release checkout.")
+          preparation_digests = {}
+          for name in ("input_digest", "overlay_digest", "source_inventory_sha256"):
+              value = preparation.get(name)
+              if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):
+                  raise SystemExit("Prepared source verification digests are missing or invalid.")
+              preparation_digests[name] = value
+          badging = subprocess.check_output([str(tools / "aapt"), "dump", "badging", str(apk)], text=True)
+          package = re.search(r"package: name='([^']+)' versionCode='([^']+)' versionName='([^']+)'", badging)
+          sdk = re.search(r"^sdkVersion:'(\d+)'", badging, re.MULTILINE)
+          native = re.search(r"^native-code:(.*)$", badging, re.MULTILINE)
+          expected = ({"arm64-v8a"} if os.environ["APK_ABI"] == "arm64-v8a"
+                      else {"armeabi-v7a", "arm64-v8a", "x86", "x86_64"})
+          if (not package or package[1] != "org.informativus.televim"
+                  or not sdk or int(sdk[1]) < 26
+                  or not native or set(re.findall(r"'([^']+)'", native[1])) != expected):
+              raise SystemExit("APK identity, minimum SDK or architectures do not match the requested build.")
+          destination = pathlib.Path(".local/android-artifact")
+          destination.mkdir(parents=True, exist_ok=True)
+          output = destination / ("Televim-android-" + os.environ["APK_ABI"] + ".apk")
+          shutil.copyfile(apk, output)
+          with output.open("rb") as source:
+              digest = hashlib.file_digest(source, "sha256").hexdigest()
+          (destination / (output.name + ".sha256")).write_text(digest + "  " + output.name + "\n")
+          metadata = {
+              "source_sha": source_sha,
+              "source_ref": os.environ["GITHUB_REF"],
+              "upstream_sha": dependencies["android/upstream"],
+              "dependency_shas": dict(sorted(dependencies.items())),
+              "signer_certificate_sha256": certificates[0].lower(),
+              "preparation": {
+                  "schema_version": preparation["schema_version"],
+                  "monorepo_dirty": preparation["monorepo_dirty"],
+                  **preparation_digests,
+              },
+              "application_id": package[1],
+              "version_code": package[2],
+              "version_name": package[3],
+              "abis": sorted(expected),
+              "sha256": digest,
+              "artifact": output.name,
+          }
+          (destination / "source.json").write_text(json.dumps(metadata, indent=2) + "\n")
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Televim-android-${{ inputs.abi }}
+          path: |
+            .local/android-artifact/*.apk
+            .local/android-artifact/*.apk.sha256
+            .local/android-artifact/source.json
+          include-hidden-files: true
+          retention-days: 14
+          if-no-files-found: error

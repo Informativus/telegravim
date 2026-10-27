@@ -1,0 +1,32 @@
+--- a/TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java
+@@ -1509,6 +1509,29 @@
+ 
+     @SuppressLint("Range")
+     private boolean handleIntent(Intent intent, boolean isNew, boolean restore, boolean fromPassword, Browser.Progress progress, boolean rebuildFragments, boolean openedTelegram) {
++        if (org.telegram.messenger.televim.OfflineSettingsInput.matches(intent)) {
++            if (!fromPassword && (AndroidUtilities.needShowPasscode(true) || SharedConfig.isWaitingForPasscodeEnter)) {
++                showPasscodeActivity(true, false, -1, -1, null, null);
++                passcodeSaveIntent = intent;
++                passcodeSaveIntentIsNew = isNew;
++                passcodeSaveIntentIsRestore = restore;
++                return false;
++            }
++            org.telegram.messenger.televim.OfflineSettingsInput input = null;
++            boolean invalid = false;
++            try {
++                input = org.telegram.messenger.televim.OfflineSettingsInput.fromIntent(intent);
++            } catch (Exception error) {
++                invalid = true;
++            }
++            intent.setAction(null);
++            intent.setData(null);
++            intent.removeExtra(Intent.EXTRA_TEXT);
++            intent.removeExtra(Intent.EXTRA_STREAM);
++            intent.setClipData(null);
++            presentFragment(new OfflineSettingsActivity(input, invalid));
++            return true;
++        }
+         if (GiftInfoBottomSheet.handleIntent(intent, progress)) {
+             return true;
+         }

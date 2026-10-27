@@ -103,3 +103,7 @@
 [submodule "Telegram/ThirdParty/libfido2"]
 	path = Telegram/ThirdParty/libfido2
 	url = https://github.com/Yubico/libfido2.git
+
+[submodule "android/upstream"]
+	path = android/upstream
+	url = https://github.com/DrKLO/Telegram.git

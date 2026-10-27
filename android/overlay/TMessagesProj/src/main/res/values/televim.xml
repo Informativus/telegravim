@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="televim_spacing">16dp</dimen>
+    <dimen name="televim_text_size">16sp</dimen>
+    <string name="TelevimImportTitle">Import desktop settings</string>
+    <string name="TelevimImportAbout">Import settings from your computer using a Televim link, QR code, or a local file. This import does not use the internet or a local network. Telegram can still connect normally.</string>
+    <string name="TelevimImportLink">Televim settings link</string>
+    <string name="TelevimImportPassword">Export password (not your Telegram password)</string>
+    <string name="TelevimImportScan">Scan settings QR</string>
+    <string name="TelevimImportPreview">Preview import</string>
+    <string name="TelevimImportApply">Apply settings and retain package</string>
+    <string name="TelevimImportFiles">For a file, open your device storage in the system Files app, then use Open with or Share → Televim. Only physical local storage from the system provider is accepted. Cloud files, virtual files, and web links are rejected. Encrypted files can be at most 8 MiB; JSON can be at most 2 MiB.</string>
+    <string name="TelevimImportLocalFile">Local settings file</string>
+    <string name="TelevimImportFileReady">A local file is selected. Enter its export password if encrypted, then preview. A JSON settings file does not need a password.</string>
+    <string name="TelevimImportWorking">Checking the package locally…</string>
+    <string name="TelevimImportInvalid">Could not inspect this package. Check its format, size, export password, and local file source. No settings were applied.</string>
+    <string name="TelevimImportInvalidQr">This is not a supported Televim settings QR. Nothing was opened or imported.</string>
+    <string name="TelevimImportCancelled">Import cancelled. Settings were not changed.</string>
+    <string name="TelevimImportCleanupFailed">Temporary import data could not be removed. Import is disabled until you restart Televim.</string>
+    <string name="TelevimImportQrRead">QR read locally. Enter the separate export password, then preview the settings.</string>
+    <string name="TelevimImportGlobal">These supported preferences apply to the whole app, across all accounts. Applying replaces the values shown below.</string>
+    <string name="TelevimImportLargeEmoji">Large emoji</string>
+    <string name="TelevimImportOn">On</string>
+    <string name="TelevimImportOff">Off</string>
+    <string name="TelevimImportRetained">Retained inactive: %1$d unsupported modules, %2$d resources, %3$d account profiles. Package size: %4$d bytes.</string>
+    <string name="TelevimImportInactive">Account profiles and unsupported desktop features are preserved inside the package but are not activated or merged with Android data. No account is signed in, no automation starts, and no messages are sent. Account identity includes the Telegram environment and user ID.</string>
+    <string name="TelevimImportNoSupported">This package contains no supported preferences to apply.</string>
+    <string name="TelevimImportRetainOnly">Retain package without applying preferences</string>
+    <string name="TelevimImportRetainedOnly">Package retained privately on this device. No preferences were applied.</string>
+    <string name="TelevimImportPlaintext">This JSON file is not encrypted. Only the displayed allowlisted preferences are accepted.</string>
+    <string name="TelevimImportDone">Settings applied. The package is retained privately on this device; unsupported features remain inactive.</string>
+    <string name="TelevimImportDuplicate">This exact package was already imported. Nothing was changed.</string>
+    <string name="TelevimImportStale">Settings changed after this preview. Preview again before applying.</string>
+    <string name="TelevimImportRestart">The write result could not be confirmed. Import is disabled until you restart Televim. No successful import is being reported.</string>
+    <string name="TelevimImportScanAbout">Point the camera at the settings QR on your computer. Decoding runs on this device. Other QR links are not opened.</string>
+    <string name="TelevimImportCameraUnavailable">The camera is unavailable or permission was denied. Go back and paste a settings link or open a local file instead.</string>
+</resources>

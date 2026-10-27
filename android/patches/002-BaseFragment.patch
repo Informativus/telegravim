@@ -1,0 +1,33 @@
+--- a/TMessagesProj/src/main/java/org/telegram/ui/ActionBar/BaseFragment.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/ActionBar/BaseFragment.java
+@@ -507,8 +507,10 @@
+ 
+     @CallSuper
+     public void onFragmentDestroy() {
+-        getConnectionsManager().cancelRequestsForGuid(classGuid);
+-        getMessagesStorage().cancelTasksForGuid(classGuid);
++        if (shouldCancelAccountRequestsOnDestroy()) {
++            getConnectionsManager().cancelRequestsForGuid(classGuid);
++            getMessagesStorage().cancelTasksForGuid(classGuid);
++        }
+         isFinished = true;
+         if (actionBar != null) {
+             actionBar.setEnabled(false);
+@@ -530,6 +532,10 @@
+ 
+     public boolean needDelayOpenAnimation() {
+         return false;
++    }
++
++    protected boolean shouldCancelAccountRequestsOnDestroy() {
++        return true;
+     }
+ 
+     protected void resumeDelayedFragmentAnimation() {
+@@ -1488,4 +1494,4 @@
+     protected void dumpCanvas() {
+         AndroidUtilities.dumpCanvas(fragmentView);
+     }
+-}
+\ No newline at end of file
++}
