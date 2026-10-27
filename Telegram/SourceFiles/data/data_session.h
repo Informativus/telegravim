@@ -590,6 +590,10 @@ public:
 
 	// Returns true if item found and it is not detached.
 	bool updateExistingMessage(const MTPDmessage &data);
+	void applyE2eMessage(
+		not_null<HistoryItem*> item,
+		const MTPDmessage &message,
+		bool live);
 	void updateEditedMessage(const MTPMessage &data);
 	void processMessages(
 		const QVector<MTPMessage> &data,
@@ -599,10 +603,6 @@ public:
 		NewMessageType type);
 	void processExistingMessages(
 		ChannelData *channel,
-	void applyE2eMessage(
-		not_null<HistoryItem*> item,
-		const MTPDmessage &message,
-		bool live);
 		const MTPmessages_Messages &data);
 	void processNonChannelMessagesDeleted(const QVector<MTPint> &data);
 	void processMessagesDeleted(

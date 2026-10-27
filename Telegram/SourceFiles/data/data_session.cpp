@@ -3109,6 +3109,7 @@ bool Session::updateExistingMessage(const MTPDmessage &data) {
 		return false;
 	}
 	existing->applySentMessage(data);
+	applyE2eMessage(existing, data, false);
 	const auto result = (existing->mainView() != nullptr);
 	if (result) {
 		stickers().checkSavedGif(existing);
@@ -3138,12 +3139,12 @@ void Session::updateEditedMessage(const MTPMessage &data) {
 		existing->applyEdition(data);
 	}, [&](const auto &data) {
 		existing->applyEdition(HistoryMessageEdition(_session, data));
+		applyE2eMessage(existing, data, false);
 	});
 }
 
 void Session::processMessages(
 		const QVector<MTPMessage> &data,
-	applyE2eMessage(existing, data, false);
 		NewMessageType type) {
 	auto indices = base::flat_map<uint64, int>();
 	for (int i = 0, l = data.size(); i != l; ++i) {
@@ -3173,7 +3174,6 @@ void Session::processMessages(
 	processMessages(data.v, type);
 }
 
-		applyE2eMessage(existing, data, false);
 void Session::processExistingMessages(
 		ChannelData *channel,
 		const MTPmessages_Messages &data) {
