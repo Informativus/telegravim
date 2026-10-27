@@ -143,8 +143,8 @@ struct ComposeControlsDescriptor {
 	QWidget *panelsParent = nullptr;
 	ChatHelpers::PauseReason panelsLevel = kDefaultPanelsLevel;
 	QString voiceCustomCancelText;
-	QString localQuickReplyRef;
 	bool voiceLockFromBottom = false;
+	QString localQuickReplyRef;
 	ChatHelpers::ComposeFeatures features;
 	rpl::producer<bool> scheduledToggleValue;
 	Fn<SuggestOptions()> currentSuggest;
