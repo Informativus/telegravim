@@ -1827,5 +1827,35 @@
         "reason": "The comment-percentage metric reports no execution or security defect. The reviewed function expresses its operation in named code and assertions; adding filler comments would conflict with repository style. This exception applies only to this exact diagnostic and source digest."
       }
     ]
+  },
+  {
+    "path": "Telegram/SourceFiles/history/view/controls/history_view_voice_record_bar.cpp",
+    "source_sha256": [
+      "6489007b6a825f1a768ed0f72e1b85d4f85f98b641d5cf6ff4dc8223a9d90bae"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "48c8dc8052892681:1",
+        "message_sha256": "3a6bfd9915a1cc63059b53b01fa09669273579a6f37d8221af8e76fcf169372e",
+        "reason": "The diagnostic measures comment percentage in TTLButton::TTLButton. That native tooltip and paint wiring is unchanged from the accepted cumulative baseline; dictation changes occur in VoiceRecordBar, outside this constructor. Review found no missing algorithm explanation or execution defect, and project style forbids filler comments."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/ui/controls/send_button.cpp",
+    "source_sha256": [
+      "ab90e6d07866c697fefe253e83504463ce7f7bd46b12b84bcab133fe7606c190"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "aeaa5d1fd35b0b4a:1",
+        "message_sha256": "c8e861783e201ba690749292f72a6976901793c23f65065a60ee48cfdb104051",
+        "reason": "The diagnostic measures comment percentage in SendButton::setState, which updates native animation, slowmode and accessibility state. Relative to the accepted cumulative baseline, dictation only adds the Transcribe case returning its accessible label. This metric identifies no execution or security defect; adding filler comments would conflict with project style."
+      }
+    ]
   }
 ]
