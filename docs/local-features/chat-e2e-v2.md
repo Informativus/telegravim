@@ -128,8 +128,11 @@ Desktop identity, selected peer keys, historical key records, counters,
 handshakes and receipts live in the account-local encrypted `e2e-state` file.
 Atomic persistence must finish successfully before publishing an identity,
 returning ciphertext, acknowledging receipt or changing the visible mode.
-Unreadable state fails closed. Android identity keys stay in Android Keystore;
-its counters, handshakes and receipts require equivalent durable transactions.
+Unreadable state fails closed. Android stores its software EC identity, counters,
+handshakes and receipts in an atomic encrypted file under `getNoBackupFilesDir()`.
+A nonexportable Android Keystore AES key wraps this state; the EC private key
+is present in app memory while in use. Committed bytes are read back before
+the transaction succeeds. Missing state with an existing wrapping key fails closed.
 Neither implementation places this data in `.tgv` or the LocalData module map.
 
 While encryption is requested, including while confirmation is pending:
@@ -144,6 +147,10 @@ While encryption is requested, including while confirmation is pending:
 - Scheduled sends, cloud quick replies and rich messages are unavailable in
   encrypted mode; encrypted text is sent immediately in the current chat.
 - Editing an encrypted historical message remains blocked after mode changes.
+- Encrypted messages display authenticated text only. Server media, rich pages,
+  entities, reply quotes and bot/forward wrappers cannot supply trusted content.
+- Translation, summaries and emoji interactions do not consume decrypted text,
+  including after encryption is disabled. Failed sends do not create cloud drafts.
 
 ## Delivery evidence
 

@@ -1586,14 +1586,14 @@ void Updates::applyUpdates(
 				_session->data().fillMessagePeers(item->fullId(), d);
 				item->applySentMessage(sent.text, d, wasAlready);
 				if (E2E::Chat::IsKeyExchange(sent.text)) {
-					item->setText({ session().e2e().controlNotice(
-						sent.peerId, sent.text, true), {} });
+					item->setEncryptedText(session().e2e().controlNotice(
+						sent.peerId, sent.text, true));
 				} else if (E2E::Chat::IsEnvelope(sent.text)) {
 					const auto received = session().e2e().receive(
 						sent.peerId, item->id, true, false, sent.text);
-					item->setText({ received
+					item->setEncryptedText(received
 						? received->text
-						: u"Encrypted message unavailable"_q, {} });
+						: u"Encrypted message unavailable"_q);
 				}
 			}
 		}

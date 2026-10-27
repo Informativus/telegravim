@@ -1837,15 +1837,21 @@ void FillContextMenuItems(
 	}
 	if (request.overSelection
 		&& view
+		&& !view->data()->isE2eProtected()
+		&& ranges::none_of(request.selectedItems, [&](const SelectedItem &selected) {
+			const auto item = view->history()->owner().message(selected.msgId);
+			return !item || item->isE2eProtected();
+		})
 		&& !Ui::SkipTranslate(list->getSelectedText().rich)) {
 		const auto owner = &view->history()->owner();
+		const auto selectedText = list->getSelectedText().rich;
 		result->addAction(tr::lng_context_translate_selected(tr::now), [=] {
 			if (const auto item = owner->message(itemId)) {
 				list->controller()->show(Box(
 					Ui::TranslateBox,
 					item->history()->peer,
 					MsgId(),
-					list->getSelectedText().rich,
+					selectedText,
 					list->hasCopyRestrictionForSelected()));
 			}
 		}, &st::menuIconTranslate);
@@ -1933,6 +1939,7 @@ void FillContextMenuItems(
 					.append(item->originalText()))
 				: item->originalText();
 			if ((!item->translation() || !item->history()->translatedTo())
+				&& !item->isE2eProtected()
 				&& !translate.text.isEmpty()
 				&& !Ui::SkipTranslate(translate)) {
 				result->addAction(tr::lng_context_translate(tr::now), [=] {
