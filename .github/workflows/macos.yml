@@ -1,0 +1,281 @@
+name: macOS release package
+
+on:
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - '.github/workflows/macos.yml'
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact source commit (empty uses the workflow commit)
+        type: string
+        required: false
+
+permissions: {}
+
+concurrency:
+  group: macos-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  syntax:
+    name: Validate macOS workflow syntax
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Parse workflow and embedded Python
+        run: |
+          ruby -r yaml -e 'YAML.parse_file(ARGV.fetch(0))' .github/workflows/macos.yml
+          python3 - <<'PY'
+          import ast
+          import pathlib
+          import re
+          import textwrap
+
+          source = pathlib.Path(".github/workflows/macos.yml").read_text()
+          blocks = re.findall(r"          python3 - <<'PY'\n(.*?)          PY(?:\n|$)", source, re.S)
+          for body in blocks:
+              ast.parse(textwrap.dedent(body))
+          print("Parsed embedded Python scripts:", len(blocks))
+          PY
+
+  review-policy:
+    name: Verify source and owner approval gate
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    outputs:
+      source_sha: ${{ steps.policy.outputs.source_sha }}
+    steps:
+      - name: Require the protected environment and exact source revision
+        id: policy
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_INPUT: ${{ inputs.source_sha }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import urllib.request
+
+          revision = os.environ["SOURCE_INPUT"] or os.environ["GITHUB_SHA"]
+          if not re.fullmatch(r"[0-9a-f]{40}", revision):
+              raise SystemExit("source_sha must be a full lowercase commit SHA.")
+          url = (os.environ["GITHUB_API_URL"] + "/repos/"
+                 + os.environ["GITHUB_REPOSITORY"] + "/environments/network-review")
+          request = urllib.request.Request(url, headers={
+              "Authorization": "Bearer " + os.environ["GH_TOKEN"],
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+          })
+          with urllib.request.urlopen(request, timeout=30) as response:
+              environment = json.load(response)
+          rules = [rule for rule in environment.get("protection_rules", [])
+                   if rule.get("type") == "required_reviewers"]
+          reviewers = rules[0].get("reviewers", []) if len(rules) == 1 else []
+          valid = (len(reviewers) == 1
+                   and reviewers[0].get("type") == "User"
+                   and reviewers[0].get("reviewer", {}).get("login") == "Informativus"
+                   and rules[0].get("prevent_self_review") is False
+                   and environment.get("can_admins_bypass") is False)
+          if not valid:
+              raise SystemExit("The network-review environment does not enforce the owner gate.")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write("source_sha=" + revision + "\n")
+          PY
+
+  macos:
+    name: Build verified macOS ARM64 DMG
+    needs: review-policy
+    runs-on: macos-26
+    timeout-minutes: 360
+    environment: network-review
+    permissions:
+      contents: read
+    env:
+      SOURCE_SHA: ${{ needs.review-policy.outputs.source_sha }}
+      GIT_LFS_SKIP_SMUDGE: '1'
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_ANALYTICS: '1'
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.review-policy.outputs.source_sha }}
+          path: .local/worktrees/macos-release
+          persist-credentials: false
+          submodules: false
+      - name: Initialize exact Desktop dependencies
+        working-directory: .local/worktrees/macos-release
+        run: |
+          python3 - <<'PY'
+          import os
+          import subprocess
+
+          revision = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+          if revision != os.environ["SOURCE_SHA"]:
+              raise SystemExit("Source checkout differs from the selected revision.")
+          rows = subprocess.check_output(["git", "ls-tree", "-r", "HEAD"], text=True)
+          paths = [row.split("\t", 1)[1] for row in rows.splitlines()
+                   if row.startswith("160000 ") and not row.split("\t", 1)[1].startswith("android/")]
+          if not paths:
+              raise SystemExit("Desktop dependencies are missing.")
+          subprocess.run(["git", "-c", "protocol.file.allow=never", "submodule", "update",
+                          "--init", "--recursive", "--depth", "1", "--jobs", "2", "--", *paths], check=True)
+          PY
+      - name: Prepare build tools
+        id: toolchain
+        run: |
+          test "$(uname -m)" = arm64
+          brew install autoconf automake libtool meson nasm ninja pkg-config cmake
+          xcodebuild -version > "$RUNNER_TEMP/televim-xcode-version.txt"
+          version_hash="$(shasum -a 256 "$RUNNER_TEMP/televim-xcode-version.txt" | cut -d ' ' -f 1)"
+          echo "version_hash=$version_hash" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        id: libraries
+        with:
+          path: |
+            .local/worktrees/Libraries
+            .local/worktrees/ThirdParty
+          key: macos26-arm64-libraries-v1-${{ steps.toolchain.outputs.version_hash }}-${{ hashFiles('.local/worktrees/macos-release/Telegram/build/prepare/**', '.local/worktrees/macos-release/Telegram/build/qt_version.py') }}
+      - name: Build pinned dependencies
+        run: .local/worktrees/macos-release/Telegram/build/prepare/mac.sh silent
+      - name: Remove disposable dependency build intermediates
+        run: |
+          python3 - <<'PY'
+          import os
+          import pathlib
+
+          library_root = pathlib.Path(".local/worktrees/Libraries")
+          removed = 0
+          for directory, directories, files in os.walk(library_root, followlinks=False):
+              for name in files:
+                  path = pathlib.Path(directory) / name
+                  parts = path.relative_to(library_root).parts
+                  retained = (path.is_symlink()
+                              or path.suffix in {".a", ".h", ".hpp", ".inc", ".cmake", ".pc", ".dylib"}
+                              or any(part in {"include", "cache_keys", "patches"}
+                                     or part.startswith("objects-") or part.endswith(".framework")
+                                     for part in parts)
+                              or path.stat().st_mode & 0o111)
+                  if not retained:
+                      path.unlink()
+                      removed += 1
+          print("Removed dependency intermediates:", removed)
+          PY
+      - uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        if: steps.libraries.outputs.cache-hit != 'true'
+        continue-on-error: true
+        with:
+          path: |
+            .local/worktrees/Libraries
+            .local/worktrees/ThirdParty
+          key: macos26-arm64-libraries-v1-${{ steps.toolchain.outputs.version_hash }}-${{ hashFiles('.local/worktrees/macos-release/Telegram/build/prepare/**', '.local/worktrees/macos-release/Telegram/build/qt_version.py') }}
+      - name: Build Release with private application credentials
+        env:
+          TELEVIM_API_ID: ${{ secrets.TELEVIM_API_ID }}
+          TELEVIM_API_HASH: ${{ secrets.TELEVIM_API_HASH }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import re
+          import runpy
+          import subprocess
+          import tempfile
+
+          api_id = os.environ["TELEVIM_API_ID"]
+          api_hash = os.environ["TELEVIM_API_HASH"]
+          if not re.fullmatch(r"[1-9][0-9]{0,8}", api_id) or not re.fullmatch(r"[a-fA-F0-9]{32}", api_hash):
+              raise SystemExit("Private Televim application credentials are missing or invalid.")
+          root = pathlib.Path.cwd()
+          source = root / ".local/worktrees/macos-release"
+          build = root / ".local/builds/macos-release"
+          environment = dict(os.environ)
+          environment.pop("QT", None)
+          environment.pop("TELEVIM_API_ID", None)
+          environment.pop("TELEVIM_API_HASH", None)
+          qt_version = runpy.run_path(str(source / "Telegram/build/qt_version.py"))
+          if not qt_version["resolve"](""):
+              raise SystemExit("Could not resolve the source Qt version.")
+          environment["QT"] = os.environ["QT"]
+          with tempfile.TemporaryDirectory(prefix="televim-api-", dir=os.environ["RUNNER_TEMP"]) as private:
+              config = pathlib.Path(private) / "api.cmake"
+              config.write_text('set(TDESKTOP_API_ID "' + api_id + '" CACHE STRING "")\n'
+                                'set(TDESKTOP_API_HASH "' + api_hash + '" CACHE STRING "")\n')
+              config.chmod(0o600)
+              subprocess.run(["cmake", "-S", str(source), "-B", str(build), "-G", "Ninja",
+                              "-C", str(config), "-DCMAKE_BUILD_TYPE=Release",
+                              "-DCMAKE_OSX_ARCHITECTURES=arm64", "-DDESKTOP_APP_DISABLE_SWIFT6=ON",
+                              "-DDESKTOP_APP_DISABLE_AUTOUPDATE=ON",
+                              "-DDESKTOP_APP_DISABLE_CRASH_REPORTS=ON"], env=environment, check=True)
+              subprocess.run(["cmake", "--build", str(build), "--config", "Release",
+                              "--target", "Telegram", "--parallel", "1"], env=environment, check=True)
+          PY
+      - name: Package and verify DMG
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import re
+          import subprocess
+
+          root = pathlib.Path.cwd()
+          source = root / ".local/worktrees/macos-release"
+          app = root / ".local/builds/macos-release/Telegram.app"
+          destination = root / ".local/artifacts/macos-arm64"
+          stage = root / ".local/dmg-stage"
+          destination.mkdir(parents=True)
+          stage.mkdir(parents=True)
+          subprocess.run(["git", "diff", "--exit-code", "HEAD"], cwd=source, check=True)
+          pins = subprocess.check_output(["git", "submodule", "status", "--recursive"], cwd=source, text=True)
+          for line in pins.splitlines():
+              if line.startswith("-") and line.split()[1].startswith("android/"):
+                  continue
+              if not re.fullmatch(r" [0-9a-f]{40} [^ ]+(?: \(.*\))?", line):
+                  raise SystemExit("Desktop dependency revisions changed during the build.")
+          subprocess.run(["ditto", str(app), str(stage / "Telegram.app")], check=True)
+          staged_app = stage / "Telegram.app"
+          binary = staged_app / "Contents/MacOS/Telegram"
+          if subprocess.check_output(["lipo", "-archs", str(binary)], text=True).strip() != "arm64":
+              raise SystemExit("Unexpected macOS artifact architecture.")
+          subprocess.run(["python3", str(source / "Telegram/build/package_info.py"),
+                          str(staged_app / "Contents/Resources"), "macos-arm64"], check=True)
+          subprocess.run(["strip", "-x", str(binary)], check=True)
+          subprocess.run(["codesign", "--force", "--deep", "--sign", "-", "--entitlements",
+                          str(source / "Telegram/Telegram/Telegram.entitlements"), str(staged_app)], check=True)
+          subprocess.run(["codesign", "--verify", "--deep", "--strict", str(staged_app)], check=True)
+          (stage / "Applications").symlink_to("/Applications", target_is_directory=True)
+          dmg = destination / "Telegravim-macos-arm64.dmg"
+          subprocess.run(["hdiutil", "create", "-volname", "Telegravim", "-srcfolder", str(stage),
+                          "-format", "UDZO", str(dmg)], check=True)
+          subprocess.run(["hdiutil", "verify", str(dmg)], check=True)
+          with dmg.open("rb") as stream:
+              digest = hashlib.file_digest(stream, "sha256").hexdigest()
+          (destination / (dmg.name + ".sha256")).write_text(digest + "  " + dmg.name + "\n")
+          metadata = {"source_sha": os.environ["SOURCE_SHA"], "workflow_sha": os.environ["GITHUB_SHA"],
+                      "platform": "macos-arm64", "configuration": "Release", "sha256": digest,
+                      "artifact": dmg.name, "signature": "ad-hoc", "notarized": False}
+          (destination / "source.json").write_text(json.dumps(metadata, indent=2) + "\n")
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Telegravim-macos-arm64
+          path: .local/artifacts/macos-arm64/
+          retention-days: 14
+          if-no-files-found: error
