@@ -1418,7 +1418,8 @@
   {
     "path": "Telegram/SourceFiles/boxes/edit_caption_box.cpp",
     "source_sha256": [
-      "feb824207e3cf3bacb2fc28d430a781a773aa6988e012012d46266d3d01ef5ec"
+      "feb824207e3cf3bacb2fc28d430a781a773aa6988e012012d46266d3d01ef5ec",
+      "2a43b322237edccd05aed0d45e70514962f27a0985b69d29315988c0d764984b"
     ],
     "findings": [
       {
