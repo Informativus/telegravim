@@ -2093,12 +2093,12 @@ void Filler::fillContextMenuActions() {
 
 void Filler::fillHistoryActions() {
 	addToggleMuteSubmenu(true);
+	addToggleE2E();
 	addCreateTopic();
 	addInfo();
 	addViewAsTopics();
 	addManageChat();
 	addStoryArchive();
-	addToggleE2E();
 	addSupportInfo();
 	addBoostChat();
 	addCreatePoll();
@@ -2117,12 +2117,12 @@ void Filler::fillHistoryActions() {
 
 void Filler::fillProfileActions() {
 	addTTLSubmenu(true);
+	addToggleE2E();
 	addSupportInfo();
 	addNewContact();
 	addShareContact();
 	addEditContact();
 	addBotToGroup();
-	addToggleE2E();
 	addNewMembers();
 	addSendGift();
 	addViewStatistics();
