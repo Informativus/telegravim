@@ -19,6 +19,8 @@ jobs:
   windows:
     runs-on: windows-2022
     timeout-minutes: 360
+    env:
+      GIT_LFS_SKIP_SMUDGE: '1'
     defaults:
       run:
         shell: pwsh
@@ -26,9 +28,24 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-          submodules: recursive
+          submodules: false
           path: TBuild/tdesktop
           ref: ${{ inputs.source_ref || github.ref }}
+      - name: Initialize pinned Desktop dependencies
+        shell: bash
+        working-directory: TBuild/tdesktop
+        run: |
+          python - <<'PY'
+          import subprocess
+
+          rows = subprocess.check_output(["git", "ls-tree", "-r", "HEAD"], text=True)
+          paths = [row.split("\t", 1)[1] for row in rows.splitlines()
+                   if row.startswith("160000 ") and not row.split("\t", 1)[1].startswith("android/")]
+          if not paths:
+              raise SystemExit("Desktop dependencies are missing.")
+          subprocess.run(["git", "-c", "protocol.file.allow=never", "submodule", "update",
+                          "--init", "--recursive", "--depth", "1", "--jobs", "2", "--", *paths], check=True)
+          PY
       - name: Validate package metadata
         working-directory: TBuild/tdesktop
         run: |
