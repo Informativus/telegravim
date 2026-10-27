@@ -373,7 +373,7 @@ void Manager::buildAppleMenu(QMenu *main) {
 			std::move(callback),
 			QKeySequence(Qt::ControlModifier | Qt::Key_Comma));
 		preferences->setMenuRole(QAction::PreferencesRole);
-		preferences->setShortcutContext(Qt::WidgetShortcut);
+		preferences->setShortcutContext(Qt::ApplicationShortcut);
 	}
 }
 
