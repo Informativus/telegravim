@@ -151,6 +151,7 @@ jobs:
             .local/worktrees/Libraries
             .local/worktrees/ThirdParty
           key: macos26-arm64-libraries-v1-${{ steps.toolchain.outputs.version_hash }}-${{ hashFiles('.local/worktrees/macos-release/Telegram/build/prepare/**', '.local/worktrees/macos-release/Telegram/build/qt_version.py') }}
+          restore-keys: macos26-arm64-libraries-v1-${{ steps.toolchain.outputs.version_hash }}-
       - name: Build pinned dependencies
         run: .local/worktrees/macos-release/Telegram/build/prepare/mac.sh silent
       - name: Remove disposable dependency build intermediates
