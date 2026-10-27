@@ -7,8 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/controls/history_view_voice_record_bar.h"
 
-#include "api/api_send_progress.h"
 #include "api/api_local_transcription.h"
+#include "api/api_send_progress.h"
 #include "api/api_transcribes.h"
 #include "apiwrap.h"
 #include "base/event_filter.h"
@@ -41,10 +41,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/effects/animation_value.h"
 #include "ui/effects/animation_value_f.h"
 #include "ui/effects/ripple_animation.h"
+#include "ui/layers/generic_box.h"
 #include "ui/text/format_values.h"
 #include "ui/text/text_utilities.h"
 #include "ui/dynamic_image.h"
-#include "ui/layers/generic_box.h"
 #include "ui/painter.h"
 #include "ui/widgets/fields/input_field.h" // ShouldSubmit.
 #include "ui/widgets/labels.h"
