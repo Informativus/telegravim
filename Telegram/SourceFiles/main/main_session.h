@@ -84,6 +84,10 @@ namespace Ui {
 struct ColorIndicesCompressed;
 } // namespace Ui
 
+namespace E2E {
+class Chat;
+} // namespace E2E
+
 namespace Main {
 
 class Account;
@@ -120,6 +124,7 @@ public:
 	[[nodiscard]] Storage::Account &local() const;
 	[[nodiscard]] Domain &domain() const;
 	[[nodiscard]] Storage::Domain &domainLocal() const;
+	[[nodiscard]] E2E::Chat &e2e() const;
 
 	[[nodiscard]] AppConfig &appConfig() const;
 	[[nodiscard]] bool messagePrimaryEditedDate() const {
@@ -316,6 +321,7 @@ private:
 	const std::unique_ptr<Storage::DownloadManagerMtproto> _downloader;
 	const std::unique_ptr<Storage::Uploader> _uploader;
 	const std::unique_ptr<Storage::Facade> _storage;
+	mutable std::unique_ptr<E2E::Chat> _e2e;
 
 	// _data depends on _downloader / _uploader.
 	const std::unique_ptr<Data::Session> _data;

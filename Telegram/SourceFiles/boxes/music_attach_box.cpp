@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/music_attach_box.h"
 
+#include "e2e/e2e_chat.h"
+
 #include "api/api_common.h"
 #include "api/api_sending.h"
 #include "apiwrap.h"
@@ -908,6 +910,11 @@ void GlobalMusicSearchSection::cancelSearch() {
 
 void GlobalMusicSearchSection::sendInlineRequest() {
 	if (_requestId || !_bot || _nextQuery.isEmpty()) {
+		return;
+	}
+	if (_queryPeer->session().e2e().enabled(_queryPeer->id)) {
+		setPending(false);
+		setLoading(false);
 		return;
 	}
 	setPending(false);

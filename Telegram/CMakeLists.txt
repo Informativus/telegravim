@@ -112,6 +112,9 @@ PRIVATE
 
     boxes/local_transfer_box.cpp
     boxes/local_transfer_box.h
+    e2e/e2e_chat.cpp
+    e2e/e2e_chat.h
+
     data/local_saved_tags.cpp
     data/local_saved_tags.h
     data/local_saved_tags_search.cpp

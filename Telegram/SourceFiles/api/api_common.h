@@ -79,6 +79,7 @@ struct MessageToSend {
 	SendAction action;
 	TextWithTags textWithTags;
 	Data::WebPageDraft webPage;
+	bool e2eControl = false;
 };
 
 struct RemoteFileInfo {

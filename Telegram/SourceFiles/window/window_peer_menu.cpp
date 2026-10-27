@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/window_peer_menu.h"
 
+#include "e2e/e2e_chat.h"
 #include "base/call_delayed.h"
 #include "menu/menu_check_item.h"
 #include "menu/menu_mark_as_read.h"
@@ -138,17 +139,149 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <QAction>
 #include <QtWidgets/QApplication>
+#include <QClipboard>
+#include <QtCore/QCryptographicHash>
 
 namespace Window {
 namespace {
 
 constexpr auto kTopicsSearchMinCount = 1;
+void SendE2EControl(
+		not_null<PeerData*> peer,
+		const QString &text) {
+	if (text.isEmpty()) {
+		return;
+	}
+	const auto history = peer->owner().history(peer);
+	if (!history) {
+		return;
+	}
+	auto action = Api::SendAction(history);
+	action.clearDraft = false;
+	auto message = Api::MessageToSend(action);
+	message.textWithTags = { text, {} };
+	message.e2eControl = true;
+	history->session().api().sendMessage(std::move(message));
+}
+
+void ShowE2ESetupBox(
+		not_null<SessionController*> controller,
+		not_null<UserData*> user) {
+	const auto peer = not_null<PeerData*>(user);
+	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
+		const auto e2e = &user->session().e2e();
+		box->setTitle(u"Encryption keys"_q);
+		box->addRow(
+			object_ptr<Ui::FlatLabel>(
+				box,
+				u"Send this public key to your colleague, then paste their key below. The fingerprint must be verified out of band."_q,
+				st::boxLabel),
+			st::boxRowPadding,
+			style::al_top);
+		const auto ownKey = e2e->publicKeyBase64();
+		if (ownKey.isEmpty()) {
+			box->addRow(object_ptr<Ui::FlatLabel>(
+				box,
+				u"The encryption key could not be loaded or saved. Check this device's local storage before enabling encryption."_q,
+				st::boxLabel));
+			box->addButton(tr::lng_close(), [=] { box->closeBox(); });
+			return;
+		}
+		const auto ownFingerprint = e2e->fingerprint();
+		box->addRow(
+			object_ptr<Ui::FlatLabel>(
+				box,
+				u"Public key:\n"_q + ownKey + u"\n\nFingerprint:\n"_q + ownFingerprint,
+				st::boxLabel),
+			st::boxRowPadding,
+			style::al_top);
+		const auto field = box->addRow(object_ptr<Ui::InputField>(
+			box,
+			st::defaultInputField,
+			rpl::single(u"Colleague public key (Base64)"_q),
+			e2e->hasPeerKey(peer->id)
+			? e2e->peerPublicKeyBase64(peer->id)
+			: QString()));
+		field->setInputMethodHints(
+			Qt::ImhLatinOnly | Qt::ImhNoAutoUppercase
+			| Qt::ImhNoPredictiveText);
+		const auto parsedKey = [=] {
+			auto text = field->getLastText().trimmed();
+			if (E2E::Chat::IsKeyExchange(text)) {
+				const auto parts = text.split(u'.');
+				if (parts.size() != 4) {
+					return QByteArray();
+				}
+				text = parts[2];
+			}
+			const auto bytes = QByteArray::fromBase64(
+				text.toLatin1(),
+				QByteArray::AbortOnBase64DecodingErrors);
+			return QString::fromLatin1(bytes.toBase64()) == text
+				? bytes : QByteArray();
+		};
+		const auto fingerprint = box->addRow(object_ptr<Ui::FlatLabel>(
+			box,
+			QString(),
+			st::boxLabel));
+		const auto verified = box->addRow(object_ptr<Ui::Checkbox>(
+			box,
+			u"I verified this fingerprint with my contact through a trusted second channel"_q,
+			false,
+			st::defaultBoxCheckbox));
+		const auto refreshFingerprint = [=] {
+			const auto key = parsedKey();
+			fingerprint->setText(key.size() == 65
+				? u"Contact fingerprint:\n"_q + QString::fromLatin1(
+					QCryptographicHash::hash(key, QCryptographicHash::Sha256)
+					.toHex()).toUpper()
+				: u"Paste your contact's public key to see its fingerprint."_q);
+			verified->setChecked(false);
+		};
+		refreshFingerprint();
+		field->changes() | rpl::on_next(refreshFingerprint, field->lifetime());
+		box->setFocusCallback([=] { field->setFocusFast(); });
+		const auto submit = [=] {
+			const auto key = parsedKey();
+			if (!verified->checked() || !e2e->setPeerKey(peer->id, key)
+				|| !e2e->setEnabled(peer->id, true)) {
+				field->showError();
+				return;
+			}
+			SendE2EControl(peer, e2e->keyExchangeMessage());
+			SendE2EControl(peer, e2e->stateMessage(peer->id, true));
+			box->closeBox();
+		};
+		field->submits(
+		) | rpl::on_next([=](auto) { submit(); }, field->lifetime());
+		box->addButton(rpl::single(u"Copy my public key"_q), [=] {
+			QApplication::clipboard()->setText(ownKey);
+		});
+		if (e2e->hasPeerKey(peer->id)) {
+			box->addButton(rpl::single(u"Replace peer key"_q), [=] {
+				const auto key = parsedKey();
+				if (!verified->checked() || !e2e->replacePeerKey(peer->id, key)) {
+					field->showError();
+					return;
+				}
+				SendE2EControl(peer, e2e->keyExchangeMessage());
+				box->closeBox();
+			});
+		}
+		box->addButton(rpl::single(u"Enable encryption"_q), submit);
+		box->addButton(tr::lng_cancel(), [=] { box->closeBox(); });
+	}));
+}
+
 
 void ShareBotGame(
 		not_null<UserData*> bot,
 		not_null<Data::Thread*> thread,
 		const QString &shortName) {
 	auto &histories = thread->owner().histories();
+	if (thread->session().api().preventUnencryptedSend(thread->peer())) {
+		return;
+	}
 	const auto history = thread->owningHistory();
 	const auto randomId = base::RandomValue<uint64>();
 	const auto replyTo = thread->topicRootId();
@@ -322,6 +455,7 @@ private:
 	void addCreateTodoList();
 	void addThemeEdit();
 	void addToggleNoForwards();
+	void addToggleE2E();
 	void addBlockUser();
 	void addBanFromChannel();
 	void addViewDiscussion();
@@ -1489,6 +1623,44 @@ void ShowDisableSharingBox(
 		not_null<PeerData*> peer,
 		Fn<void(bool)> toggleNoForwards) {
 	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
+void Filler::addToggleE2E() {
+	const auto user = _peer ? _peer->asUser() : nullptr;
+	if (!user || user->isSelf() || user->isBot()) {
+		return;
+	}
+	const auto peer = not_null<PeerData*>(user);
+	const auto controller = _controller;
+	const auto e2e = &user->session().e2e();
+	if (!e2e->hasPeerKey(peer->id)) {
+		_addAction(u"Set up E2E encryption"_q, [=] {
+			SendE2EControl(peer, e2e->keyExchangeMessage());
+			ShowE2ESetupBox(controller, user);
+		}, &st::menuIconLock);
+		return;
+	}
+	if (e2e->enabled(peer->id)) {
+		if (!e2e->ready(peer->id)) {
+			_addAction(u"Encryption pending — retry request"_q, [=] {
+				SendE2EControl(peer, e2e->stateMessage(peer->id, true));
+			}, &st::menuIconLock);
+		}
+		_addAction(u"Turn off E2E encryption"_q, [=] {
+			if (e2e->disable(peer->id)) {
+				SendE2EControl(peer, e2e->stateMessage(peer->id, false));
+			}
+		}, &st::menuIconLock);
+	} else {
+		_addAction(u"Turn on E2E encryption"_q, [=] {
+			if (e2e->setEnabled(peer->id, true)) {
+				SendE2EControl(peer, e2e->stateMessage(peer->id, true));
+			}
+		}, &st::menuIconLock);
+	}
+	_addAction(u"Encryption keys"_q, [=] {
+		ShowE2ESetupBox(controller, user);
+	}, &st::menuIconLock);
+}
+
 		box->setStyle(st::showOrBox);
 		box->setWidth(st::boxWideWidth);
 		box->addTopButton(st::boxTitleClose, [=] {
@@ -1926,6 +2098,7 @@ void Filler::fillHistoryActions() {
 	addViewAsTopics();
 	addManageChat();
 	addStoryArchive();
+	addToggleE2E();
 	addSupportInfo();
 	addBoostChat();
 	addCreatePoll();
@@ -1949,6 +2122,7 @@ void Filler::fillProfileActions() {
 	addShareContact();
 	addEditContact();
 	addBotToGroup();
+	addToggleE2E();
 	addNewMembers();
 	addSendGift();
 	addViewStatistics();

@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "apiwrap.h"
 
+#include "e2e/e2e_chat.h"
+
 #include "api/api_authorizations.h"
 #include "api/api_attached_stickers.h"
 #include "api/api_blocked_peers.h"
@@ -130,6 +132,9 @@ using UpdatedFileReferences = Data::UpdatedFileReferences;
 		not_null<Main::Session*> session,
 		not_null<Data::Thread*> thread) {
 	const auto history = thread->owningHistory();
+	if (session->e2e().enabled(history->peer->id)) {
+		return true;
+	}
 	const auto topicRootId = thread->topicRootId();
 	const auto monoforumPeerId = thread->monoforumPeerId();
 	const auto cloudDraft = history->cloudDraft(topicRootId, monoforumPeerId);
@@ -245,6 +250,24 @@ ApiWrap::ApiWrap(not_null<Main::Session*> session)
 
 		_reactionsNotifySettings->reload();
 		setupSupportMode();
+		_session->e2e().changes(
+		) | rpl::filter([=](PeerId peerId) {
+			return _session->e2e().enabled(peerId);
+		}) | rpl::on_next([=](PeerId peerId) {
+			for (auto i = _draftsSaveRequestIds.begin()
+				; i != _draftsSaveRequestIds.end();) {
+				const auto thread = i->first.get();
+				if (!thread || thread->owningHistory()->peer->id != peerId) {
+					++i;
+					continue;
+				}
+				if (i->second) {
+					request(i->second).cancel();
+				}
+				i = _draftsSaveRequestIds.erase(i);
+			}
+			checkQuitPreventFinished();
+		}, _session->lifetime());
 	});
 }
 
@@ -509,6 +532,16 @@ void ApiWrap::toggleHistoryArchived(
 		_historyArchivedRequests.remove(history);
 	}).send();
 	_historyArchivedRequests.emplace(history, requestId, callback);
+}
+
+bool ApiWrap::preventUnencryptedSend(not_null<PeerData*> peer) {
+	if (!_session->e2e().enabled(peer->id)) {
+		return false;
+	}
+	sendMessageFail(
+		u"Encrypted mode supports text messages only. Turn it off to send other content."_q,
+		peer);
+	return true;
 }
 
 void ApiWrap::sendMessageFail(
@@ -2369,6 +2402,14 @@ mtpRequestId ApiWrap::savePreparedDraftToCloud(
 		bool clearOnFail,
 		Fn<void()> done,
 		Fn<void(const MTP::Error &)> fail) {
+	if (_session->e2e().enabled(thread->owningHistory()->peer->id)) {
+		if (fail) {
+			fail(MTP::Error::Local(
+				u"E2E_DRAFT_LOCAL_ONLY"_q,
+				u"Encrypted chat drafts stay on this device."_q));
+		}
+		return 0;
+	}
 	const auto weak = base::make_weak(thread);
 	const auto history = thread->owningHistory();
 	const auto topicRootId = thread->topicRootId();
@@ -3824,6 +3865,9 @@ void ApiWrap::forwardMessages(
 		Data::ResolvedForwardDraft &&draft,
 		SendAction action,
 		FnMut<void()> &&successCallback) {
+	if (preventUnencryptedSend(action.history->peer)) {
+		return;
+	}
 	Expects(!draft.items.empty());
 
 	auto &histories = _session->data().histories();
@@ -4129,6 +4173,12 @@ void ApiWrap::sendSharedContact(
 		UserId userId,
 		const SendAction &action,
 		Fn<void(bool)> done) {
+	if (preventUnencryptedSend(action.history->peer)) {
+		if (done) {
+			done(false);
+		}
+		return;
+	}
 	sendAction(action);
 
 	const auto history = action.history;
@@ -4187,6 +4237,9 @@ void ApiWrap::sendVoiceMessage(
 		crl::time duration,
 		bool video,
 		const SendAction &action) {
+	if (preventUnencryptedSend(action.history->peer)) {
+		return;
+	}
 	const auto caption = TextWithTags();
 	const auto to = FileLoadTaskOptions(action);
 	_fileLoader->addTask(
@@ -4206,6 +4259,9 @@ void ApiWrap::editMedia(
 		SendMediaType type,
 		TextWithTags &&caption,
 		const SendAction &action) {
+	if (preventUnencryptedSend(action.history->peer)) {
+		return;
+	}
 	if (list.files.empty()) return;
 
 	auto &file = list.files.front();
@@ -4264,6 +4320,9 @@ void ApiWrap::sendFiles(
 		SendMediaType type,
 		std::shared_ptr<SendingAlbum> album,
 		SendAction action) {
+	if (preventUnencryptedSend(action.history->peer)) {
+		return;
+	}
 	const auto &ephemeral = _session->ephemeralMessages();
 	if (album && !ephemeral.isEphemeralBotReply(action.replyTo.messageId)) {
 		const auto peer = action.history->peer;
@@ -4347,6 +4406,9 @@ void ApiWrap::sendFile(
 		const QByteArray &fileContent,
 		SendMediaType type,
 		const SendAction &action) {
+	if (preventUnencryptedSend(action.history->peer)) {
+		return;
+	}
 	const auto to = FileLoadTaskOptions(action);
 	auto caption = TextWithTags();
 	const auto spoiler = false;
@@ -4411,6 +4473,9 @@ void ApiWrap::cancelLocalItem(not_null<HistoryItem*> item) {
 void ApiWrap::sendShortcutMessages(
 		not_null<PeerData*> peer,
 		BusinessShortcutId id) {
+	if (preventUnencryptedSend(peer)) {
+		return;
+	}
 	auto ids = QVector<MTPint>();
 	auto randomIds = QVector<MTPlong>();
 	request(MTPmessages_SendQuickReplyMessages(
@@ -4429,6 +4494,9 @@ void ApiWrap::sendRichMessage(
 		const MTPInputRichMessage &richMessage,
 		SendAction action) {
 	Expects(page != nullptr);
+	if (preventUnencryptedSend(action.history->peer)) {
+		return;
+	}
 
 	const auto history = action.history;
 	const auto peer = history->peer;
@@ -4490,6 +4558,9 @@ void ApiWrap::sendRichMessage(
 		const MTPInputRichMessage &richMessage,
 		SendAction action) {
 	Expects(item->history() == action.history);
+	if (preventUnencryptedSend(action.history->peer)) {
+		return;
+	}
 
 	action.generateLocal = true;
 	sendAction(action);
@@ -4685,9 +4756,27 @@ void ApiWrap::sendMessage(
 		std::optional<MsgId> localMessageId) {
 	const auto history = message.action.history;
 	const auto peer = history->peer;
+	const auto e2eEnabled = _session->e2e().enabled(peer->id);
 	const auto &textWithTags = message.textWithTags;
+	if (e2eEnabled && (message.action.options.scheduled
+		|| message.action.options.shortcutId)) {
+		sendMessageFail(
+			u"E2E mode sends text immediately in this chat. Scheduling and cloud quick replies are unavailable."_q,
+			peer);
+		return;
+	}
+	if (e2eEnabled && !message.e2eControl && !_session->e2e().ready(peer->id)) {
+		sendMessageFail(
+			u"Encryption is waiting for confirmation. Check Encryption keys or retry the request from the chat menu."_q,
+			peer);
+		return;
+	}
 
 	auto action = message.action;
+	if (e2eEnabled) {
+		action.replyTo.quote = {};
+		action.replyTo.quoteOffset = 0;
+	}
 	action.generateLocal = true;
 	sendAction(action);
 
@@ -4707,13 +4796,13 @@ void ApiWrap::sendMessage(
 	if (!ephemeral
 		&& !(topic ? Data::CanSendTexts(topic) : Data::CanSendTexts(peer))) {
 		return;
-	} else if (_session->ephemeralMessages().trySend(message)) {
+	} else if (!e2eEnabled && _session->ephemeralMessages().trySend(message)) {
 		if (clearCloudDraft) {
 			history->clearCloudDraft(draftTopicRootId, draftMonoforumPeerId);
 		}
 		return;
 	}
-	if (Api::SendDice(message)) {
+	if (!e2eEnabled && Api::SendDice(message)) {
 		return;
 	}
 	local().saveRecentSentHashtags(textWithTags.text);
@@ -4731,11 +4820,14 @@ void ApiWrap::sendMessage(
 	HistoryItem *lastMessage = nullptr;
 
 	auto &histories = history->owner().histories();
-	const auto messageLengthLimit = Data::PremiumLimits(
+	const auto cloudMessageLengthLimit = Data::PremiumLimits(
 		&history->session()
 	).messageLengthCurrent();
-
-	const auto exactWebPage = !message.webPage.url.isEmpty();
+	const auto messageLengthLimit = e2eEnabled && !message.e2eControl
+		? E2E::Chat::PlaintextLimit(cloudMessageLengthLimit)
+		: cloudMessageLengthLimit;
+	const auto exactWebPage = !message.webPage.url.isEmpty()
+		&& !e2eEnabled;
 	const auto webPageDraft = message.webPage;
 	auto isFirst = true;
 	while (TextUtilities::CutPart(sending, left, messageLengthLimit)
@@ -4751,14 +4843,34 @@ void ApiWrap::sendMessage(
 		auto randomId = base::RandomValue<uint64>();
 
 		TextUtilities::Trim(sending);
+		const auto encrypted = e2eEnabled && !message.e2eControl
+			? _session->e2e().encrypt(peer->id, sending.text)
+			: std::optional<QString>();
+		if (e2eEnabled
+			&& !message.e2eControl
+			&& !encrypted) {
+			sendMessageFail(
+				u"Encryption failed. The message was not sent. Check the keys and local storage."_q,
+				peer);
+			return;
+		}
+		const auto wireText = encrypted.value_or(sending.text);
+		auto displayedSending = sending;
+		if (message.e2eControl && E2E::Chat::IsControlMessage(sending.text)) {
+			displayedSending.entities.clear();
+			displayedSending.text = _session->e2e().controlNotice(
+				peer->id,
+				sending.text,
+				true);
+		}
 
 		_session->data().registerMessageRandomId(randomId, newId);
 		_session->data().registerMessageSentData(
 			randomId,
 			peer->id,
-			sending.text);
+			wireText);
 
-		MTPstring msgText(MTP_string(sending.text));
+		MTPstring msgText(MTP_string(wireText));
 		auto flags = NewMessageFlags(peer);
 		auto sendFlags = MTPmessages_SendMessage::Flags(0);
 		auto mediaFlags = MTPmessages_SendMedia::Flags(0);
@@ -4807,10 +4919,12 @@ void ApiWrap::sendMessage(
 			sendFlags |= MTPmessages_SendMessage::Flag::f_silent;
 			mediaFlags |= MTPmessages_SendMedia::Flag::f_silent;
 		}
-		const auto sentEntities = Api::EntitiesToMTP(
-			_session,
-			sending.entities,
-			Api::ConvertOption::SkipLocal);
+		auto sentEntities = encrypted
+			? MTPVector<MTPMessageEntity>()
+			: Api::EntitiesToMTP(
+				_session,
+				sending.entities,
+				Api::ConvertOption::SkipLocal);
 		if (!sentEntities.v.isEmpty()) {
 			sendFlags |= MTPmessages_SendMessage::Flag::f_entities;
 			mediaFlags |= MTPmessages_SendMedia::Flag::f_entities;
@@ -4870,7 +4984,7 @@ void ApiWrap::sendMessage(
 			.postAuthor = NewMessagePostAuthor(action),
 			.effectId = action.options.effectId,
 			.suggest = HistoryMessageSuggestInfo(action.options),
-		}, sending, media);
+		}, displayedSending, media);
 		const auto done = [=](
 				const MTPUpdates &result,
 				const MTP::Response &response) {
@@ -5041,6 +5155,12 @@ void ApiWrap::sendInlineResult(
 		SendAction action,
 		std::optional<MsgId> localMessageId,
 		Fn<void(bool)> done) {
+	if (preventUnencryptedSend(action.history->peer)) {
+		if (done) {
+			done(false);
+		}
+		return;
+	}
 	StripEphemeralReply(_session, action.replyTo);
 	sendAction(action);
 
@@ -5152,6 +5272,10 @@ void ApiWrap::uploadAlbumMedia(
 		not_null<HistoryItem*> item,
 		const MessageGroupId &groupId,
 		const MTPInputMedia &media) {
+	if (preventUnencryptedSend(item->history()->peer)) {
+		item->sendFailed();
+		return;
+	}
 	const auto localId = item->fullId();
 	const auto failed = [=] {
 
@@ -5284,6 +5408,12 @@ void ApiWrap::sendMediaWithRandomId(
 	const auto history = item->history();
 	const auto replyTo = item->replyTo();
 	const auto peer = history->peer;
+	if (preventUnencryptedSend(peer)) {
+		if (done) {
+			done(false);
+		}
+		return;
+	}
 
 	if (_session->ephemeralMessages().sendMedia(item, media)) {
 		if (done) {
@@ -5514,6 +5644,15 @@ void ApiWrap::sendAlbumIfReady(not_null<SendingAlbum*> album) {
 		medias.push_back(*item.media);
 	}
 	if (!sample) {
+		_sendingAlbums.remove(groupId);
+		return;
+	}
+	if (preventUnencryptedSend(sample->history()->peer)) {
+		for (const auto &part : album->items) {
+			if (const auto item = _session->data().message(part.msgId)) {
+				item->sendFailed();
+			}
+		}
 		_sendingAlbums.remove(groupId);
 		return;
 	}

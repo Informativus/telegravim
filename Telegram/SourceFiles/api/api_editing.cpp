@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "api/api_editing.h"
 
+#include "e2e/e2e_chat.h"
 #include "apiwrap.h"
 #include "api/api_media.h"
 #include "api/api_text_entities.h"
@@ -301,6 +302,18 @@ mtpRequestId EditMessage(
 		DoneCallback &&done,
 		FailCallback &&fail,
 		std::optional<MTPInputMedia> inputMedia = std::nullopt) {
+	const auto session = &item->history()->session();
+	if (session->e2e().enabled(item->history()->peer->id)
+		|| session->e2e().isEncrypted(item->history()->peer->id, item->id)) {
+		if constexpr (ErrorWithId<FailCallback>) {
+			fail(u"E2E text messages cannot be edited."_q, 0);
+		} else if constexpr (ErrorWithoutId<FailCallback>) {
+			fail(u"E2E text messages cannot be edited."_q);
+		} else if constexpr (WithoutCallback<FailCallback>) {
+			fail();
+		}
+		return 0;
+	}
 	if (item->computeSuggestionActions()
 		== SuggestionActions::AcceptAndDecline) {
 		return SuggestMessageOrMedia(
@@ -313,7 +326,6 @@ mtpRequestId EditMessage(
 			inputMedia);
 	}
 
-	const auto session = &item->history()->session();
 	const auto api = &session->api();
 
 	const auto text = textWithEntities.text;
@@ -706,6 +718,14 @@ mtpRequestId EditRichMessage(
 		SendOptions options,
 		Fn<void(mtpRequestId requestId)> done,
 		Fn<void(const QString &error, mtpRequestId requestId)> fail) {
+	const auto &e2e = item->history()->session().e2e();
+	if (e2e.enabled(item->history()->peer->id)
+		|| e2e.isEncrypted(item->history()->peer->id, item->id)) {
+		if (fail) {
+			fail(u"E2E messages cannot be edited."_q, 0);
+		}
+		return 0;
+	}
 	if (item->isWelcomeTemplate()) {
 		const auto history = item->history();
 		auto &welcome = history->session().welcomeMessages();

@@ -69,6 +69,10 @@ void InnerFillMessagePostFlags(
 }
 
 void SendSimpleMedia(SendAction action, MTPInputMedia inputMedia) {
+	if (action.history->session().api().preventUnencryptedSend(
+			action.history->peer)) {
+		return;
+	}
 	const auto history = action.history;
 	const auto peer = history->peer;
 	const auto session = &history->session();
@@ -185,6 +189,10 @@ void SendExistingMedia(
 		Fn<MTPInputMedia()> inputMedia,
 		Data::FileOrigin origin,
 		std::optional<MsgId> localMessageId) {
+	if (message.action.history->session().api().preventUnencryptedSend(
+			message.action.history->peer)) {
+		return;
+	}
 	const auto history = message.action.history;
 	const auto peer = history->peer;
 	const auto session = &history->session();
@@ -420,6 +428,10 @@ void SendMusicSelectionBatch(
 		std::vector<MusicSelectionItem> items,
 		TextWithEntities caption,
 		Fn<void()> done) {
+	if (action.history->session().api().preventUnencryptedSend(
+			action.history->peer)) {
+		return;
+	}
 	Expects(!items.empty());
 
 	const auto history = action.history;

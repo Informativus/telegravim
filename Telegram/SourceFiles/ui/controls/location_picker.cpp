@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "ui/controls/location_picker.h"
 
+#include "e2e/e2e_chat.h"
+
 #include "apiwrap.h"
 #include "base/platform/base_platform_info.h"
 #include "boxes/peer_list_box.h"
@@ -1225,6 +1227,9 @@ void LocationPicker::venuesRequest(
 
 void LocationPicker::venuesSendRequest() {
 	Expects(_venuesBot != nullptr);
+	if (_venueRecipient && _session->e2e().enabled(_venueRecipient->id)) {
+		return;
+	}
 
 	if (_venuesRequestId || !_venuesRequestLocation) {
 		return;

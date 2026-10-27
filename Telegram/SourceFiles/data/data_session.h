@@ -599,6 +599,10 @@ public:
 		NewMessageType type);
 	void processExistingMessages(
 		ChannelData *channel,
+	void applyE2eMessage(
+		not_null<HistoryItem*> item,
+		const MTPDmessage &message,
+		bool live);
 		const MTPmessages_Messages &data);
 	void processNonChannelMessagesDeleted(const QVector<MTPint> &data);
 	void processMessagesDeleted(
