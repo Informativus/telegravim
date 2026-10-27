@@ -3333,7 +3333,8 @@ rpl::producer<> VoiceRecordBar::updateSendButtonTypeRequests() const {
 			return !isActive();
 		}) | rpl::to_empty,
 		_listenChanges.events(),
-		_show->session().api().transcribes().local().modelStateValue());
+		_show->session().api().transcribes().local().modelStateValue(
+		) | rpl::skip(1));
 }
 
 rpl::producer<> VoiceRecordBar::recordingTipRequests() const {
