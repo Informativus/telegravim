@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "main/main_session.h"
 
+#include "e2e/e2e_chat.h"
+
 #include "apiwrap.h"
 #include "api/api_peer_colors.h"
 #include "api/api_updates.h"
@@ -330,6 +332,14 @@ Domain &Session::domain() const {
 
 Storage::Domain &Session::domainLocal() const {
 	return _account->domainLocal();
+}
+
+E2E::Chat &Session::e2e() const {
+	if (!_e2e) {
+		_e2e = std::make_unique<E2E::Chat>(
+			const_cast<Session*>(this));
+	}
+	return *_e2e;
 }
 
 AppConfig &Session::appConfig() const {

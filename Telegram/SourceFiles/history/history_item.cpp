@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_premium.h"
 #include "api/api_sensitive_content.h"
 #include "api/api_transcribes.h"
+#include "e2e/e2e_chat.h"
 #include "lang/lang_keys.h"
 #include "calls/calls_instance.h" // Core::App().calls().joinGroupCall.
 #include "history/view/history_view_item_preview.h"
@@ -503,6 +504,14 @@ HistoryItem::HistoryItem(
 	.effectId = data.veffect().value_or_empty(),
 }) {
 	_boostsApplied = data.vfrom_boosts_applied().value_or_empty();
+	const auto wireText = qs(data.vmessage());
+	if (E2E::Chat::IsEnvelope(wireText)
+		|| E2E::Chat::IsKeyExchange(wireText)
+		|| history->session().e2e().isEncrypted(history->peer->id, id)) {
+		_e2eProtected = true;
+		setTextValue({ wireText, {} });
+		return;
+	}
 
 	// Called only for server-received messages, not locally created ones.
 	applyInitialEffectWatched();
@@ -2217,6 +2226,9 @@ const Api::SummaryEntry &HistoryItem::summaryEntry() const {
 }
 
 void HistoryItem::setHasSummaryEntry() {
+	if (_e2eProtected) {
+		return;
+	}
 	_flags |= MessageFlag::HasSummaryEntry;
 }
 
@@ -2390,6 +2402,9 @@ void HistoryItem::clearMainView() {
 }
 
 void HistoryItem::applyEdition(HistoryMessageEdition &&edition) {
+	if (_e2eProtected) {
+		return;
+	}
 	history()->session().ephemeralMessages().revertAnchored(this);
 
 	int keyboardTop = -1;
@@ -2588,6 +2603,9 @@ void HistoryItem::setStoryFields(not_null<Data::Story*> story) {
 }
 
 void HistoryItem::applyEdition(const MTPDmessageService &message) {
+	if (_e2eProtected) {
+		return;
+	}
 	const auto wasNfr = Get<HistoryServiceNoForwardsRequest>();
 	const auto wasActionTaken = wasNfr && wasNfr->actionTaken;
 	const auto wasSublist = savedSublist();
@@ -3511,6 +3529,9 @@ const HistoryMessageTranslation *HistoryItem::translation() const {
 }
 
 bool HistoryItem::translationShowRequiresCheck(LanguageId to) const {
+	if (_e2eProtected) {
+		return false;
+	}
 	// Check if a call to translationShowRequiresRequest(to) is not a no-op.
 	if (!to) {
 		if (const auto translation = Get<HistoryMessageTranslation>()) {
@@ -3529,6 +3550,9 @@ bool HistoryItem::translationShowRequiresCheck(LanguageId to) const {
 }
 
 bool HistoryItem::translationShowRequiresRequest(LanguageId to) {
+	if (_e2eProtected) {
+		return false;
+	}
 	// When changing be sure to reflect in translationShowRequiresCheck(to).
 	if (!to) {
 		if (const auto translation = Get<HistoryMessageTranslation>()) {
@@ -3588,6 +3612,9 @@ void HistoryItem::translationDone(
 		LanguageId to,
 		TextWithEntities result,
 		std::shared_ptr<const Iv::RichPage> page) {
+	if (_e2eProtected) {
+		return;
+	}
 	const auto set = [&](not_null<HistoryMessageTranslation*> translation) {
 		if (result.empty()) {
 			translation->failed = true;
@@ -4562,6 +4589,44 @@ void HistoryItem::setText(TextWithEntities textWithEntities) {
 	setTextValue((_media && _media->consumeMessageText(textWithEntities))
 		? TextWithEntities()
 		: std::move(textWithEntities));
+}
+
+void HistoryItem::setEncryptedText(QString text) {
+	_e2eProtected = true;
+	removeFromSharedMediaIndex();
+	if (_groupId) {
+		_history->owner().groups().unregisterMessage(this);
+		_groupId = MessageGroupId();
+	}
+	if (const auto reply = Get<HistoryMessageReply>()) {
+		reply->clearData(this);
+	}
+	clearDependencyMessage();
+	setReplyMarkup({}, true);
+	_media = nullptr;
+	UpdateComponents(0);
+	_effectId = 0;
+	_flags &= ~(MessageFlag::HasTextLinks
+		| MessageFlag::HasHiddenLinks
+		| MessageFlag::HasReplyInfo
+		| MessageFlag::HasReplyMarkup
+		| MessageFlag::HasSwitchInlineButton
+		| MessageFlag::HasPostAuthor
+		| MessageFlag::HasViews
+		| MessageFlag::GuestChatViaFrom
+		| MessageFlag::DisplayFromChecked
+		| MessageFlag::Legacy
+		| MessageFlag::InvertMedia
+		| MessageFlag::FromInlineBot
+		| MessageFlag::SpecialOnlyEmoji
+		| MessageFlag::OnlyEmojiAndSpacesSet
+		| MessageFlag::OnlyEmojiAndSpaces
+		| MessageFlag::CanBeSummarized
+		| MessageFlag::HasSummaryEntry);
+	applyTTL(0);
+	setTextValue({ std::move(text), {} });
+	addToSharedMediaIndex();
+	finishEdition(-1);
 }
 
 std::shared_ptr<const Iv::RichPage> HistoryItem::richPage() const {

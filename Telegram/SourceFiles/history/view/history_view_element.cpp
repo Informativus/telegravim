@@ -1654,6 +1654,7 @@ void Element::refreshMedia(Element *replacing) {
 			std::make_unique<CustomEmoji>(this, onlyCustomEmoji()));
 	} else if (isIsolatedEmoji()
 		&& Core::App().settings().largeEmoji()
+		&& !item->isE2eProtected()
 		&& !item->isSponsored()) {
 		const auto emoji = isolatedEmoji();
 		const auto emojiStickers = &history()->session().emojiStickersPack();

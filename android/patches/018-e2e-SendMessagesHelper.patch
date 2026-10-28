@@ -1,0 +1,51 @@
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/SendMessagesHelper.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/SendMessagesHelper.java
+@@ -2228,0 +2229 @@
++        if (org.telegram.messenger.televim.E2eChat.blockUnsupported(currentAccount, peer)) return 0;
+@@ -3042,0 +3044 @@
++        if (org.telegram.messenger.televim.E2eChat.blockEdit(currentAccount, messageObject)) return;
+@@ -3575,0 +3578 @@
++        if (org.telegram.messenger.televim.E2eChat.blockEdit(currentAccount, messageObject)) return 0;
+@@ -4425,0 +4429 @@
++        if (!org.telegram.messenger.televim.E2eChat.prepare(currentAccount, sendMessageParams)) return;
+@@ -5380 +5384 @@
+-                        reqSend.clear_draft = retryMessageObject == null;
++                        reqSend.clear_draft = retryMessageObject == null && !sendMessageParams.e2eControl;
+@@ -5438 +5442 @@
+-                        if (retryMessageObject == null) {
++                        if (retryMessageObject == null && !sendMessageParams.e2eControl) {
+@@ -5445 +5449 @@
+-                        reqSend.clear_draft = retryMessageObject == null;
++                        reqSend.clear_draft = retryMessageObject == null && !sendMessageParams.e2eControl;
+@@ -5501 +5505 @@
+-                        if (retryMessageObject == null) {
++                        if (retryMessageObject == null && !sendMessageParams.e2eControl) {
+@@ -5532 +5536 @@
+-                    if (retryMessageObject == null) {
++                    if (retryMessageObject == null && !sendMessageParams.e2eControl) {
+@@ -5540 +5544 @@
+-                reqSend.clear_draft = retryMessageObject == null;
++                reqSend.clear_draft = retryMessageObject == null && !sendMessageParams.e2eControl;
+@@ -5585 +5589 @@
+-                if (retryMessageObject == null) {
++                if (retryMessageObject == null && !sendMessageParams.e2eControl) {
+@@ -6459 +6463 @@
+-                    if (retryMessageObject == null) {
++                    if (retryMessageObject == null && !sendMessageParams.e2eControl) {
+@@ -6543 +6547 @@
+-                if (retryMessageObject == null) {
++                if (retryMessageObject == null && !sendMessageParams.e2eControl) {
+@@ -6625,0 +6630,4 @@
++        if (org.telegram.messenger.televim.E2eChat.blockUnsupported(currentAccount, message.peer)) {
++            message.markAsError();
++            return;
++        }
+@@ -7912,0 +7921 @@
++                                org.telegram.messenger.televim.E2eChat.live(currentAccount, newMsgObj);
+@@ -8288,0 +8298 @@
++                            org.telegram.messenger.televim.E2eChat.live(currentAccount, newMsgObj);
+@@ -8449,0 +8460 @@
++                                org.telegram.messenger.televim.E2eChat.live(currentAccount, newMsgObj);
+@@ -12271,0 +12283,2 @@
++        public boolean e2eControl;
++        public boolean e2ePrepared;

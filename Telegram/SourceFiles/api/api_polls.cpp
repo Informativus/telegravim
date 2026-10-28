@@ -223,6 +223,12 @@ void Polls::create(
 		SendAction action,
 		Fn<void()> done,
 		Fn<void(bool fileReferenceExpired)> fail) {
+	if (_session->api().preventUnencryptedSend(action.history->peer)) {
+		if (fail) {
+			fail(false);
+		}
+		return;
+	}
 	StripEphemeralReply(_session, action.replyTo);
 	_session->api().sendAction(action);
 
@@ -406,6 +412,12 @@ void Polls::addAnswer(
 		const PollMedia &media,
 		Fn<void()> done,
 		Fn<void(QString)> fail) {
+	if (_session->api().preventUnencryptedSend(_session->data().peer(itemId.peer))) {
+		if (fail) {
+			fail(u"Poll options are unavailable in E2E mode."_q);
+		}
+		return;
+	}
 	if (_pollAddAnswerRequestIds.contains(itemId)) {
 		return;
 	}

@@ -134,6 +134,11 @@ namespace Media::Stories {
 		const auto api = &story->session().api();
 		auto &histories = story->owner().histories();
 		for (const auto &thread : result) {
+			if (api->preventUnencryptedSend(thread->peer())) {
+				return;
+			}
+		}
+		for (const auto &thread : result) {
 			const auto action = Api::SendAction(thread, options);
 			if (!comment.text.isEmpty()) {
 				auto message = Api::MessageToSend(action);

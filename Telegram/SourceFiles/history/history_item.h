@@ -569,6 +569,10 @@ public:
 	[[nodiscard]] uint64 fullRichPageVersion() const;
 	[[nodiscard]] bool computeDropForwardedInfo() const;
 	void setText(TextWithEntities textWithEntities);
+	void setEncryptedText(QString text);
+	[[nodiscard]] bool isE2eProtected() const {
+		return _e2eProtected;
+	}
 	void applyLocalRichPage(std::shared_ptr<const Iv::RichPage> page);
 	void applyLocalRichPage(
 		std::shared_ptr<const Iv::RichPage> page,
@@ -816,6 +820,7 @@ private:
 	const not_null<PeerData*> _from;
 	mutable PeerData *_displayFrom = nullptr;
 	mutable MessageFlags _flags = 0;
+	bool _e2eProtected = false;
 
 	TextWithEntities _text;
 
