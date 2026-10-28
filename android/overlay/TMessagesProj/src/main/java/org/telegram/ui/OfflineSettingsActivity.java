@@ -771,6 +771,9 @@ public final class OfflineSettingsActivity extends Activity {
     }
 
     private boolean discardPlan() {
+        if (apply != null) {
+            apply.setVisibility(View.GONE);
+        }
         OfflineSettingsStore.Plan previous = plan;
         plan = null;
         boolean discarded = previous == null || previous.discard();
