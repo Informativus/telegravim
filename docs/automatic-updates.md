@@ -72,6 +72,18 @@ installer confirmation screens remain mandatory where the OS requires them.
    must match exactly and are never replaced. A newer catalog cannot be replaced
    by a release with lower or reused native versions.
 
+If publication tooling needs a repair after client builds have been frozen,
+merge that repair through the normal task and release PRs before dispatching
+the publisher from the reviewed `main` revision. Keep the original client tag
+and all four build run IDs. Both the workflow and script require the tag to be
+an ancestor of the publisher and the publisher to be an ancestor of `main`.
+The complete tree difference is restricted to `Telegram/build/update_release.py`,
+`.github/workflows/updates.yml` and this document. Client source, package workflows,
+versions, native Packer and trust files must remain identical. The executing
+workflow and checkout must have the same commit, with a clean tracked tree.
+Draft releases are resolved to a database ID, which remains fixed through upload
+verification; the tag and stable-release identity are checked again before publication.
+
 Pages must use the GitHub Actions build type. The `network-review` environment
 holds `TELEVIM_UPDATE_SIGNING_KEY` (PEM ES256 private key). It must never appear in
 source or artifacts. The root private key remains offline and is not a CI secret.

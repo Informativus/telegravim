@@ -205,11 +205,13 @@ def release(args):
         raise ValueError('Only stable release tags are supported')
     source = run('git', 'rev-parse', args.tag + '^{commit}', cwd=ROOT, text=True).strip()
     current = run('git', 'rev-parse', 'HEAD', cwd=ROOT, text=True).strip()
+    run('git', 'diff', '--exit-code', 'HEAD', cwd=ROOT)
     run('git', 'merge-base', '--is-ancestor', source, current, cwd=ROOT)
     run('git', 'merge-base', '--is-ancestor', current, 'origin/main', cwd=ROOT)
-    changed = set(run('git', 'diff', '--name-only', '-z', source, current,
+    changed = set(run('git', 'diff', '--no-renames', '--name-only', '-z', source, current,
                       cwd=ROOT).decode().rstrip('\0').split('\0')) - {''}
-    if changed - {'Telegram/build/update_release.py', '.github/workflows/updates.yml'}:
+    if changed - {'Telegram/build/update_release.py', '.github/workflows/updates.yml',
+                  'docs/automatic-updates.md'}:
         raise ValueError('Publication tooling differs from the release outside allowed publisher files')
     release_id = run('gh', 'release', 'view', args.tag, '--repo', REPOSITORY,
                      '--json', 'databaseId', '--jq', '.databaseId', text=True).strip()
@@ -217,7 +219,8 @@ def release(args):
         raise ValueError('Invalid release database id')
     release_path = 'releases/' + release_id
     release_info = api(release_path)
-    if release_info['tag_name'] != args.tag or release_info['prerelease']:
+    if (release_info['id'] != int(release_id) or release_info['tag_name'] != args.tag
+            or release_info['prerelease']):
         raise ValueError('Expected matching stable release metadata')
     existing_assets = {asset['name']: asset for asset in release_info['assets']}
     output = args.output.resolve()
@@ -293,7 +296,11 @@ def release(args):
         for path in sorted(assets.iterdir()):
             if path.name not in existing:
                 run('gh', 'release', 'upload', args.tag, path, '--repo', REPOSITORY)
-    verified = {asset['name']: asset for asset in api(release_path)['assets']}
+    verified_info = api(release_path)
+    if (verified_info['id'] != int(release_id) or verified_info['tag_name'] != args.tag
+            or verified_info['prerelease']):
+        raise ValueError('Release identity changed during publication')
+    verified = {asset['name']: asset for asset in verified_info['assets']}
     for path in assets.iterdir():
         asset = verified.get(path.name)
         if not asset or asset.get('digest') != 'sha256:' + sha256(path) or asset['size'] != path.stat().st_size:
