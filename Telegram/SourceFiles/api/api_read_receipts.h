@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <tuple>
 
 class HistoryItem;
+class PeerData;
 
 namespace Data {
 class Thread;
@@ -26,11 +27,22 @@ namespace Api {
 
 class ReadReceipts final {
 public:
+	enum class Scope {
+		PrivateChats = 1,
+		Groups = 2,
+		Channels = 4,
+	};
+
 	explicit ReadReceipts(not_null<Main::Session*> session);
 
 	[[nodiscard]] bool enabled() const;
+	[[nodiscard]] bool enabled(not_null<PeerData*> peer) const;
+	[[nodiscard]] bool enabled(PeerId peer) const;
 	[[nodiscard]] rpl::producer<bool> enabledValue() const;
 	void setEnabled(bool enabled);
+	[[nodiscard]] bool scopeEnabled(Scope scope) const;
+	[[nodiscard]] rpl::producer<bool> scopeEnabledValue(Scope scope) const;
+	void setScopeEnabled(Scope scope, bool enabled);
 	[[nodiscard]] bool allowed(
 		PeerId peer,
 		MsgId till,
@@ -43,12 +55,15 @@ public:
 private:
 	using Key = std::tuple<PeerId, MsgId, PeerId>;
 	[[nodiscard]] static Key key(not_null<HistoryItem*> item);
+	void invalidatePending();
 	void markRead(Key key, MsgId till);
 	void acknowledge(Key key, MsgId till);
 
 	const not_null<Main::Session*> _session;
 	mutable std::optional<bool> _enabled;
+	mutable std::optional<int> _scopes;
 	rpl::event_stream<bool> _changes;
+	rpl::event_stream<> _scopeChanges;
 	base::flat_map<Key, MsgId> _limits;
 	base::flat_set<FullMsgId> _contents;
 	uint64 _generation = 0;

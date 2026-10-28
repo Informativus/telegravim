@@ -3059,7 +3059,9 @@ bool ListWidget::markingContentsRead() const {
 bool ListWidget::markingMessagesRead() const {
 	return markingContentsRead()
 		&& !session().supportMode()
-		&& !session().api().readReceipts().enabled();
+		&& !_items.empty()
+		&& !session().api().readReceipts().enabled(
+			_items.back()->data()->history()->peer);
 }
 
 void ListWidget::showFinished() {

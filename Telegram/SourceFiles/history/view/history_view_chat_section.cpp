@@ -4588,7 +4588,7 @@ void ChatWidget::subscribeToSublist() {
 
 	// Must be done before unreadCountUpdated(), or we auto-close.
 	if (_sublist->unreadMark()
-		&& !session().api().readReceipts().enabled()) {
+		&& !session().api().readReceipts().enabled(_history->peer)) {
 		_sublist->owner().histories().changeSublistUnreadMark(
 			_sublist,
 			false);
@@ -4632,7 +4632,7 @@ void ChatWidget::subscribeToSublist() {
 void ChatWidget::unreadCountUpdated() {
 	if (mode() == Mode::History) {
 		const auto migrated = _history->migrateFrom();
-		if (!session().api().readReceipts().enabled()
+		if (!session().api().readReceipts().enabled(_history->peer)
 			&& (_history->unreadMark()
 				|| (migrated && migrated->unreadMark()))) {
 			crl::on_main(this, [=] {
@@ -4649,7 +4649,7 @@ void ChatWidget::unreadCountUpdated() {
 			: _history->chatListBadgesState().unreadCounter);
 	} else if (_sublist
 		&& _sublist->unreadMark()
-		&& !session().api().readReceipts().enabled()) {
+		&& !session().api().readReceipts().enabled(_history->peer)) {
 		crl::on_main(this, [=] {
 			const auto guard = base::make_weak(this);
 			controller()->showPeerHistory(_sublist->owningHistory());
@@ -4715,7 +4715,7 @@ void ChatWidget::restoreState(not_null<ChatMemento*> memento) {
 	if (mode() == Mode::History) {
 		// Must be done before unreadCountUpdated(), or we auto-close.
 		if (_history->unreadMark()
-			&& !session().api().readReceipts().enabled()) {
+			&& !session().api().readReceipts().enabled(_history->peer)) {
 			session().data().histories().changeDialogUnreadMark(
 				_history,
 				false);
@@ -4723,7 +4723,7 @@ void ChatWidget::restoreState(not_null<ChatMemento*> memento) {
 		const auto migrated = _history->migrateFrom();
 		if (migrated
 			&& migrated->unreadMark()
-			&& !session().api().readReceipts().enabled()) {
+			&& !session().api().readReceipts().enabled(migrated->peer)) {
 			session().data().histories().changeDialogUnreadMark(
 				migrated,
 				false);

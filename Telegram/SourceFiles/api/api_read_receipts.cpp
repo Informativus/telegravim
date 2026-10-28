@@ -23,6 +23,8 @@ namespace Api {
 namespace {
 
 constexpr auto kPreference = "telegravim-read-after-send";
+constexpr auto kScopesPreference = "telegravim-read-after-send-scopes";
+constexpr auto kAllScopes = 7;
 
 } // namespace
 
@@ -37,6 +39,19 @@ bool ReadReceipts::enabled() const {
 	return *_enabled;
 }
 
+bool ReadReceipts::enabled(not_null<PeerData*> peer) const {
+	const auto scope = peer->isUser()
+		? Scope::PrivateChats
+		: peer->isBroadcast()
+		? Scope::Channels
+		: Scope::Groups;
+	return enabled() && scopeEnabled(scope);
+}
+
+bool ReadReceipts::enabled(PeerId peer) const {
+	return enabled(_session->data().peer(peer));
+}
+
 rpl::producer<bool> ReadReceipts::enabledValue() const {
 	return rpl::single(enabled()) | rpl::then(_changes.events());
 }
@@ -46,12 +61,47 @@ void ReadReceipts::setEnabled(bool enabled) {
 		return;
 	}
 	_enabled = enabled;
+	invalidatePending();
+	_session->local().writePref<bool>(kPreference, enabled);
+	_changes.fire_copy(enabled);
+}
+
+bool ReadReceipts::scopeEnabled(Scope scope) const {
+	if (!_scopes.has_value()) {
+		const auto stored = _session->local().readPref<QByteArray>(
+			kScopesPreference,
+			QByteArray::number(kAllScopes));
+		auto valid = false;
+		const auto scopes = stored.toInt(&valid);
+		_scopes = (valid && scopes >= 0 && scopes <= kAllScopes)
+			? scopes
+			: kAllScopes;
+	}
+	return (*_scopes & int(scope)) != 0;
+}
+
+rpl::producer<bool> ReadReceipts::scopeEnabledValue(Scope scope) const {
+	return rpl::single(scopeEnabled(scope)) | rpl::then(
+		_scopeChanges.events() | rpl::map([=] { return scopeEnabled(scope); }));
+}
+
+void ReadReceipts::setScopeEnabled(Scope scope, bool enabled) {
+	if (scopeEnabled(scope) == enabled) {
+		return;
+	}
+	_scopes = enabled ? (*_scopes | int(scope)) : (*_scopes & ~int(scope));
+	invalidatePending();
+	_session->local().writePref<QByteArray>(
+		kScopesPreference,
+		QByteArray::number(*_scopes));
+	_scopeChanges.fire({});
+}
+
+void ReadReceipts::invalidatePending() {
 	++_generation;
 	_limits.clear();
 	_contents.clear();
 	_releasingContents.clear();
-	_session->local().writePref<bool>(kPreference, enabled);
-	_changes.fire_copy(enabled);
 }
 
 bool ReadReceipts::allowed(
@@ -59,7 +109,7 @@ bool ReadReceipts::allowed(
 		MsgId till,
 		MsgId root,
 		PeerId sublist) const {
-	if (!enabled()) {
+	if (!enabled(peer)) {
 		return true;
 	}
 	const auto i = _limits.find(Key(peer, root, sublist));
@@ -69,7 +119,8 @@ bool ReadReceipts::allowed(
 }
 
 bool ReadReceipts::deferContents(not_null<HistoryItem*> item) {
-	if (!enabled() || _releasingContents.erase(item->fullId())) {
+	if (!enabled(item->history()->peer)
+		|| _releasingContents.erase(item->fullId())) {
 		return false;
 	}
 	if (item->isRegular()
@@ -94,13 +145,13 @@ ReadReceipts::Key ReadReceipts::key(not_null<HistoryItem*> item) {
 }
 
 void ReadReceipts::sent(not_null<HistoryItem*> local, MsgId serverId) {
-	if (!enabled() || !IsServerMsgId(serverId)) {
+	if (!enabled(local->history()->peer) || !IsServerMsgId(serverId)) {
 		return;
 	}
 	const auto conversation = key(local);
 	const auto generation = _generation;
 	crl::on_main(_session, [=] {
-		if (generation != _generation || !enabled()) {
+		if (generation != _generation || !enabled(std::get<0>(conversation))) {
 			return;
 		}
 		auto &limit = _limits[conversation];
@@ -123,7 +174,7 @@ void ReadReceipts::markRead(not_null<Data::Thread*> thread) {
 			sublist->readTillEnd();
 		}
 	} else if (thread->asHistory()) {
-		if (!enabled()) {
+		if (!enabled(history->peer)) {
 			history->owner().histories().readInbox(history);
 		} else if (history->lastServerMessageKnown()) {
 			if (const auto last = history->lastServerMessage()) {
@@ -143,7 +194,7 @@ void ReadReceipts::markRead(Key conversation, MsgId till) {
 	if (!IsServerMsgId(till)) {
 		return;
 	}
-	if (enabled()) {
+	if (enabled(std::get<0>(conversation))) {
 		auto &limit = _limits[conversation];
 		limit = std::max(limit, till);
 	}

@@ -3900,14 +3900,14 @@ void HistoryWidget::showHistory(
 
 		// Must be done before unreadCountUpdated(), or we auto-close.
 		if (_history->unreadMark()
-			&& !session().api().readReceipts().enabled()) {
+			&& !session().api().readReceipts().enabled(_history->peer)) {
 			session().data().histories().changeDialogUnreadMark(
 				_history,
 				false);
 		}
 		if (_migrated
 			&& _migrated->unreadMark()
-			&& !session().api().readReceipts().enabled()) {
+			&& !session().api().readReceipts().enabled(_migrated->peer)) {
 			session().data().histories().changeDialogUnreadMark(
 				_migrated,
 				false);
@@ -4952,7 +4952,7 @@ void HistoryWidget::newItemAdded(not_null<HistoryItem*> item) {
 		return;
 	}
 	if (item->showNotification()) {
-		if (!session().api().readReceipts().enabled()) {
+		if (!session().api().readReceipts().enabled(_history->peer)) {
 			destroyUnreadBar();
 		}
 		if (markingMessagesRead()) {
@@ -5039,7 +5039,7 @@ bool HistoryWidget::handleDrawToReplyRequest(
 }
 
 void HistoryWidget::unreadCountUpdated() {
-	if (!session().api().readReceipts().enabled()
+	if (!session().api().readReceipts().enabled(_history->peer)
 		&& (_history->unreadMark()
 			|| (_migrated && _migrated->unreadMark()))) {
 		crl::on_main(this, [=, history = _history] {
@@ -5264,7 +5264,7 @@ void HistoryWidget::windowShown() {
 bool HistoryWidget::markingMessagesRead() const {
 	return markingContentsRead()
 		&& !session().supportMode()
-		&& !session().api().readReceipts().enabled();
+		&& !session().api().readReceipts().enabled(_history->peer);
 }
 
 bool HistoryWidget::markingContentsRead() const {
@@ -6742,6 +6742,8 @@ void HistoryWidget::cornerButtonsShowAtPosition(
 		Data::MessagePosition position) {
 	if (!_peer) {
 		return;
+	} else if (position == Data::MaxMessagePosition) {
+		showHistory(_peer->id, ShowAtTheEndMsgId);
 	} else if (position == Data::UnreadMessagePosition) {
 		DEBUG_LOG(("JumpToEnd(%1, %2, %3): Show at unread requested."
 			).arg(_history->peer->name()
@@ -9113,7 +9115,9 @@ void HistoryWidget::updateHistoryGeometry(
 		_historyInited = true;
 		_scrollToAnimation.stop();
 	} else if (wasAtBottom && !loadedDown && !_history->unreadBar()) {
-		newScrollTop = countAutomaticScrollTop();
+		newScrollTop = session().api().readReceipts().enabled(_history->peer)
+			? ScrollMax
+			: countAutomaticScrollTop();
 	} else {
 		newScrollTop = std::min(
 			_list->historyScrollTop(),
@@ -9174,7 +9178,9 @@ void HistoryWidget::revealItemsCallback() {
 		_list->changeItemsRevealHeight(_itemsRevealHeight);
 
 		const auto newScrollTop = (wasAtBottom && !_history->unreadBar())
-			? countAutomaticScrollTop()
+			? session().api().readReceipts().enabled(_history->peer)
+				? ScrollMax
+				: countAutomaticScrollTop()
 			: _list->historyScrollTop();
 		const auto toY = std::clamp(newScrollTop, 0, _scroll->scrollTopMax());
 		synteticScrollToY(toY);
