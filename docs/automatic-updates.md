@@ -18,6 +18,14 @@ run from the existing normal application lifecycle after initialization. Android
 notifications appear in the application; this does not add background push
 notifications while the application is closed.
 
+Desktop schedules automatic checks every 8–16 hours while running, subject to
+the native automatic-update preference. Android checks through the native
+application lifecycle, with an eight-hour interval after a successful check and
+a one-minute backoff after an unsuccessful attempt. A manual check bypasses these
+intervals. Publishing a catalog therefore does not deliver an immediate push
+notification to every device. Android downloads only after the user selects the
+native download action; installation always passes through the system installer.
+
 The resource contains base64-encoded `payload` and `signature` fields. The
 signature is ES256 with a 64-byte raw `r || s` representation, over the exact bytes
 `televim-catalog-v1\n` followed by the decoded payload. The catalog contains its
@@ -45,6 +53,49 @@ certificate. APK files stay in the application's private files directory until
 shared read-only with the system installer. Downloaded packages are verified
 again after restart and immediately before installation. Android permission and
 installer confirmation screens remain mandatory where the OS requires them.
+
+## Catalog contract and read-only verification
+
+`current6` is a UTF-8 JSON object with `payload` and `signature` strings, both
+standard base64. Signature verification uses the exact decoded payload bytes;
+parsing and reserializing JSON before verification is invalid. The authenticated
+payload has these fields:
+
+| Field | Meaning |
+| --- | --- |
+| `format` | Integer `1` |
+| `issued`, `expires` | Unix seconds; expiry follows issue time by at most 366 days; issue time allows five minutes of clock skew |
+| `release`, `source_sha` | Stable release tag and its exact source commit |
+| `desktop.armac.stable` | macOS ARM64 native package |
+| `desktop.win64.stable` | Windows x64 native package |
+| `desktop.linux.stable` | Linux x86-64 native package |
+| `android.stable` | Universal standalone Android APK |
+
+Every Desktop entry contains `released` (the increasing native version), `link`,
+`size` and lowercase hexadecimal `sha256`. The Android entry contains `package`,
+`version`, `version_code`, `min_sdk`, `url`, `size`, `sha256` and `changelog`.
+The supported release publisher requires all four targets at one source commit.
+Package URLs identify immutable assets of that same release in this repository.
+
+From the repository root, inspect the deployed feed without signing or changing
+a release:
+
+```sh
+python3 Telegram/build/update_release.py verify
+```
+
+This command needs Python 3, OpenSSL and GitHub CLI access to the public repository.
+It reads the public catalog and GitHub release metadata, verifies the catalog
+signature, validity window, platform entries and source commit, then compares each
+announced package's URL, size and SHA-256 with GitHub's published asset metadata.
+It uses the tracked public verification key; it does not request a private key,
+dispatch a workflow, publish a release or change Pages. Invalid or unavailable
+catalogs produce a nonzero exit status.
+
+The result proves catalog authenticity and published asset metadata at the check
+time. It does not download the packages or prove native notification, package
+verification on a device, installation, session preservation or product behavior.
+Those observations belong in the release evidence separately.
 
 ## Release procedure
 
