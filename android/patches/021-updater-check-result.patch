@@ -1,6 +1,6 @@
 --- a/TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java
 +++ b/TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java
-@@ -6083,9 +6083,19 @@
+@@ -6083,9 +6083,21 @@
              final boolean first = firstAppUpdateCheck;
              firstAppUpdateCheck = false;
              ApplicationLoader.applicationLoaderInstance.checkUpdate(force, () -> {
@@ -10,6 +10,8 @@
                  final BetaUpdate pendingUpdate = ApplicationLoader.applicationLoaderInstance.getUpdate();
                  if (progress != null) {
                      progress.end();
++                }
++                if (force || progress != null) {
 +                    if (org.telegram.messenger.televim.UpdateController.getInstance().hasError()) {
 +                        BaseFragment fragment = getLastFragment();
 +                        if (fragment != null) {
