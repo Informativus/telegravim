@@ -5,7 +5,8 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.content.res.TypedArray;
+import android.graphics.Color;
+import android.content.res.Configuration;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -15,20 +16,18 @@ import android.text.InputFilter;
 import android.text.InputType;
 import android.text.Editable;
 import android.text.TextWatcher;
-import android.util.TypedValue;
-import android.view.MenuItem;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
-import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.ImageView;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import android.widget.Toolbar;
 
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.R;
@@ -53,9 +52,9 @@ public final class OfflineSettingsActivity extends Activity {
     private EditText link;
     private EditText password;
     private TextView status;
-    private Button inspect;
-    private Button apply;
-    private Button scan;
+    private TextView inspect;
+    private TextView apply;
+    private TextView scan;
     private byte[] source;
     private OfflineSettingsStore.Plan plan;
     private int operation;
@@ -68,10 +67,17 @@ public final class OfflineSettingsActivity extends Activity {
     private final Runnable retryTick = this::updateRetry;
     private FrameLayout body;
     private View form;
+    private LinearLayout root;
+    private FrameLayout toolbar;
+    private ImageView back;
+    private OfflineSettingsIntro intro;
+    private LinearLayout entry;
+    private TextView fileHelp;
+    private boolean entryVisible;
     private OfflineSettingsQrView scanner;
     private EditText passcode;
     private TextView lockStatus;
-    private Button unlock;
+    private TextView unlock;
     private boolean resumed;
     private boolean authorized;
     private boolean interrupted;
@@ -86,15 +92,16 @@ public final class OfflineSettingsActivity extends Activity {
         super.onCreate(null);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
         SharedConfig.loadConfig();
-        LinearLayout root = new LinearLayout(this);
+        root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setSaveFromParentEnabled(false);
-        root.setBackgroundColor(color(android.R.attr.colorBackground));
-        Toolbar toolbar = new Toolbar(this);
-        toolbar.setMinimumHeight(getResources().getDimensionPixelSize(R.dimen.televim_toolbar_height));
-        root.addView(toolbar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        setActionBar(toolbar);
-        getActionBar().setDisplayHomeAsUpEnabled(true);
+        toolbar = new FrameLayout(this);
+        back = OfflineSettingsAppearance.back(this, this::onBackPressed);
+        int backSize = getResources().getDimensionPixelSize(R.dimen.televim_back_size);
+        toolbar.addView(back, new FrameLayout.LayoutParams(backSize, backSize, Gravity.START | Gravity.CENTER_VERTICAL));
+        root.addView(toolbar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                getResources().getDimensionPixelSize(R.dimen.televim_toolbar_height)));
+        updateHeader();
         body = new FrameLayout(this);
         root.addView(body, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
         if (Build.VERSION.SDK_INT >= 30) {
@@ -126,6 +133,7 @@ public final class OfflineSettingsActivity extends Activity {
 
     private void receive(Intent intent) {
         incoming = null;
+        qrSource = false;
         invalidInput = false;
         try {
             if (intent != null && OfflineSettingsInput.matches(intent)) {
@@ -214,10 +222,13 @@ public final class OfflineSettingsActivity extends Activity {
             body.removeAllViews();
         }
         form = null;
+        intro = null;
+        entry = null;
+        fileHelp = null;
     }
 
     private void showGate() {
-        getActionBar().setTitle(R.string.TelevimImportTitle);
+        updateHeader();
         body.removeAllViews();
         if (SharedConfig.passcodeHash.isEmpty()) {
             authorized = true;
@@ -233,6 +244,10 @@ public final class OfflineSettingsActivity extends Activity {
         gate.setOrientation(LinearLayout.VERTICAL);
         int spacing = getResources().getDimensionPixelSize(R.dimen.televim_spacing);
         gate.setPadding(spacing, spacing, spacing, spacing);
+        TextView title = OfflineSettingsAppearance.text(this, text(R.string.TelevimImportUnlock),
+                R.dimen.televim_title_size, R.color.televim_primary_text);
+        title.setGravity(Gravity.CENTER);
+        gate.addView(title);
         gate.addView(label(this, text(R.string.TelevimImportUnlockAbout)));
         passcode = field(this, R.string.TelevimImportAppPasscode, true);
         if (SharedConfig.passcodeType == SharedConfig.PASSCODE_TYPE_PIN) {
@@ -309,6 +324,7 @@ public final class OfflineSettingsActivity extends Activity {
         form = createContent(this);
         body.addView(form);
         if (OfflineSettingsStore.isUncertain()) {
+            showEntry(false);
             status.setText(text(R.string.TelevimImportCleanupFailed));
         } else if (interrupted) {
             status.setText(text(R.string.TelevimImportInterrupted));
@@ -330,10 +346,13 @@ public final class OfflineSettingsActivity extends Activity {
             return;
         }
         scanRequested = false;
+        apply.setVisibility(View.GONE);
         if (!discardPlan()) {
+            showEntry(false);
             status.setText(text(R.string.TelevimImportCleanupFailed));
             return;
         }
+        status.setText("");
         int token = ++operation;
         scanner = new OfflineSettingsQrView(this, value -> {
             if (operation != token || scanner == null || !ensureAccess()) {
@@ -342,20 +361,22 @@ public final class OfflineSettingsActivity extends Activity {
             hideScanner();
             incoming = null;
             apply.setVisibility(View.GONE);
-            qrSource = true;
             link.setEnabled(true);
             link.setText(value);
+            qrSource = true;
+            showEntry(false);
             status.setText(text(R.string.TelevimImportQrRead));
         }, () -> {
             if (operation != token || scanner == null || !ensureAccess()) {
                 return;
             }
             hideScanner();
+            showEntry(false);
             status.setText(text(R.string.TelevimImportCameraUnavailable));
         });
         body.removeAllViews();
         body.addView(scanner);
-        getActionBar().setTitle(R.string.TelevimImportScan);
+        updateHeader();
         scanner.resume();
     }
 
@@ -370,7 +391,7 @@ public final class OfflineSettingsActivity extends Activity {
         closeScanner();
         body.removeAllViews();
         body.addView(form);
-        getActionBar().setTitle(R.string.TelevimImportTitle);
+        updateHeader();
     }
 
     @Override
@@ -393,6 +414,7 @@ public final class OfflineSettingsActivity extends Activity {
         }
         if (cameraError) {
             cameraError = false;
+            showEntry(false);
             status.setText(text(R.string.TelevimImportCameraUnavailable));
         } else if (scanRequested) {
             showScanner();
@@ -404,39 +426,74 @@ public final class OfflineSettingsActivity extends Activity {
         if (scanner != null && ensureAccess()) {
             hideScanner();
             status.setText(text(R.string.TelevimImportCancelled));
+        } else if (entryVisible && hasAccess()) {
+            cancelTransfer();
         } else {
             super.onBackPressed();
         }
     }
 
-    @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        if (item.getItemId() == android.R.id.home) {
-            onBackPressed();
-            return true;
-        }
-        return super.onOptionsItemSelected(item);
+    private void updateHeader() {
+        boolean scanning = scanner != null;
+        int background = scanning ? Color.BLACK : getColor(R.color.televim_background);
+        root.setBackgroundColor(background);
+        toolbar.setBackgroundColor(background);
+        OfflineSettingsAppearance.setBackColor(back, scanning ? Color.WHITE : getColor(R.color.televim_primary_text));
+        boolean light = !scanning && (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
+                != Configuration.UI_MODE_NIGHT_YES;
+        int appearance = light ? View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR : 0;
+        getWindow().getDecorView().setSystemUiVisibility(appearance);
+        getWindow().setStatusBarColor(background);
+        getWindow().setNavigationBarColor(background);
     }
 
-    private int color(int attribute) {
-        TypedArray values = obtainStyledAttributes(new int[]{attribute});
-        try {
-            return values.getColor(0, 0);
-        } finally {
-            values.recycle();
+    private void showEntry(boolean explainFiles) {
+        entryVisible = true;
+        intro.setVisibility(View.GONE);
+        entry.setVisibility(View.VISIBLE);
+        fileHelp.setVisibility(explainFiles ? View.VISIBLE : View.GONE);
+    }
+
+    private void cancelTransfer() {
+        if (!ensureAccess()) {
+            return;
+        }
+        cancelWork();
+        busy = false;
+        boolean discarded = discardPlan();
+        incoming = null;
+        qrSource = false;
+        password.setText("");
+        link.setText("");
+        apply.setVisibility(View.GONE);
+        setBusy(false);
+        status.setText(text(discarded ? R.string.TelevimImportCancelled : R.string.TelevimImportCleanupFailed));
+        if (discarded) {
+            entryVisible = false;
+            entry.setVisibility(View.GONE);
+            intro.setVisibility(View.VISIBLE);
         }
     }
 
     private View createContent(Context context) {
         ScrollView scroll = new ScrollView(context);
         scroll.setFillViewport(true);
-        scroll.setBackgroundColor(color(android.R.attr.colorBackground));
+        scroll.setBackgroundColor(getColor(R.color.televim_background));
         scroll.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
+        FrameLayout pages = new FrameLayout(context);
+        scroll.addView(pages, new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        intro = new OfflineSettingsIntro(context, this::showScanner, () -> showEntry(false), () -> showEntry(true));
+        pages.addView(intro, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         LinearLayout content = new LinearLayout(context);
+        entry = content;
         content.setOrientation(LinearLayout.VERTICAL);
-        int spacing = context.getResources().getDimensionPixelSize(R.dimen.televim_spacing);
+        int spacing = context.getResources().getDimensionPixelSize(R.dimen.televim_page_inset);
         content.setPadding(spacing, spacing, spacing, spacing);
-        scroll.addView(content, new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        pages.addView(content, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        TextView title = OfflineSettingsAppearance.text(context, text(R.string.TelevimImportTitle),
+                R.dimen.televim_title_size, R.color.televim_primary_text);
+        title.setGravity(Gravity.CENTER);
+        content.addView(title);
         content.addView(label(context, text(R.string.TelevimImportAbout)));
         link = field(context, R.string.TelevimImportLink, false);
         link.setFilters(new InputFilter[]{new InputFilter.LengthFilter(OfflineTransfer.MAX_LINK + 1)});
@@ -444,29 +501,22 @@ public final class OfflineSettingsActivity extends Activity {
         password = field(context, R.string.TelevimImportPassword, true);
         password.setFilters(new InputFilter[]{new InputFilter.LengthFilter(1025)});
         content.addView(password);
-        scan = button(context, R.string.TelevimImportScan, this::showScanner);
+        scan = OfflineSettingsAppearance.button(context, R.string.TelevimImportScan, this::showScanner, false);
         content.addView(scan);
         inspect = button(context, R.string.TelevimImportPreview, this::inspect);
         content.addView(inspect);
-        status = label(context, text(invalidInput ? R.string.TelevimImportInvalid : R.string.TelevimImportFiles));
+        status = label(context, invalidInput ? text(R.string.TelevimImportInvalid) : "");
         content.addView(status);
         apply = button(context, R.string.TelevimImportApply, this::apply);
         apply.setVisibility(View.GONE);
         content.addView(apply);
-        content.addView(button(context, android.R.string.cancel, () -> {
-            if (!ensureAccess()) {
-                return;
-            }
-            cancelWork();
-            busy = false;
-            boolean discarded = discardPlan();
-            incoming = null;
-            password.setText("");
-            link.setText("");
-            apply.setVisibility(View.GONE);
-            setBusy(false);
-            status.setText(text(discarded ? R.string.TelevimImportCancelled : R.string.TelevimImportCleanupFailed));
-        }));
+        content.addView(OfflineSettingsAppearance.button(context, android.R.string.cancel, this::cancelTransfer, false));
+        fileHelp = label(context, text(R.string.TelevimImportFiles));
+        fileHelp.setVisibility(View.GONE);
+        content.addView(OfflineSettingsAppearance.button(context, R.string.TelevimImportFromFile, () -> {
+            fileHelp.setVisibility(fileHelp.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
+        }, false));
+        content.addView(fileHelp);
         if (incoming != null && incoming.link != null) {
             if (incoming.link.length() <= OfflineTransfer.MAX_LINK) {
                 link.setText(incoming.link);
@@ -479,13 +529,25 @@ public final class OfflineSettingsActivity extends Activity {
             link.setEnabled(false);
             status.setText(text(R.string.TelevimImportFileReady));
         }
-        TextWatcher changed = new TextWatcher() {
+        link.addTextChangedListener(inputChanged(true));
+        password.addTextChangedListener(inputChanged(false));
+        entryVisible = entryVisible || incoming != null || invalidInput || interrupted;
+        intro.setVisibility(entryVisible ? View.GONE : View.VISIBLE);
+        content.setVisibility(entryVisible ? View.VISIBLE : View.GONE);
+        return scroll;
+    }
+
+    private TextWatcher inputChanged(boolean linkChanged) {
+        return new TextWatcher() {
             @Override
             public void beforeTextChanged(CharSequence value, int start, int count, int after) {
             }
 
             @Override
             public void onTextChanged(CharSequence value, int start, int before, int count) {
+                if (linkChanged) {
+                    qrSource = false;
+                }
                 if (plan != null) {
                     if (!discardPlan()) {
                         status.setText(text(R.string.TelevimImportCleanupFailed));
@@ -498,16 +560,12 @@ public final class OfflineSettingsActivity extends Activity {
             public void afterTextChanged(Editable value) {
             }
         };
-        link.addTextChangedListener(changed);
-        password.addTextChangedListener(changed);
-        return scroll;
     }
 
     private EditText field(Context context, int hint, boolean secret) {
         EditText field = new EditText(context);
         field.setHint(text(hint));
-        field.setTextColor(color(android.R.attr.textColorPrimary));
-        field.setHintTextColor(color(android.R.attr.textColorHint));
+        OfflineSettingsAppearance.styleField(field);
         field.setInputType(InputType.TYPE_CLASS_TEXT | (secret ? InputType.TYPE_TEXT_VARIATION_PASSWORD : InputType.TYPE_TEXT_VARIATION_URI));
         field.setSingleLine(true);
         field.setSaveEnabled(false);
@@ -517,21 +575,15 @@ public final class OfflineSettingsActivity extends Activity {
     }
 
     private TextView label(Context context, String value) {
-        TextView label = new TextView(context);
-        label.setText(value);
-        label.setTextColor(color(android.R.attr.textColorPrimary));
-        label.setTextSize(TypedValue.COMPLEX_UNIT_PX, context.getResources().getDimension(R.dimen.televim_text_size));
+        TextView label = OfflineSettingsAppearance.text(context, value,
+                R.dimen.televim_body_size, R.color.televim_secondary_text);
         int spacing = context.getResources().getDimensionPixelSize(R.dimen.televim_spacing);
         label.setPadding(0, spacing, 0, spacing);
         return label;
     }
 
-    private Button button(Context context, int title, Runnable clicked) {
-        Button button = new Button(context);
-        button.setText(text(title));
-        button.setAllCaps(false);
-        button.setOnClickListener(view -> clicked.run());
-        return button;
+    private TextView button(Context context, int title, Runnable clicked) {
+        return OfflineSettingsAppearance.button(context, title, clicked, true);
     }
 
     private void inspect() {
@@ -647,12 +699,14 @@ public final class OfflineSettingsActivity extends Activity {
         if (plan.transfer.preferences.isEmpty()) {
             preview.append("\n\n").append(text(R.string.TelevimImportNoSupported));
         }
-        preview.append("\n\n").append(getString(R.string.TelevimImportRetained,
-                plan.transfer.unsupportedModules, plan.transfer.assets, plan.transfer.accounts.size(), plan.transfer.original.length));
-        for (String identity : plan.transfer.accounts.values()) {
-            preview.append("\n").append(identity);
+        if (plan.transfer.unsupportedModules != 0 || plan.transfer.assets != 0 || !plan.transfer.accounts.isEmpty()) {
+            preview.append("\n\n").append(getString(R.string.TelevimImportRetained,
+                    plan.transfer.unsupportedModules, plan.transfer.assets, plan.transfer.accounts.size(), plan.transfer.original.length));
+            for (String identity : plan.transfer.accounts.values()) {
+                preview.append("\n").append(identity);
+            }
+            preview.append("\n\n").append(text(R.string.TelevimImportInactive));
         }
-        preview.append("\n\n").append(text(R.string.TelevimImportInactive));
         if (plan.transfer.rawJson) {
             preview.append("\n\n").append(text(R.string.TelevimImportPlaintext));
         }

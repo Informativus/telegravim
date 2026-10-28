@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="televim_background">#FFFFFF</color>
+    <color name="televim_primary_text">#1A1D21</color>
+    <color name="televim_secondary_text">#757575</color>
+    <color name="televim_accent">#229AF0</color>
+    <color name="televim_accent_end">#56BAF0</color>
+    <color name="televim_accent_pressed">#2288D1</color>
+    <color name="televim_field_line">#DBDBDB</color>
+    <color name="televim_button_text">#FFFFFF</color>
+    <color name="televim_touch_feedback">#18229AF0</color>
+    <dimen name="televim_back_size">54dp</dimen>
+    <dimen name="televim_back_inset">15dp</dimen>
+    <dimen name="televim_page_inset">24dp</dimen>
+    <dimen name="televim_title_inset">32dp</dimen>
+    <dimen name="televim_header_inset">72dp</dimen>
+    <dimen name="televim_title_size">24sp</dimen>
+    <dimen name="televim_header_size">20sp</dimen>
+    <dimen name="televim_body_size">15sp</dimen>
+    <dimen name="televim_button_size">14sp</dimen>
+    <dimen name="televim_button_height">48dp</dimen>
+    <dimen name="televim_button_radius">24dp</dimen>
+    <dimen name="televim_button_inset">34dp</dimen>
+    <dimen name="televim_step_gap">7dp</dimen>
+    <dimen name="televim_number_gap">4dp</dimen>
+    <dimen name="televim_line_gap">2dp</dimen>
+    <dimen name="televim_field_height">56dp</dimen>
+    <dimen name="televim_field_line_width">1dp</dimen>
+    <dimen name="televim_animation_size">334dp</dimen>
+    <dimen name="televim_intro_min_height">640dp</dimen>
+    <dimen name="televim_intro_landscape_height">360dp</dimen>
+</resources>

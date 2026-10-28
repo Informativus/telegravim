@@ -34,6 +34,25 @@ preferences must not report that settings were applied.
 The portable settings schema is documented separately in
 [`portable-preferences.md`](../local-features/portable-preferences.md).
 
+## Native presentation
+
+The import entry screen follows Telegram's native link-device introduction:
+the bundled `qr_login` animation, a centered heading, three short steps and the
+same rounded blue scan button. Link/password entry and the preview appear on
+the next screen. File instructions remain available through the file action.
+The camera view follows the native QR-login scanner, including its mask,
+corner marks and optional flashlight. Both light and dark presentation use
+local resources.
+
+The standalone Activity remains the offline host. Its presentation reuses the
+local `BackDrawable`, `RLottieDrawable` and bundled artwork, without constructing
+`ActionIntroActivity`, `CameraScanActivity`, `ActionBar` or `EditTextBoldCursor`.
+Those classes can initialize language, account or remote barcode services.
+Even reading `Theme.key_*` initializes native `Theme`; the offline presentation
+therefore uses explicit local colors instead. Importer animation and camera
+resources stop when the screen is detached. The existing password, passcode,
+preview, cancellation and storage contracts still apply.
+
 ## Offline boundary
 
 Export, link decoding, QR scanning, package validation, preview and application
