@@ -72,6 +72,11 @@ include the relevant accepted interactions in that review:
   Successful user sends and explicit Mark as read acknowledge only the intended
   conversation up to their cutoff. Internal E2E control/handshake messages,
   failed sends, and scheduling must not acknowledge incoming messages.
+- Private reading must preserve explicit navigation destinations: Ctrl+G and
+  the down button reach the latest messages without returning to the unread
+  boundary on layout updates. Preserve reply-return navigation. Keep private-chat,
+  group and channel receipt policies independent, retaining saved master state
+  and the all-categories default for existing accounts.
 - Verify shared controls in ordinary chats and applicable topics/sublists;
   keep preview, scheduled, and other unrelated views outside manual-read scope.
 

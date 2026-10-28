@@ -27,7 +27,7 @@ ReadMetrics::ReadMetrics(not_null<ApiWrap*> api)
 void ReadMetrics::add(
 		not_null<PeerData*> peer,
 		FinalizedReadMetric metric) {
-	if (peer->session().api().readReceipts().enabled()) {
+	if (peer->session().api().readReceipts().enabled(peer)) {
 		return;
 	}
 	_pending[peer].push_back(metric);
@@ -38,7 +38,7 @@ void ReadMetrics::add(
 
 void ReadMetrics::send() {
 	for (auto i = _pending.begin(); i != _pending.end();) {
-		if (i->first->session().api().readReceipts().enabled()) {
+		if (i->first->session().api().readReceipts().enabled(i->first)) {
 			i = _pending.erase(i);
 			continue;
 		}
