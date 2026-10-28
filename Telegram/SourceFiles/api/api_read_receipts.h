@@ -55,7 +55,9 @@ public:
 private:
 	using Key = std::tuple<PeerId, MsgId, PeerId>;
 	[[nodiscard]] static Key key(not_null<HistoryItem*> item);
+	[[nodiscard]] static Scope scopeFor(not_null<PeerData*> peer);
 	void invalidatePending();
+	void invalidatePending(Scope scope);
 	void markRead(Key key, MsgId till);
 	void acknowledge(Key key, MsgId till);
 
@@ -67,6 +69,7 @@ private:
 	base::flat_map<Key, MsgId> _limits;
 	base::flat_set<FullMsgId> _contents;
 	uint64 _generation = 0;
+	base::flat_map<Scope, uint64> _scopeGenerations;
 	base::flat_set<FullMsgId> _releasingContents;
 
 };

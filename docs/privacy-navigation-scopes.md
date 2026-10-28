@@ -30,8 +30,10 @@ owning peer classification and retain separate acknowledgement cutoffs.
 Use account-local key-value preferences and constant-time peer classification;
 do not scan history, rewrite positional serialization or add network requests.
 Settings survive restart, and server updates from other clients remain
-authoritative. Existing deferred receipts are invalidated conservatively on
-configuration changes; enabling privacy must never release them.
+authoritative. Changing a category invalidates only its deferred receipts and queued send
+callbacks; other categories retain their pending acknowledgements. Changing
+the master switch invalidates all pending state. Enabling privacy never releases
+deferred receipts.
 
 Verification uses existing relevant checks, source review, compilation and
 actual UI observation when available. No new tests are authored. Source review,

@@ -39,13 +39,16 @@ bool ReadReceipts::enabled() const {
 	return *_enabled;
 }
 
-bool ReadReceipts::enabled(not_null<PeerData*> peer) const {
-	const auto scope = peer->isUser()
+ReadReceipts::Scope ReadReceipts::scopeFor(not_null<PeerData*> peer) {
+	return peer->isUser()
 		? Scope::PrivateChats
 		: peer->isBroadcast()
 		? Scope::Channels
 		: Scope::Groups;
-	return enabled() && scopeEnabled(scope);
+}
+
+bool ReadReceipts::enabled(not_null<PeerData*> peer) const {
+	return enabled() && scopeEnabled(scopeFor(peer));
 }
 
 bool ReadReceipts::enabled(PeerId peer) const {
@@ -90,7 +93,7 @@ void ReadReceipts::setScopeEnabled(Scope scope, bool enabled) {
 		return;
 	}
 	_scopes = enabled ? (*_scopes | int(scope)) : (*_scopes & ~int(scope));
-	invalidatePending();
+	invalidatePending(scope);
 	_session->local().writePref<QByteArray>(
 		kScopesPreference,
 		QByteArray::number(*_scopes));
@@ -102,6 +105,31 @@ void ReadReceipts::invalidatePending() {
 	_limits.clear();
 	_contents.clear();
 	_releasingContents.clear();
+}
+
+void ReadReceipts::invalidatePending(Scope scope) {
+	++_scopeGenerations[scope];
+	const auto affected = [&](PeerId peer) {
+		return scopeFor(_session->data().peer(peer)) == scope;
+	};
+	for (auto i = _limits.begin(); i != _limits.end();) {
+		if (affected(std::get<0>(i->first))) {
+			i = _limits.erase(i);
+		} else {
+			++i;
+		}
+	}
+	const auto clearContents = [&](auto &contents) {
+		for (auto i = contents.begin(); i != contents.end();) {
+			if (affected(i->peer)) {
+				i = contents.erase(i);
+			} else {
+				++i;
+			}
+		}
+	};
+	clearContents(_contents);
+	clearContents(_releasingContents);
 }
 
 bool ReadReceipts::allowed(
@@ -150,8 +178,12 @@ void ReadReceipts::sent(not_null<HistoryItem*> local, MsgId serverId) {
 	}
 	const auto conversation = key(local);
 	const auto generation = _generation;
+	const auto scope = scopeFor(local->history()->peer);
+	const auto scopeGeneration = _scopeGenerations[scope];
 	crl::on_main(_session, [=] {
-		if (generation != _generation || !enabled(std::get<0>(conversation))) {
+		if (generation != _generation
+			|| scopeGeneration != _scopeGenerations[scope]
+			|| !enabled(std::get<0>(conversation))) {
 			return;
 		}
 		auto &limit = _limits[conversation];
