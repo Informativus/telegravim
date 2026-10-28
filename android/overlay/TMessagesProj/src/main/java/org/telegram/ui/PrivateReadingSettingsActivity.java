@@ -16,6 +16,7 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.televim.PrivateReadingController;
 import org.telegram.messenger.televim.PrivateReadingPolicy;
+import org.telegram.ui.ActionBar.Theme;
 
 /** Native account setting for the local ordinary-chat receipt policy. */
 public final class PrivateReadingSettingsActivity extends Activity {
@@ -40,17 +41,18 @@ public final class PrivateReadingSettingsActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(16), dp(12), dp(16), dp(12));
+        root.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
 
         TextView title = new TextView(this);
         title.setText(R.string.TelevimPrivateReading);
         title.setTextSize(20);
-        title.setTextColor(0xff222222);
+        title.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
         root.addView(title, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)));
 
         TextView about = new TextView(this);
         about.setText(R.string.TelevimPrivateReadingAbout);
         about.setTextSize(15);
-        about.setTextColor(0xff666666);
+        about.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
         root.addView(about, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(0), 0));
         LinearLayout.LayoutParams aboutParams = (LinearLayout.LayoutParams) about.getLayoutParams();
         aboutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT;
@@ -65,7 +67,7 @@ public final class PrivateReadingSettingsActivity extends Activity {
         TextView help = new TextView(this);
         help.setText(R.string.TelevimPrivateReadingHelp);
         help.setTextSize(13);
-        help.setTextColor(0xff777777);
+        help.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
         help.setPadding(0, dp(16), 0, 0);
         root.addView(help, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -95,7 +97,7 @@ public final class PrivateReadingSettingsActivity extends Activity {
         Switch result = new Switch(this);
         result.setText(label);
         result.setTextSize(16);
-        result.setTextColor(0xff222222);
+        result.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
         result.setGravity(Gravity.CENTER_VERTICAL);
         result.setMinHeight(dp(52));
         root.addView(result, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)));

@@ -63,7 +63,7 @@
     "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingPolicy.java": "7cd8bcc7a31b2af20ef9ccd730e91ac9549573db7610f113ca7a84eb301ac34b",
     "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingSettings.java": "f8fb70b9cc20d800bddea5fe057fc7d87f5e04b6a96f06aebdd29b84bee618bd",
     "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingController.java": "c14b3d2c95f24e930f3c9fba0ef9939b99d328ea2edc94124199db548430655c",
-    "TMessagesProj/src/main/java/org/telegram/ui/PrivateReadingSettingsActivity.java": "6a6fcdaf91b10dd620bde0a5a41964c17d47bd665e50b01aa3b7701a06b0ac4e"
+    "TMessagesProj/src/main/java/org/telegram/ui/PrivateReadingSettingsActivity.java": "d08b64b7bf354eb26c74a671aba31e5deaa84b0edfdf99b1069c8e0b6c4825c2"
   },
   "patches": {
     "001-AndroidManifest.patch": "e331ae6f9691410249aefd7985216d5a94b502b8967b940ddeb49e7a19484b05",
