@@ -129,15 +129,10 @@ void ReadReceipts::markRead(not_null<Data::Thread*> thread) {
 			} else if (history->unreadMark()) {
 				history->owner().histories().changeDialogUnreadMark(history, false);
 			}
-		} else if (history->loadedAtBottom() && history->maxMsgId()) {
-			markRead(Key(peer, 0, {}), history->maxMsgId());
+		} else if (const auto till = history->maxMsgId()) {
+			markRead(Key(peer, 0, {}), till);
 		} else {
-			const auto generation = _generation;
-			history->owner().histories().requestDialogEntry(history, [=] {
-				if (generation == _generation && history->lastServerMessageKnown()) {
-					markRead(history);
-				}
-			});
+			history->owner().histories().requestDialogEntry(history);
 		}
 	}
 }
