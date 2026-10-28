@@ -566,8 +566,8 @@ public final class OfflineSettingsActivity extends Activity {
         EditText field = new EditText(context);
         field.setHint(text(hint));
         OfflineSettingsAppearance.styleField(field);
-        field.setInputType(InputType.TYPE_CLASS_TEXT | (secret ? InputType.TYPE_TEXT_VARIATION_PASSWORD : InputType.TYPE_TEXT_VARIATION_URI));
         field.setSingleLine(true);
+        field.setInputType(InputType.TYPE_CLASS_TEXT | (secret ? InputType.TYPE_TEXT_VARIATION_PASSWORD : InputType.TYPE_TEXT_VARIATION_URI));
         field.setSaveEnabled(false);
         field.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO);
         field.setImeOptions(EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING | EditorInfo.IME_ACTION_DONE);
