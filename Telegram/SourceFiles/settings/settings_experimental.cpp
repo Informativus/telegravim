@@ -1091,7 +1091,7 @@ void SetupExperimental(
 		});
 	}
 
-	addCategory(u"Vim keymap"_q, [&](
+	addCategory(tr::lng_telegravim_vim(tr::now), [&](
 			not_null<Ui::VerticalLayout*> inner,
 			std::vector<QString> &searchable) {
 		searchable.push_back(addOption(
@@ -1150,6 +1150,9 @@ void SetupExperimental(
 		searchable.push_back(addStringOption(
 			inner,
 			Core::VimKeymap::kOptionVimKeymapKeyJumpBottom));
+		searchable.push_back(addStringOption(
+			inner,
+			Core::VimKeymap::kOptionVimKeymapKeyMarkRead));
 		searchable.push_back(addStringOption(
 			inner,
 			Core::VimKeymap::kOptionVimKeymapKeyCopyMessage));
