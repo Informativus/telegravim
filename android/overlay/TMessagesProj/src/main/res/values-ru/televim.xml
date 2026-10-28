@@ -50,4 +50,11 @@
     <string name="TelevimImportInterrupted">Предпросмотр отменён после выхода с экрана или блокировки приложения. Введите пароль экспорта и снова проверьте изменения перед применением.</string>
     <string name="TelevimImportFinishing">Предыдущая локальная операция ещё завершается. Немного подождите и повторите предпросмотр.</string>
     <string name="televim_update_failed">Не удалось проверить или загрузить обновление. Повторите попытку позже.</string>
+    <string name="TelevimPrivateReading">Приватное чтение</string>
+    <string name="TelevimPrivateReadingAbout">Пассивный просмотр и прослушивание не отправляют уведомления о прочтении и контентные квитанции. Явные действия и успешные обычные сообщения могут разрешить квитанцию до зафиксированного момента диалога.</string>
+    <string name="TelevimPrivateReadingMaster">Защищать квитанции о прочтении</string>
+    <string name="TelevimPrivateReadingPrivate">Личные чаты</string>
+    <string name="TelevimPrivateReadingGroups">Группы</string>
+    <string name="TelevimPrivateReadingChannels">Каналы</string>
+    <string name="TelevimPrivateReadingHelp">Секретные чаты сохраняют свой штатный протокол. Квитанции, уже переданные на отправку, могут прийти после изменения настройки.</string>
 </resources>

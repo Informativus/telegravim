@@ -1,0 +1,36 @@
+--- a/TMessagesProj/src/main/AndroidManifest.xml
++++ b/TMessagesProj/src/main/AndroidManifest.xml
+@@ -245,6 +245,12 @@
+                 <data android:mimeType="*/*"/>
+             </intent-filter>
+         </activity>
++
++        <activity
++            android:name="org.telegram.ui.PrivateReadingSettingsActivity"
++            android:theme="@style/Theme.TMessages.Start"
++            android:exported="false"
++            android:excludeFromRecents="true" />
+ 
+         <activity
+             android:name="org.telegram.ui.OfflineSettingsActivity"
+--- a/TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java
+@@ -726,6 +726,7 @@
+         items.add(SettingCell.Factory.of(9, IconBackgroundColors.ORANGE_DEEP.top, IconBackgroundColors.ORANGE_DEEP.bottom, R.drawable.settings_power, getString(R.string.SettingsPowerSaving), getString(R.string.SettingsPowerSavingInfo)));
+         items.add(SettingCell.Factory.of(10, IconBackgroundColors.PURPLE.top, IconBackgroundColors.PURPLE.bottom, R.drawable.settings_language, getString(R.string.SettingsLanguage), LocaleController.getCurrentLanguageName()));
+         items.add(SettingCell.Factory.of(27, IconBackgroundColors.BLUE.top, IconBackgroundColors.BLUE.bottom, R.drawable.settings_data, getString(R.string.TelevimImportTitle)));
++        items.add(SettingCell.Factory.of(28, IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom, R.drawable.settings_privacy, getString(R.string.TelevimPrivateReading)));
+ 
+         items.add(UItem.asShadow(null));
+         if (!walletAbove && getMessagesController().config.walletAvailable.get()) {
+@@ -841,6 +842,10 @@
+             case 27:
+                 getParentActivity().startActivity(new android.content.Intent(getParentActivity(), OfflineSettingsActivity.class));
+                 break;
++            case 28:
++                getParentActivity().startActivity(new android.content.Intent(getParentActivity(), PrivateReadingSettingsActivity.class)
++                        .putExtra("account", currentAccount));
++                break;
+             case 1:
+                 presentSettingFragment(new UserInfoActivity());
+                 break;

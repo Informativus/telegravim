@@ -53,4 +53,11 @@
     <string name="TelevimImportInterrupted">The preview was cancelled when you left this screen or the app was locked. Enter the export password and preview again before applying.</string>
     <string name="TelevimImportFinishing">The previous local operation is still finishing. Wait a moment, then preview again.</string>
     <string name="televim_update_failed">Could not verify or download the update. Please try again later.</string>
+    <string name="TelevimPrivateReading">Private reading</string>
+    <string name="TelevimPrivateReadingAbout">Keep passive viewing and listening from sending read or content receipts. Explicit actions and successful ordinary messages can release the captured conversation cutoff.</string>
+    <string name="TelevimPrivateReadingMaster">Protect read receipts</string>
+    <string name="TelevimPrivateReadingPrivate">Private chats</string>
+    <string name="TelevimPrivateReadingGroups">Groups</string>
+    <string name="TelevimPrivateReadingChannels">Channels</string>
+    <string name="TelevimPrivateReadingHelp">Secret Chats keep their native protocol. Receipts already handed off for sending may still arrive after this setting changes.</string>
 </resources>

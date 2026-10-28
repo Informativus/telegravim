@@ -1,0 +1,42 @@
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
+@@ -14428,6 +14428,9 @@
+     }
+ 
+     public void markMentionMessageAsRead(int mid, long channelId, long did) {
++        if (org.telegram.messenger.televim.PrivateReadingController.blocksContent(currentAccount, did != 0 ? did : -channelId, mid)) {
++            return;
++        }
+         getMessagesStorage().markMentionMessageAsRead(-channelId, mid, did);
+         if (channelId != 0) {
+             TLRPC.TL_channels_readMessageContents req = new TLRPC.TL_channels_readMessageContents();
+@@ -14476,6 +14479,9 @@
+     }
+ 
+     public void markMessageAsRead2(long dialogId, int mid, TLRPC.InputChannel inputChannel, int ttl, long taskId, boolean createDeleteTask) {
++        if (org.telegram.messenger.televim.PrivateReadingController.blocksContent(currentAccount, dialogId, mid)) {
++            return;
++        }
+         if (mid == 0 || ttl < 0) {
+             return;
+         }
+@@ -14553,6 +14559,9 @@
+     }
+ 
+     private void completeReadTask(ReadTask task) {
++        if (org.telegram.messenger.televim.PrivateReadingController.blocksHistory(currentAccount, task.dialogId)) {
++            return;
++        }
+         if (task.replyId != 0 && task.monoForumPeerId == 0) {
+             TLRPC.TL_messages_readDiscussion req = new TLRPC.TL_messages_readDiscussion();
+             req.msg_id = (int) task.replyId;
+@@ -14669,6 +14678,9 @@
+     }
+ 
+     public void markDialogAsRead(long dialogId, int maxPositiveId, int maxNegativeId, int maxDate, boolean popup, long threadId, int countDiff, boolean readNow, int scheduledCount) {
++        if (org.telegram.messenger.televim.PrivateReadingController.blocksHistory(currentAccount, dialogId)) {
++            return;
++        }
+         boolean createReadTask;
+ 
+         if (threadId != 0) {
