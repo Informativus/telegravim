@@ -84,7 +84,7 @@
     "020-e2e-MessagesController.patch": "70ced5aa8178ddd030a4f8a64a444d5f8d0313e0c3439ef6a2caf3a621dd6082",
     "020-shortcuts-offline-router.patch": "8eab65d7d97744adc8e11ef199e9e61b60d3b079edd05a756688c78b517218f8",
     "021-e2e-ConnectionsManager.patch": "50161a243e6d6eb0d3de3ef1aaf269816eaa10b6861c18325518a78ec518e945",
-    "021-updater-check-result.patch": "34b0ed9a227b6121ed780e52e3cab31d4faa8300d13621a2215fada867c47bf8",
+    "021-updater-check-result.patch": "77a100da3593605e9b71cd7666240ddff703d621137cf75e3303b6cc2d361987",
     "022-e2e-UserConfig.patch": "e0a7ccee479ee3e6e8f8ffd2bc53675a025ae0c9b09c8f4f3011f84ff6659c08",
     "022-updater-ignore-upstream-block.patch": "808a48d82511a7add7508e2dd02ba166ed19652c4683d95df5ede8308c2bfd95",
     "023-e2e-MediaDataController.patch": "59512a396a9121bd71908e96771fb4b73f2911a689eaa9a02cd4a84f6c8abae9",
