@@ -149,7 +149,7 @@ jobs:
               subprocess.run([sys.executable, "configure.py", "-G", "Ninja Multi-Config", "qt6",
                               "-C", str(config), "-DCMAKE_CONFIGURATION_TYPES=Release",
                               "-DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=", "-DTDESKTOP_API_TEST=OFF",
-                              "-DDESKTOP_APP_TEST_APPS=ON", "-DDESKTOP_APP_DISABLE_AUTOUPDATE=ON",
+                              "-DDESKTOP_APP_TEST_APPS=ON", "-DDESKTOP_APP_DISABLE_AUTOUPDATE=OFF", "-DTELEGRAVIM_BUILD_UPDATE_PACKER=ON",
                               "-DDESKTOP_APP_DISABLE_CRASH_REPORTS=ON"],
                              cwd=source / "Telegram", env=environment, check=True)
               subprocess.run(["cmake", "--build", str(source / "out"), "--config", "Release",
@@ -168,11 +168,13 @@ jobs:
         working-directory: TBuild/tdesktop
         run: |
           New-Item -ItemType Directory -Path artifact/Telegravim | Out-Null
-          Copy-Item out/Release/Telegram.exe artifact/Telegravim/
+          Copy-Item out/Release/Telegram.exe,out/Release/Updater.exe artifact/Telegravim/
           Copy-Item LICENSE,Telegram/Resources/dictionaries/LICENSE_*.txt artifact/Telegravim/
           python Telegram/build/package_info.py artifact/Telegravim windows-x64
           if ($LASTEXITCODE -ne 0) { throw 'Package metadata failed' }
           dumpbin /headers artifact/Telegravim/Telegram.exe | Select-String 'machine \(x64\)'
+          python Telegram/build/update_release.py pack --packer out/Release/Packer.exe --stage artifact/Telegravim --output artifact --platform windows-x64
+          if ($LASTEXITCODE -ne 0) { throw 'Native update packaging failed' }
           Compress-Archive -Path artifact/Telegravim -DestinationPath artifact/Telegravim-windows-x64.zip
           $hash = (Get-FileHash artifact/Telegravim-windows-x64.zip -Algorithm SHA256).Hash.ToLower()
           "$hash  Telegravim-windows-x64.zip" | Set-Content artifact/SHA256-windows-x64.txt -Encoding ascii
@@ -183,5 +185,7 @@ jobs:
           path: |
             TBuild/tdesktop/artifact/Telegravim-windows-x64.zip
             TBuild/tdesktop/artifact/SHA256-windows-x64.txt
+            TBuild/tdesktop/artifact/*.unsigned
+            TBuild/tdesktop/artifact/update-windows-x64.json
           retention-days: 14
           if-no-files-found: error

@@ -40,4 +40,5 @@
     <string name="TelevimImportRetry">Повторите попытку через %1$d сек.</string>
     <string name="TelevimImportInterrupted">Предпросмотр отменён после выхода с экрана или блокировки приложения. Введите пароль экспорта и снова проверьте изменения перед применением.</string>
     <string name="TelevimImportFinishing">Предыдущая локальная операция ещё завершается. Немного подождите и повторите предпросмотр.</string>
+    <string name="televim_update_failed">Не удалось проверить или загрузить обновление. Повторите попытку позже.</string>
 </resources>
