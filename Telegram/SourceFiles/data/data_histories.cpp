@@ -359,7 +359,7 @@ void Histories::readInboxOnNewMessage(not_null<HistoryItem*> item) {
 }
 
 void Histories::readClientSideMessage(not_null<HistoryItem*> item) {
-	if (session().api().readReceipts().enabled()) {
+	if (session().api().readReceipts().enabled(item->history()->peer)) {
 		return;
 	}
 	if (item->out() || !item->unread(item->history())) {

@@ -19,6 +19,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "menu/menu_send.h"
 #include "menu/menu_mark_as_read.h"
 #include "apiwrap.h"
+#include "api/api_read_receipts.h"
 #include "api/api_unread_things.h"
 #include "data/data_document.h"
 #include "data/data_messages.h"
@@ -157,7 +158,13 @@ void CornerButtons::downClick() {
 
 void CornerButtons::downClick(bool skipReplyReturn) {
 	if (skipReplyReturn || !_replyReturn) {
-		_delegate->cornerButtonsShowAtPosition(Data::UnreadMessagePosition);
+		const auto history = lookupHistory();
+		const auto privateReading = history
+			&& _delegate->cornerButtonsHas(CornerButtonType::MarkRead)
+			&& history->session().api().readReceipts().enabled(history->peer);
+		_delegate->cornerButtonsShowAtPosition(privateReading
+			? Data::MaxMessagePosition
+			: Data::UnreadMessagePosition);
 	} else {
 		_delegate->cornerButtonsShowAtPosition(_replyReturn->position());
 	}

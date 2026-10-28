@@ -548,6 +548,36 @@ const auto kTelegravimPrivacyMeta = BuildHelper({
 		}, toggle->lifetime());
 	}
 	builder.addDividerText(tr::lng_telegravim_read_after_send_about());
+	builder.addSubsectionTitle(tr::lng_telegravim_read_scopes());
+	const auto addScope = [&](
+			Api::ReadReceipts::Scope scope,
+			QString id,
+			rpl::producer<QString> title) {
+		const auto checkbox = builder.addCheckbox({
+			.id = std::move(id),
+			.title = std::move(title),
+			.checked = receipts->scopeEnabled(scope),
+			.keywords = { u"read"_q, u"privacy"_q, u"unread"_q },
+		});
+		if (checkbox) {
+			checkbox->checkedChanges() | rpl::on_next([=](bool enabled) {
+				receipts->setScopeEnabled(scope, enabled);
+			}, checkbox->lifetime());
+			receipts->scopeEnabledValue(scope) | rpl::on_next([=](bool enabled) {
+				checkbox->setChecked(enabled);
+			}, checkbox->lifetime());
+		}
+	};
+	addScope(Api::ReadReceipts::Scope::PrivateChats,
+		u"telegravim/read-private-chats"_q,
+		tr::lng_telegravim_read_private_chats());
+	addScope(Api::ReadReceipts::Scope::Groups,
+		u"telegravim/read-groups"_q,
+		tr::lng_telegravim_read_groups());
+	addScope(Api::ReadReceipts::Scope::Channels,
+		u"telegravim/read-channels"_q,
+		tr::lng_telegravim_read_channels());
+	builder.addDividerText(tr::lng_telegravim_read_scopes_about());
 	builder.addSkip();
 });
 
