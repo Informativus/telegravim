@@ -1,0 +1,5 @@
+--- a/buildSrc/src/main/kotlin/org/telegram/tasks/TelegramStringsTask.kt
++++ b/buildSrc/src/main/kotlin/org/telegram/tasks/TelegramStringsTask.kt
+@@ -259 +259 @@
+-            .filterNot { GENERATED_EXCLUSIONS.contains(it) }
++            .filterNot { GENERATED_EXCLUSIONS.contains(it) || it.startsWith("Televim") }

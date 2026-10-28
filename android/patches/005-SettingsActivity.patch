@@ -4,5 +4,5 @@
 +        items.add(SettingCell.Factory.of(27, IconBackgroundColors.BLUE.top, IconBackgroundColors.BLUE.bottom, R.drawable.settings_data, getString(R.string.TelevimImportTitle)));
 @@ -839,0 +841,3 @@
 +            case 27:
-+                presentSettingFragment(new OfflineSettingsActivity());
++                getParentActivity().startActivity(new android.content.Intent(getParentActivity(), OfflineSettingsActivity.class));
 +                break;

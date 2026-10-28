@@ -41,6 +41,29 @@ must not send network requests. This includes LAN discovery, fetching a package
 from a URL, remote QR recognition, analytics and Telegram API fallback.
 Normal Telegram messaging remains a networked feature of the client.
 
+The importer is a standalone framework Activity in the main application process.
+Opening its link or local-file route does not construct `LaunchActivity`, the
+native language controller or account controllers. A no-display Activity routes
+ordinary sharing to the native client and recognized settings to the importer,
+preserving read grants and `ClipData`. Normal launcher icons and Telegram links
+retain their native entrypoint. QR decoding stays within the importer Activity.
+
+Push/proxy startup, ML Kit and EmojiCompat initialization wait for normal native
+application initialization. Configuration changes before that point do not
+instantiate native language or UI controllers. Firebase keeps its original
+provider ordering, with messaging auto-init and data collection disabled. The
+release has no default Firebase configuration; adding one requires reviewing this
+startup boundary again. Final APK inspection must check these conditions and
+that the framework import strings survive release resource shrinking.
+
+An enabled local Televim passcode protects the importer through the native
+checker and retry limit. This unlocks only import, without unlocking chats. The
+export password is requested separately afterward. Leaving the screen or a
+passcode change invalidates the preview and pending callbacks. Cancelled key
+derivation retains the process-wide worker slot until it actually finishes.
+Existing messaging services can continue independently; source isolation does
+not replace traffic observations on a device.
+
 The link contains the complete encrypted package:
 
 ```text
@@ -84,6 +107,9 @@ virtual and unsupported providers and all HTTP, HTTPS, nested intent and URL
 fallbacks. A rejected source must explain the supported local route. Only file
 manager/provider combinations actually observed during acceptance can be
 claimed as verified.
+
+Import accepts a single file. Sharing an ordinary JSON file opens normal chat
+sending and can initialize the networked client; use **Open with** for import.
 
 Initial Android bounds are 8 MiB for an encrypted input, 4 MiB aggregate JSON,
 2 MiB for an individual module or manifest, 32 JSON nesting levels and 10000
