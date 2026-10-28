@@ -4137,6 +4137,9 @@ bool ChatWidget::cornerButtonsHas(CornerButtonType type) {
 	return _topic
 		|| (mode() == Mode::History)
 		|| (_sublist && type == CornerButtonType::Reactions)
+		|| (_sublist
+			&& _sublist->inMonoforum()
+			&& type == CornerButtonType::MarkRead)
 		|| (type == CornerButtonType::Down);
 }
 

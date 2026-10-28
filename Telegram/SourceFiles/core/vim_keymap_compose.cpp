@@ -432,6 +432,9 @@ bool HandleComposeTextKey(ComposeKeyContext context, not_null<QKeyEvent*> e) {
 		context.refreshCursor();
 		return false;
 	}
+	if (FocusEmojiKey(e) || FocusChatKey(e) || EmojiPanelKey(e)) {
+		return false;
+	}
 	const auto raw = context.field->rawTextEdit();
 	const auto selectorOpen = context.panelOpen;
 	if (selectorOpen) {
