@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="televim_background">#1D2733</color>
+    <color name="televim_primary_text">#FFFFFF</color>
+    <color name="televim_secondary_text">#7D8B99</color>
+    <color name="televim_field_line">#3A4652</color>
+</resources>
