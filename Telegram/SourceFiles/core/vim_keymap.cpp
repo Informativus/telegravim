@@ -59,7 +59,7 @@ namespace {
 constexpr auto kHoldScrollTickMs = 16;
 constexpr auto kHoldScrollStartDelayMs = 90;
 constexpr auto kSingleScrollDurationMs = 190;
-constexpr auto kTelegraVimBuild = "2026.10.28-105";
+constexpr auto kTelegraVimBuild = "2026.10.28-106";
 
 bool NormalModeEnabled = false;
 bool LegacyDefaultsMigrated = false;
