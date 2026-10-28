@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="TelevimSettingsTitle">Настройки Televim</string>
+    <string name="TelevimSettingsAbout">Настройки Televim обрабатываются локально на этом устройстве. Чаты, медиафайлы и данные аккаунта Telegram сюда не экспортируются и отсюда не импортируются.</string>
     <string name="TelevimImportTitle">Импорт настроек с компьютера</string>
     <string name="TelevimImportAbout">Вставьте ссылку с компьютера и введите пароль, который задали при экспорте. Настройки обрабатываются на этом устройстве.</string>
     <string name="TelevimImportIntroTitle">Настройки с компьютера</string>

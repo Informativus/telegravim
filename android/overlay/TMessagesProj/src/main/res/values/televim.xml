@@ -3,6 +3,8 @@
     <dimen name="televim_toolbar_height">56dp</dimen>
     <dimen name="televim_spacing">16dp</dimen>
     <dimen name="televim_text_size">16sp</dimen>
+    <string name="TelevimSettingsTitle">Televim settings</string>
+    <string name="TelevimSettingsAbout">Televim settings are processed locally on this device. Telegram chats, media and account data are not exported or imported here.</string>
     <string name="TelevimImportTitle">Import desktop settings</string>
     <string name="TelevimImportAbout">Paste the link from your computer and enter the password you chose when exporting. Your settings are processed on this device.</string>
     <string name="TelevimImportIntroTitle">Settings from your computer</string>
