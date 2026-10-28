@@ -18,7 +18,7 @@
     "TMessagesProj/src/main/java/org/telegram/messenger/televim/OfflineSettingsStore.java": "b9907e7496e6bd20fb99e096558cb3b39e047290627111b4b1198be7316c798f",
     "TMessagesProj/src/main/java/org/telegram/messenger/televim/OfflineTransfer.java": "5f767bff3974fba5ec0e28d83d1001ab01e4e9ca41c5ef4b2a85c2b6205f50ae",
     "TMessagesProj/src/main/java/org/telegram/messenger/televim/StrictJson.java": "f44df0803aacc7687a25f88661cd9856a2a668e1feee58dcb233ed2986713e8d",
-    "TMessagesProj/src/main/java/org/telegram/messenger/televim/UpdateController.java": "00c72489c813e14c3080c4f1c75ab7defe800f776c16f77b8943660314adfcb1",
+    "TMessagesProj/src/main/java/org/telegram/messenger/televim/UpdateController.java": "9a2bf8ec09d93822522378fc18922fedead1862d417e9030eaa18702086230db",
     "TMessagesProj/src/main/java/org/telegram/ui/E2eChatDialog.java": "c844099bdaee4696029cb957afe24fa0680f0f7411090bb969441df9d77f3fa2",
     "TMessagesProj/src/main/java/org/telegram/ui/OfflineSettingsActivity.java": "faab231e7cf03119ab07b0905a1be6314147e8293ba5985b29bf397d754aa2c1",
     "TMessagesProj/src/main/java/org/telegram/ui/OfflineSettingsQrView.java": "75747d7974da94fcd3717dc6a31195b9a80ab2898ab36cf98f914568ace80af1",

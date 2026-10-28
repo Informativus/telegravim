@@ -108,7 +108,7 @@ public final class UpdateController {
             File cached = null;
             boolean failed = false;
             try {
-                JSONObject wrapper = new JSONObject(new String(fetchCatalog(), StandardCharsets.UTF_8));
+                JSONObject wrapper = StrictJson.parse(fetchCatalog(), MAX_CATALOG);
                 byte[] payload = Base64.decode(wrapper.getString("payload"), Base64.NO_WRAP);
                 byte[] signature = Base64.decode(wrapper.getString("signature"), Base64.NO_WRAP);
                 java.security.Signature verifier = java.security.Signature.getInstance("SHA256withECDSA");
@@ -116,7 +116,7 @@ public final class UpdateController {
                 verifier.update("televim-catalog-v1\n".getBytes(StandardCharsets.US_ASCII));
                 verifier.update(payload);
                 if (!verifier.verify(derSignature(signature))) throw new Exception("Invalid catalog signature");
-                JSONObject catalog = new JSONObject(new String(payload, StandardCharsets.UTF_8));
+                JSONObject catalog = StrictJson.parse(payload, MAX_CATALOG);
                 long time = System.currentTimeMillis() / 1000;
                 long issued = catalog.getLong("issued");
                 long expires = catalog.getLong("expires");
@@ -305,6 +305,7 @@ public final class UpdateController {
         PackageInfo archive = ApplicationLoader.applicationContext.getPackageManager().getPackageArchiveInfo(file.getAbsolutePath(), PackageManager.GET_SIGNATURES);
         if (archive == null || !current.packageName.equals(archive.packageName)
                 || archive.versionCode != entry.versionCode || archive.versionCode <= current.versionCode
+                || archive.applicationInfo == null || archive.applicationInfo.minSdkVersion > Build.VERSION.SDK_INT
                 || archive.signatures == null || current.signatures == null
                 || archive.signatures.length != current.signatures.length || archive.signatures.length == 0) {
             throw new Exception("Incompatible update");
