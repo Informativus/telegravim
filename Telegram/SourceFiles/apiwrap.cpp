@@ -4987,7 +4987,8 @@ void ApiWrap::sendMessage(
 		_session->data().registerMessageSentData(
 			randomId,
 			peer->id,
-			wireText);
+			wireText,
+			message.e2eControl);
 
 		MTPstring msgText(MTP_string(wireText));
 		auto flags = NewMessageFlags(peer);

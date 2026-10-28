@@ -3670,8 +3670,9 @@ FullMsgId Session::messageIdByRandomId(uint64 randomId) const {
 void Session::registerMessageSentData(
 		uint64 randomId,
 		PeerId peerId,
-		const QString &text) {
-	_sentMessagesData.emplace(randomId, SentData{ peerId, text });
+		const QString &text,
+		bool e2eControl) {
+	_sentMessagesData.emplace(randomId, SentData{ peerId, text, e2eControl });
 }
 
 void Session::unregisterMessageSentData(uint64 randomId) {

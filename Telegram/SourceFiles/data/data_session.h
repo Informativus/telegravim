@@ -175,6 +175,7 @@ public:
 	struct SentData {
 		PeerId peerId = 0;
 		QString text;
+		bool e2eControl = false;
 	};
 
 	explicit Session(not_null<Main::Session*> session);
@@ -656,7 +657,8 @@ public:
 	void registerMessageSentData(
 		uint64 randomId,
 		PeerId peerId,
-		const QString &text);
+		const QString &text,
+		bool e2eControl = false);
 	void unregisterMessageSentData(uint64 randomId);
 	[[nodiscard]] SentData messageSentData(uint64 randomId) const;
 
