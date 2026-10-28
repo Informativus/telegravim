@@ -9,7 +9,7 @@ on:
         options: [release, refresh]
         default: release
       release_tag:
-        description: Existing stable draft tag on main (all builds must use this commit)
+        description: Existing stable draft tag on main (all client builds must use this commit)
         type: string
         required: false
       mac_run:
@@ -63,7 +63,7 @@ jobs:
           PY
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ inputs.operation == 'release' && inputs.release_tag || github.ref }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - name: Verify workflow and source provenance
