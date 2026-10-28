@@ -1,0 +1,25 @@
+--- a/TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java
+@@ -3741,0 +3742,5 @@
++                if (id == org.telegram.messenger.televim.E2eChat.MENU_ID) {
++                    cancelSearchLinks();
++                    E2eChatDialog.show(ChatActivity.this, dialog_id);
++                    return;
++                }
+@@ -4348,0 +4354,3 @@
++            if (currentEncryptedChat == null && org.telegram.messenger.televim.E2eChat.eligible(currentAccount, currentUser)) {
++                headerItem.addSubItem(org.telegram.messenger.televim.E2eChat.MENU_ID, R.drawable.msg_secret, LocaleController.getString(R.string.TelevimE2eTitle));
++            }
+@@ -14202,0 +14211,6 @@
++        if (org.telegram.messenger.televim.E2eChat.enabled(currentAccount, dialog_id)) {
++            cancelSearchLinks();
++            foundWebPage = null;
++            if (chatActivityEnterView != null) chatActivityEnterView.setWebPage(null, false);
++            return;
++        }
+@@ -14406,0 +14421,5 @@
++        org.telegram.messenger.televim.E2eChat.bindRequest(req, dialog_id);
++        if (org.telegram.messenger.televim.E2eChat.enabled(currentAccount, dialog_id)) {
++            done.run(false, null);
++            return;
++        }

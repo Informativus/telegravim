@@ -82,7 +82,9 @@ void EmojiInteractions::checkEdition(
 void EmojiInteractions::startOutgoing(
 		not_null<const HistoryView::Element*> view) {
 	const auto item = view->data();
-	if (!item->isRegular() || !item->history()->peer->isUser()) {
+	if (item->isE2eProtected()
+		|| !item->isRegular()
+		|| !item->history()->peer->isUser()) {
 		return;
 	}
 	const auto &pack = _session->emojiStickersPack();
@@ -127,7 +129,9 @@ void EmojiInteractions::startOutgoing(
 void EmojiInteractions::startAutoplay(
 		not_null<const HistoryView::Element*> view) {
 	const auto item = view->data();
-	if (!item->isRegular() || !item->history()->peer->isUser()) {
+	if (item->isE2eProtected()
+		|| !item->isRegular()
+		|| !item->history()->peer->isUser()) {
 		return;
 	}
 	const auto &pack = _session->emojiStickersPack();
@@ -170,7 +174,7 @@ void EmojiInteractions::startIncoming(
 		return;
 	}
 	const auto item = _session->data().message(peer->id, messageId);
-	if (!item || !item->isRegular()) {
+	if (!item || item->isE2eProtected() || !item->isRegular()) {
 		return;
 	}
 	const auto &pack = _session->emojiStickersPack();

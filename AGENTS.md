@@ -48,6 +48,41 @@ completed change only in a worktree, and do not push directly to `main`.
 Rollback or reconstruction is allowed only to a named backup or tag and must
 retain all accepted changes unless the user explicitly approves removing them.
 
+## Regression checks before delivery
+
+Preserving files and passing a build do not prove that accepted features still
+work together. Before freezing a cumulative delivery, review input routing and
+shared API paths changed by every included task. Keep a delivery checklist of
+accepted behavior, the exact source snapshot, checks actually run, and any
+remaining runtime verification. A known regression blocks final delivery until
+it is fixed; never label an older or incomplete artifact as the finished task.
+
+For changes affecting chat input, navigation, settings, or receipt handling,
+include the relevant accepted interactions in that review:
+
+- Configured `Ctrl+L` opens or focuses emoji/stickers on the right; `Ctrl+H`
+  returns to the chat. Composer cursor movement must not consume these focus
+  bindings. Preserve `Option+H/L`, custom bindings, English/Russian layouts,
+  input/view modes, selector search, `Cmd+,` settings, and `$` navigation.
+- Keep local transcription, the dictation enable switch, editable transcript
+  preview, and explicit text/voice send choice. Preserve native local tags,
+  folder colors, message markers, quick replies, and their help controls.
+- Private reading stays enabled after explicit manual marking. Opening,
+  scrolling, or playing media must not release deferred receipts by itself.
+  Successful user sends and explicit Mark as read acknowledge only the intended
+  conversation up to their cutoff. Internal E2E control/handshake messages,
+  failed sends, and scheduling must not acknowledge incoming messages.
+- Verify shared controls in ordinary chats and applicable topics/sublists;
+  keep preview, scheduled, and other unrelated views outside manual-read scope.
+
+Use existing relevant checks, proportional builds/static analysis, and focused
+observation. Do not author or extend tests unless the user explicitly requests
+it for the current task. Record source review, native build, artifact integrity,
+and authenticated UI acceptance separately. If a required interaction cannot be
+observed safely, state that limitation rather than claiming it passed. A final
+macOS DMG must be built from the reviewed cumulative source and identified by
+its source commit and checksum, including changes from collaborating agents.
+
 ## Native Telegram behavior for local features
 
 Local equivalents of Telegram features must preserve Telegram's native user

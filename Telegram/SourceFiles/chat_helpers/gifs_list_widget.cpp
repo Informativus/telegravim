@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "chat_helpers/gifs_list_widget.h"
 
+#include "e2e/e2e_chat.h"
+
 #include "api/api_toggling_media.h" // Api::ToggleSavedGif
 #include "base/const_string.h"
 #include "base/qt/qt_key_modifiers.h"
@@ -960,6 +962,11 @@ rpl::producer<> GifsListWidget::cancelRequests() const {
 
 void GifsListWidget::sendInlineRequest() {
 	if (_inlineRequestId || !_inlineQueryPeer || _inlineNextQuery.isEmpty()) {
+		return;
+	}
+	if (session().e2e().enabled(_inlineQueryPeer->id)) {
+		_inlineRequestTimer.stop();
+		_search->setLoading(false);
 		return;
 	}
 

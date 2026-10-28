@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_file_origin.h"
 #include "data/data_session.h"
 #include "data/data_web_page.h"
+#include "e2e/e2e_chat.h"
 #include "history/history.h"
 #include "lang/lang_keys.h"
 #include "main/main_session.h"
@@ -110,9 +111,18 @@ WebPageText ProcessWebPageData(WebPageData *page) {
 	return previewText;
 }
 
-WebpageResolver::WebpageResolver(not_null<Main::Session*> session)
+WebpageResolver::WebpageResolver(
+		not_null<Main::Session*> session,
+		PeerId peerId)
 : _session(session)
+, _peerId(peerId)
 , _api(&session->mtp()) {
+	_session->e2e().changes(
+	) | rpl::filter([=](PeerId changed) {
+		return changed == _peerId && _session->e2e().enabled(_peerId);
+	}) | rpl::on_next([=] {
+		cancel(_requestLink);
+	}, _lifetime);
 }
 
 std::optional<WebPageData*> WebpageResolver::lookup(
@@ -135,6 +145,9 @@ QString WebpageResolver::find(not_null<WebPageData*> page) const {
 }
 
 void WebpageResolver::request(const QString &link, bool force) {
+	if (_peerId && _session->e2e().enabled(_peerId)) {
+		return;
+	}
 	if (_requestLink == link && !force) {
 		return;
 	}
@@ -190,7 +203,9 @@ WebpageProcessor::WebpageProcessor(
 	not_null<History*> history,
 	not_null<Ui::InputField*> field)
 : _history(history)
-, _resolver(std::make_shared<WebpageResolver>(&history->session()))
+, _resolver(std::make_shared<WebpageResolver>(
+	&history->session(),
+	history->peer->id))
 , _parser(field)
 , _timer([=] {
 	if (!ShowWebPagePreview(_data) || _link.isEmpty()) {
@@ -198,6 +213,13 @@ WebpageProcessor::WebpageProcessor(
 	}
 	_resolver->request(_link, true);
 }) {
+	_history->session().e2e().changes(
+	) | rpl::filter([=](PeerId peerId) {
+		return peerId == _history->peer->id;
+	}) | rpl::on_next([=] {
+		apply({});
+	}, _lifetime);
+
 	_history->session().downloaderTaskFinished(
 	) | rpl::filter([=] {
 		return _data && (_data->document || _data->photo);
@@ -259,6 +281,9 @@ QString WebpageProcessor::link() const {
 }
 
 void WebpageProcessor::apply(Data::WebPageDraft draft, bool reparse) {
+	if (_history->session().e2e().enabled(_history->peer->id)) {
+		draft = { .removed = true };
+	}
 	const auto was = _link;
 	if (draft.removed) {
 		_draft = draft;
@@ -351,6 +376,10 @@ void WebpageProcessor::checkNow(bool force) {
 }
 
 void WebpageProcessor::checkPreview() {
+	if (_history->session().e2e().enabled(_history->peer->id)) {
+		apply({ .removed = true });
+		return;
+	}
 	const auto previewRestricted = _history->peer
 		&& _history->peer->amRestricted(ChatRestriction::EmbedLinks);
 	if (_parsedLinks.empty()) {

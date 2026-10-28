@@ -17,6 +17,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_unread_things.h"
 #include "main/main_session.h"
 #include "menu/menu_send.h"
+#include "menu/menu_mark_as_read.h"
 #include "apiwrap.h"
 #include "api/api_unread_things.h"
 #include "data/data_document.h"
@@ -71,7 +72,10 @@ CornerButtons::CornerButtons(
 		st->value(_stLifetime, st::historyUnreadReactions))
 , _pollVotes(
 		&_column,
-		st->value(_stLifetime, st::historyUnreadPollVotes)) {
+		st->value(_stLifetime, st::historyUnreadPollVotes))
+, _markRead(
+		&_column,
+		st->value(_stLifetime, st::historyMarkRead)) {
 	// The buttons keep the positions they had as direct children, because the
 	// column has the parent's height and shares its edge. Only they take mouse
 	// input in it - the empty part of the strip is masked out in
@@ -91,12 +95,21 @@ CornerButtons::CornerButtons(
 	_mentions.widget->addClickHandler([=] { mentionsClick(); });
 	_reactions.widget->addClickHandler([=] { reactionsClick(); });
 	_pollVotes.widget->addClickHandler([=] { pollVotesClick(); });
+	_markRead.widget->addClickHandler([=] {
+		if (const auto thread = _delegate->cornerButtonsThread()) {
+			MarkAsReadMenu::MarkAsReadThread(thread);
+			updateMarkReadVisibility();
+		}
+	});
 
 	_down.widget->setAccessibleName(tr::lng_jump_to_bottom(tr::now));
 	_mentions.widget->setAccessibleName(tr::lng_jump_to_mention(tr::now));
 	_reactions.widget->setAccessibleName(tr::lng_jump_to_reaction(tr::now));
 	_pollVotes.widget->setAccessibleName(
 		tr::lng_jump_to_poll_votes(tr::now));
+
+	_markRead.widget->setAccessibleName(tr::lng_context_mark_read(tr::now));
+	_markRead.widget->setToolTip(tr::lng_context_mark_read(tr::now));
 
 	const auto filterScroll = [&](CornerButton &button) {
 		button.widget->installEventFilter(this);
@@ -105,6 +118,7 @@ CornerButtons::CornerButtons(
 	filterScroll(_mentions);
 	filterScroll(_reactions);
 	filterScroll(_pollVotes);
+	filterScroll(_markRead);
 
 	SendMenu::SetupUnreadMentionsMenu(_mentions.widget.data(), [=] {
 		return _delegate->cornerButtonsThread();
@@ -130,7 +144,8 @@ bool CornerButtons::eventFilter(QObject *o, QEvent *e) {
 		&& (o == _down.widget
 			|| o == _mentions.widget
 			|| o == _reactions.widget
-			|| o == _pollVotes.widget)) {
+			|| o == _pollVotes.widget
+			|| o == _markRead.widget)) {
 		return _scrollViewportEvent(e);
 	}
 	return QObject::eventFilter(o, e);
@@ -260,6 +275,7 @@ CornerButton &CornerButtons::buttonByType(Type type) {
 	case Type::Mentions: return _mentions;
 	case Type::Reactions: return _reactions;
 	case Type::PollVotes: return _pollVotes;
+	case Type::MarkRead: return _markRead;
 	}
 	Unexpected("Type in CornerButtons::buttonByType.");
 }
@@ -289,7 +305,20 @@ void CornerButtons::updateVisibility(Type type, bool shown) {
 	}
 }
 
+void CornerButtons::updateMarkReadVisibility() {
+	if (_delegate->cornerButtonsIgnoreVisibility()) {
+		return;
+	}
+	const auto thread = _delegate->cornerButtonsThread();
+	updateVisibility(Type::MarkRead,
+		thread
+			&& _delegate->cornerButtonsHas(Type::MarkRead)
+			&& _delegate->cornerButtonsUnreadMayBeShown()
+			&& MarkAsReadMenu::IsUnreadThread(thread));
+}
+
 void CornerButtons::updateUnreadThingsVisibility() {
+	updateMarkReadVisibility();
 	if (_delegate->cornerButtonsIgnoreVisibility()) {
 		return;
 	}
@@ -349,6 +378,7 @@ void CornerButtons::updateUnreadThingsVisibility() {
 }
 
 void CornerButtons::updateJumpDownVisibility(std::optional<int> counter) {
+	updateMarkReadVisibility();
 	if (const auto shown = _delegate->cornerButtonsDownShown()) {
 		updateVisibility(Type::Down, *shown);
 	}
@@ -449,10 +479,39 @@ void CornerButtons::updatePositions() {
 		_pollVotes.widget->moveToRight(right, top);
 	}
 
+	{
+		const auto right = anim::interpolate(
+			-_markRead.widget->width(),
+			st::historyToDownPosition.x(),
+			shown(_markRead));
+		const auto shift = anim::interpolate(
+			0,
+			_down.widget->height() + skip,
+			historyDownShown
+		) + anim::interpolate(
+			0,
+			_mentions.widget->height() + skip,
+			unreadMentionsShown
+		) + anim::interpolate(
+			0,
+			_reactions.widget->height() + skip,
+			unreadReactionsShown
+		) + anim::interpolate(
+			0,
+			_pollVotes.widget->height() + skip,
+			unreadPollVotesShown);
+		const auto top = _parent->height()
+			- _markRead.widget->height()
+			- st::historyToDownPosition.y()
+			- shift;
+		_markRead.widget->moveToRight(right, top);
+	}
+
 	checkVisibility(_down);
 	checkVisibility(_mentions);
 	checkVisibility(_reactions);
 	checkVisibility(_pollVotes);
+	checkVisibility(_markRead);
 
 	// Leave only the buttons in the column's hit test, so a click on the rest
 	// of the strip goes to the list under it. The attribute alone would not
@@ -470,6 +529,7 @@ void CornerButtons::updatePositions() {
 	addToMask(_mentions);
 	addToMask(_reactions);
 	addToMask(_pollVotes);
+	addToMask(_markRead);
 	_column.setAttribute(Qt::WA_TransparentForMouseEvents, mask.isEmpty());
 	if (_columnMask != mask) {
 		_columnMask = mask;
@@ -482,6 +542,7 @@ void CornerButtons::finishAnimations() {
 	_mentions.animation.stop();
 	_reactions.animation.stop();
 	_pollVotes.animation.stop();
+	_markRead.animation.stop();
 	updatePositions();
 }
 

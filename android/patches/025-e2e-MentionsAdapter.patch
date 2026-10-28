@@ -1,0 +1,8 @@
+--- a/TMessagesProj/src/main/java/org/telegram/ui/Adapters/MentionsAdapter.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/Adapters/MentionsAdapter.java
+@@ -680,0 +681,5 @@
++        if (org.telegram.messenger.televim.E2eChat.enabled(currentAccount, dialog_id)) {
++            if (contextUsernameReqid != 0) ConnectionsManager.getInstance(currentAccount).cancelRequest(contextUsernameReqid, true);
++            if (contextQueryReqid != 0) ConnectionsManager.getInstance(currentAccount).cancelRequest(contextQueryReqid, true);
++            return;
++        }

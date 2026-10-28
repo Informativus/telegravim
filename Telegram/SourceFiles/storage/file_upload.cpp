@@ -308,6 +308,15 @@ FullMsgId Uploader::currentUploadId() const {
 void Uploader::upload(
 		FullMsgId itemId,
 		const std::shared_ptr<FilePrepareResult> &file) {
+	if (itemId.peer && session().api().preventUnencryptedSend(
+			session().data().peer(itemId.peer))) {
+		if (file->type == SendMediaType::Photo) {
+			_photoFailed.fire_copy(itemId);
+		} else {
+			_documentFailed.fire_copy(itemId);
+		}
+		return;
+	}
 	auto preparing = false;
 	if (file->type == SendMediaType::Photo) {
 		const auto photo = session().data().processPhoto(

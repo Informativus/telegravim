@@ -175,6 +175,7 @@ public:
 	struct SentData {
 		PeerId peerId = 0;
 		QString text;
+		bool e2eControl = false;
 	};
 
 	explicit Session(not_null<Main::Session*> session);
@@ -603,6 +604,10 @@ public:
 
 	// Returns true if item found and it is not detached.
 	bool updateExistingMessage(const MTPDmessage &data);
+	void applyE2eMessage(
+		not_null<HistoryItem*> item,
+		const MTPDmessage &message,
+		bool live);
 	void updateEditedMessage(const MTPMessage &data);
 	void processMessages(
 		const QVector<MTPMessage> &data,
@@ -652,7 +657,8 @@ public:
 	void registerMessageSentData(
 		uint64 randomId,
 		PeerId peerId,
-		const QString &text);
+		const QString &text,
+		bool e2eControl = false);
 	void unregisterMessageSentData(uint64 randomId);
 	[[nodiscard]] SentData messageSentData(uint64 randomId) const;
 

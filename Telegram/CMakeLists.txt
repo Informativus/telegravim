@@ -132,6 +132,9 @@ PRIVATE
     data/local_quick_reply_media.h
     data/local_quick_reply_rich_codec.cpp
     data/local_quick_reply_rich_codec.h
+    e2e/e2e_chat.cpp
+    e2e/e2e_chat.h
+
     data/local_saved_tags.cpp
     data/local_saved_tags.h
     data/local_saved_tags_search.cpp

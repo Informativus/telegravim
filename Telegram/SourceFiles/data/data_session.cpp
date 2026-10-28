@@ -10,6 +10,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/local_pinned_dialogs.h"
 #include "data/local_quick_replies.h"
 #include "data/local_quick_reply_view.h"
+#include "e2e/e2e_chat.h"
+
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
 #include "main/main_app_config.h"
@@ -310,6 +312,59 @@ void EnumerateStaticMediaPhotos(
 }
 
 } // namespace
+
+void Session::applyE2eMessage(
+		not_null<HistoryItem*> item,
+		const MTPDmessage &message,
+		bool live) {
+	const auto session = &item->history()->session();
+	const auto peerId = item->history()->peer->id;
+	const auto wireText = qs(message.vmessage());
+	const auto outgoing = message.is_out();
+	const auto protectedMessage = E2E::Chat::IsKeyExchange(wireText)
+		|| E2E::Chat::IsEnvelope(wireText)
+		|| session->e2e().isEncrypted(peerId, item->id)
+		|| item->isE2eProtected();
+	if (protectedMessage
+		&& (!item->history()->peer->isUser()
+			|| item->history()->peer->isSelf()
+			|| message.vfwd_from()
+			|| message.vvia_bot_id()
+			|| message.vvia_business_bot_id()
+			|| message.vguestchat_via_from()
+			|| (message.vfrom_id()
+				&& peerFromMTP(*message.vfrom_id())
+					!= (outgoing ? session->userPeerId() : peerId)))) {
+		item->setEncryptedText(u"Encrypted message unavailable"_q);
+		return;
+	}
+	if (E2E::Chat::IsKeyExchange(wireText)) {
+		item->setEncryptedText(session->e2e().controlNotice(
+			peerId, wireText, outgoing, live));
+	} else if (E2E::Chat::IsEnvelope(wireText)) {
+		const auto received = session->e2e().receive(
+			peerId, item->id, outgoing, live, wireText);
+		if (!received) {
+			item->setEncryptedText(u"Encrypted message unavailable"_q);
+			return;
+		}
+		item->setEncryptedText(received->text);
+		if (!received->replies.empty()) {
+			crl::on_main(session, [=, replies = received->replies] {
+				for (const auto &reply : replies) {
+					auto action = Api::SendAction(session->data().history(peerId));
+					action.clearDraft = false;
+					auto response = Api::MessageToSend(action);
+					response.e2eControl = true;
+					response.textWithTags = { reply, {} };
+					session->api().sendMessage(std::move(response));
+				}
+			});
+		}
+	} else if (protectedMessage) {
+		item->setEncryptedText(u"Encrypted message unavailable"_q);
+	}
+}
 
 Session::Session(not_null<Main::Session*> session)
 : _session(session)
@@ -2164,7 +2219,6 @@ bool Session::queryDocumentVisibility(
 	return false;
 }
 
-
 [[nodiscard]] auto Session::itemVisibilityQueries() const
 -> rpl::producer<Session::ItemVisibilityQuery> {
 	return _itemVisibilityQueries.events();
@@ -3102,6 +3156,7 @@ bool Session::updateExistingMessage(const MTPDmessage &data) {
 		return false;
 	}
 	existing->applySentMessage(data);
+	applyE2eMessage(existing, data, false);
 	const auto result = (existing->mainView() != nullptr);
 	if (result) {
 		stickers().checkSavedGif(existing);
@@ -3131,6 +3186,7 @@ void Session::updateEditedMessage(const MTPMessage &data) {
 		existing->applyEdition(data);
 	}, [&](const auto &data) {
 		existing->applyEdition(HistoryMessageEdition(_session, data));
+		applyE2eMessage(existing, data, false);
 	});
 }
 
@@ -3614,8 +3670,9 @@ FullMsgId Session::messageIdByRandomId(uint64 randomId) const {
 void Session::registerMessageSentData(
 		uint64 randomId,
 		PeerId peerId,
-		const QString &text) {
-	_sentMessagesData.emplace(randomId, SentData{ peerId, text });
+		const QString &text,
+		bool e2eControl) {
+	_sentMessagesData.emplace(randomId, SentData{ peerId, text, e2eControl });
 }
 
 void Session::unregisterMessageSentData(uint64 randomId) {

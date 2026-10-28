@@ -73,7 +73,9 @@ void SendSimpleMedia(
 		MTPInputMedia inputMedia,
 		TextWithEntities caption = {},
 		std::optional<MTPMessageMedia> localMedia = std::nullopt) {
-	if (IsLocalQuickReplyContext(action.options)) {
+	if (IsLocalQuickReplyContext(action.options)
+		|| action.history->session().api().preventUnencryptedSend(
+			action.history->peer)) {
 		return;
 	}
 	const auto history = action.history;
@@ -223,7 +225,9 @@ void SendExistingMedia(
 		Fn<MTPInputMedia()> inputMedia,
 		Data::FileOrigin origin,
 		std::optional<MsgId> localMessageId) {
-	if (IsLocalQuickReplyContext(message.action.options)) {
+	if (IsLocalQuickReplyContext(message.action.options)
+		|| message.action.history->session().api().preventUnencryptedSend(
+			message.action.history->peer)) {
 		return;
 	}
 	const auto history = message.action.history;
@@ -461,7 +465,9 @@ void SendMusicSelectionBatch(
 		std::vector<MusicSelectionItem> items,
 		TextWithEntities caption,
 		Fn<void()> done) {
-	if (IsLocalQuickReplyContext(action.options)) {
+	if (IsLocalQuickReplyContext(action.options)
+		|| action.history->session().api().preventUnencryptedSend(
+			action.history->peer)) {
 		return;
 	}
 	Expects(!items.empty());

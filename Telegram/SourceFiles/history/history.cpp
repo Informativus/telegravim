@@ -598,11 +598,17 @@ not_null<HistoryItem*> History::createItem(
 		if (result->needsUpdateForVideoQualities(message)) {
 			owner().updateEditedMessage(message);
 		}
+		if (message.type() == mtpc_message) {
+			owner().applyE2eMessage(result, message.c_message(), newMessage);
+		}
 		return result;
 	}
 	const auto result = message.match([&](const auto &data) {
 		return makeMessage(id, data, localFlags);
 	});
+	if (message.type() == mtpc_message) {
+		owner().applyE2eMessage(result, message.c_message(), newMessage);
+	}
 	if (newMessage && result->out() && result->isRegular()) {
 		session().topPeers().increment(peer, result->date());
 		if (result->starsPaid()) {
