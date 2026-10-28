@@ -143,6 +143,10 @@ public class ApplicationLoaderImpl extends ApplicationLoader {
 
     @Override
     public boolean showCustomUpdateAppPopup(Context context, BetaUpdate update, int account) {
+        Activity activity = AndroidUtilities.findActivity(context);
+        if (activity == null || activity.isFinishing() || activity.isDestroyed()) {
+            return false;
+        }
         new UpdateAppAlertDialog(context, update, account).show();
         return true;
     }
