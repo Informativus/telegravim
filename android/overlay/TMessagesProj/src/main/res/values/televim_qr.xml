@@ -3,9 +3,7 @@
     <dimen name="televim_qr_inset">16dp</dimen>
     <dimen name="televim_qr_text_inset">36dp</dimen>
     <dimen name="televim_qr_text_gap">64dp</dimen>
-    <dimen name="televim_qr_description_gap">8dp</dimen>
-    <dimen name="televim_qr_title_size">24sp</dimen>
-    <dimen name="televim_qr_text_size">16sp</dimen>
+    <dimen name="televim_qr_text_size">16dp</dimen>
     <dimen name="televim_qr_line_spacing">2dp</dimen>
     <dimen name="televim_qr_corner_width">4dp</dimen>
     <dimen name="televim_qr_corner_length">20dp</dimen>

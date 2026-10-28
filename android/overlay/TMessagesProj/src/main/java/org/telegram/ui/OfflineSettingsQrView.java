@@ -23,7 +23,6 @@ import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.ImageView;
-import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
@@ -64,6 +63,7 @@ public final class OfflineSettingsQrView extends FrameLayout implements SurfaceH
     private final int textGap;
     private final int torchGap;
     private final int torchSize;
+    private int headerBottom;
     private Camera camera;
     private int previewWidth;
     private int previewHeight;
@@ -82,6 +82,7 @@ public final class OfflineSettingsQrView extends FrameLayout implements SurfaceH
         textGap = getResources().getDimensionPixelSize(R.dimen.televim_qr_text_gap);
         torchGap = getResources().getDimensionPixelSize(R.dimen.televim_qr_torch_gap);
         torchSize = getResources().getDimensionPixelSize(R.dimen.televim_qr_torch_size);
+        headerBottom = getResources().getDimensionPixelSize(R.dimen.televim_toolbar_height);
         setBackgroundColor(context.getColor(R.color.televim_qr_background));
         setClipChildren(true);
         setSaveFromParentEnabled(false);
@@ -91,18 +92,12 @@ public final class OfflineSettingsQrView extends FrameLayout implements SurfaceH
         overlay = new FrameOverlay(context);
         overlay.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         addView(overlay);
-        LinearLayout copy = new LinearLayout(context);
-        copy.setOrientation(LinearLayout.VERTICAL);
-        TextView title = text(R.string.TelevimImportScan, R.dimen.televim_qr_title_size);
-        copy.addView(title, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         status = text(R.string.TelevimImportScanAbout, R.dimen.televim_qr_text_size);
+        status.setPadding(0, 0, 0, 0);
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
-        LinearLayout.LayoutParams description = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        description.topMargin = getResources().getDimensionPixelSize(R.dimen.televim_qr_description_gap);
-        copy.addView(status, description);
         instructions = new ScrollView(context);
         instructions.setVerticalScrollBarEnabled(false);
-        instructions.addView(copy);
+        instructions.addView(status, new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         addView(instructions);
         torch = new ImageButton(context);
         torch.setPadding(0, 0, 0, 0);
@@ -136,6 +131,14 @@ public final class OfflineSettingsQrView extends FrameLayout implements SurfaceH
         return result;
     }
 
+    public void setHeaderBottom(int pixels) {
+        int value = Math.max(0, pixels);
+        if (headerBottom != value) {
+            headerBottom = value;
+            requestLayout();
+        }
+    }
+
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         int width = MeasureSpec.getSize(widthMeasureSpec);
@@ -152,17 +155,18 @@ public final class OfflineSettingsQrView extends FrameLayout implements SurfaceH
         }
         surface.measure(MeasureSpec.makeMeasureSpec(surfaceWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(surfaceHeight, MeasureSpec.EXACTLY));
         overlay.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY));
+        int safeTop = Math.min(height, headerBottom + inset);
         int textWidth = width > height ? (int) frame.left - inset * 2 : width - horizontalInset * 2;
-        int textHeight = width > height ? height - inset * 2 : (int) frame.top - textGap - inset;
+        int textHeight = width > height ? height - safeTop - inset : (int) frame.top - textGap - safeTop;
         int textWidthSpec = MeasureSpec.makeMeasureSpec(Math.max(0, textWidth), MeasureSpec.EXACTLY);
         compactPortrait = false;
         if (width <= height) {
-            int compactTextHeight = Math.max(0, Math.min(height / 3, height - torchSize - inset * 4));
+            int compactTextHeight = Math.max(0, Math.min(height / 3, height - safeTop - torchSize - inset * 3));
             instructions.measure(textWidthSpec, MeasureSpec.makeMeasureSpec(compactTextHeight, MeasureSpec.AT_MOST));
             compactPortrait = textHeight < instructions.getMeasuredHeight()
                     || frame.bottom + torchGap + torchSize + inset > height;
             if (compactPortrait) {
-                float frameTop = inset * 2 + instructions.getMeasuredHeight();
+                float frameTop = safeTop + inset + instructions.getMeasuredHeight();
                 float frameBottom = height - inset * 2 - torchSize;
                 side = Math.max(0, Math.min(side, Math.min(width - inset * 2, frameBottom - frameTop)));
                 float centerY = frameTop + Math.max(0, frameBottom - frameTop) / 2;
@@ -184,11 +188,12 @@ public final class OfflineSettingsQrView extends FrameLayout implements SurfaceH
         int surfaceTop = (height - surface.getMeasuredHeight()) / 2;
         surface.layout(surfaceLeft, surfaceTop, surfaceLeft + surface.getMeasuredWidth(), surfaceTop + surface.getMeasuredHeight());
         overlay.layout(0, 0, width, height);
+        int safeTop = Math.min(height, headerBottom + inset);
         int textLeft = width > height ? inset : horizontalInset;
         int textTop = width > height
-                ? (height - instructions.getMeasuredHeight()) / 2
-                : compactPortrait ? inset
-                : Math.max(inset, (int) frame.top - textGap - instructions.getMeasuredHeight());
+                ? safeTop + Math.max(0, height - safeTop - inset - instructions.getMeasuredHeight()) / 2
+                : compactPortrait ? safeTop
+                : Math.max(safeTop, (int) frame.top - textGap - instructions.getMeasuredHeight());
         instructions.layout(textLeft, textTop, textLeft + instructions.getMeasuredWidth(), textTop + instructions.getMeasuredHeight());
         int torchLeft = width > height
                 ? (int) (frame.right + (width - frame.right - torchSize) / 2)

@@ -41,6 +41,14 @@ final class OfflineSettingsAppearance {
     }
 
     static TextView button(Context context, int title, Runnable action, boolean primary) {
+        return button(context, title, action, primary, R.dimen.televim_button_radius);
+    }
+
+    static TextView sheetButton(Context context, int title, Runnable action) {
+        return button(context, title, action, true, R.dimen.televim_sheet_button_radius);
+    }
+
+    private static TextView button(Context context, int title, Runnable action, boolean primary, int radius) {
         TextView result = new TextView(context) {
             @Override
             public void setEnabled(boolean enabled) {
@@ -57,13 +65,8 @@ final class OfflineSettingsAppearance {
         int inset = dimension(context, R.dimen.televim_button_inset);
         result.setPadding(inset, 0, inset, 0);
         GradientDrawable shape = new GradientDrawable();
-        shape.setCornerRadius(dimension(context, R.dimen.televim_button_radius));
-        if (primary) {
-            shape.setOrientation(GradientDrawable.Orientation.LEFT_RIGHT);
-            shape.setColors(new int[]{color(context, R.color.televim_accent), color(context, R.color.televim_accent_end)});
-        } else {
-            shape.setColor(Color.TRANSPARENT);
-        }
+        shape.setCornerRadius(dimension(context, radius));
+        shape.setColor(primary ? color(context, R.color.televim_accent) : Color.TRANSPARENT);
         result.setBackground(new RippleDrawable(ColorStateList.valueOf(color(context,
                 primary ? R.color.televim_accent_pressed : R.color.televim_touch_feedback)), shape, null));
         result.setFocusable(true);

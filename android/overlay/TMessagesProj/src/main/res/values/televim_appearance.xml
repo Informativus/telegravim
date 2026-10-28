@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="televim_background">#FFFFFF</color>
+    <color name="televim_section_background">#F0F0F0</color>
     <color name="televim_primary_text">#1A1D21</color>
     <color name="televim_secondary_text">#757575</color>
     <color name="televim_accent">#229AF0</color>
@@ -12,6 +13,8 @@
     <dimen name="televim_back_size">54dp</dimen>
     <dimen name="televim_back_inset">15dp</dimen>
     <dimen name="televim_page_inset">24dp</dimen>
+    <dimen name="televim_sheet_inset">24dp</dimen>
+    <dimen name="televim_sheet_button_radius">8dp</dimen>
     <dimen name="televim_title_inset">32dp</dimen>
     <dimen name="televim_header_inset">72dp</dimen>
     <dimen name="televim_title_size">24sp</dimen>
