@@ -1,0 +1,10 @@
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
+@@ -17000,0 +17001 @@
++                                    org.telegram.messenger.televim.E2eChat.live(currentAccount, message);
+@@ -18039,0 +18041 @@
++                    org.telegram.messenger.televim.E2eChat.live(currentAccount, message);
+@@ -18532,0 +18535,3 @@
++                }
++                if (baseUpdate instanceof TL_update.TL_updateNewMessage) {
++                    org.telegram.messenger.televim.E2eChat.live(currentAccount, message);

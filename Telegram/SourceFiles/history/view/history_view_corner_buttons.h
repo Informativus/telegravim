@@ -44,6 +44,7 @@ enum class CornerButtonType {
 	Mentions,
 	Reactions,
 	PollVotes,
+	MarkRead,
 };
 
 class CornerButtonsDelegate {
@@ -109,6 +110,7 @@ private:
 	bool eventFilter(QObject *o, QEvent *e) override;
 
 	void computeCurrentReplyReturn();
+	void updateMarkReadVisibility();
 
 	[[nodiscard]] CornerButton &buttonByType(Type type);
 	[[nodiscard]] History *lookupHistory() const;
@@ -135,6 +137,7 @@ private:
 	CornerButton _mentions;
 	CornerButton _reactions;
 	CornerButton _pollVotes;
+	CornerButton _markRead;
 
 	HistoryItem *_replyReturn = nullptr;
 	QVector<FullMsgId> _replyReturns;

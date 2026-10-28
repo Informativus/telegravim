@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "menu/menu_mark_as_read.h"
 
+#include "api/api_read_receipts.h"
+#include "apiwrap.h"
 #include "core/application.h"
 #include "core/core_settings.h"
 #include "data/data_folder.h"
@@ -81,7 +83,7 @@ void MarkAsReadThread(
 		not_null<Data::Thread*> thread,
 		MarkAsReadMuted muted) {
 	const auto readHistory = [&](not_null<History*> history) {
-		history->owner().histories().readInbox(history);
+		history->session().api().readReceipts().markRead(history);
 	};
 	if (!IsUnreadThread(thread)
 		|| ((muted == MarkAsReadMuted::Skip) && SkipMutedThread(thread))) {
@@ -96,9 +98,9 @@ void MarkAsReadThread(
 			readHistory(migrated);
 		}
 	} else if (const auto topic = thread->asTopic()) {
-		topic->readTillEnd();
+		topic->session().api().readReceipts().markRead(topic);
 	} else if (const auto sublist = thread->asSublist()) {
-		sublist->readTillEnd();
+		sublist->session().api().readReceipts().markRead(sublist);
 	}
 }
 

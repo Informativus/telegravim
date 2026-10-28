@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "api/api_updates.h"
 
+#include "e2e/e2e_chat.h"
+
 #include "api/api_authorizations.h"
 #include "api/api_user_names.h"
 #include "api/api_chat_participants.h"
@@ -1583,6 +1585,16 @@ void Updates::applyUpdates(
 			if (const auto item = lookupMessage()) {
 				_session->data().fillMessagePeers(item->fullId(), d);
 				item->applySentMessage(sent.text, d, wasAlready);
+				if (E2E::Chat::IsKeyExchange(sent.text)) {
+					item->setEncryptedText(session().e2e().controlNotice(
+						sent.peerId, sent.text, true));
+				} else if (E2E::Chat::IsEnvelope(sent.text)) {
+					const auto received = session().e2e().receive(
+						sent.peerId, item->id, true, false, sent.text);
+					item->setEncryptedText(received
+						? received->text
+						: u"Encrypted message unavailable"_q);
+				}
 			}
 		}
 
@@ -1647,6 +1659,14 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 	case mtpc_updateMessageID: {
 		const auto &d = update.c_updateMessageID();
 		const auto randomId = d.vrandom_id().v;
+		const auto sent = session().data().messageSentData(randomId);
+		if (sent.peerId && E2E::Chat::IsEnvelope(sent.text)) {
+			const auto received = session().e2e().receive(
+				sent.peerId, d.vid().v, true, false, sent.text);
+			if (!received) {
+				LOG(("E2E: Could not bind outgoing message receipt."));
+			}
+		}
 		if (const auto id = session().data().messageIdByRandomId(randomId)) {
 			const auto newId = d.vid().v;
 			const auto &owner = session().data();
@@ -1656,7 +1676,9 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 				} else if (local->isBusinessShortcut()) {
 					session().data().shortcutMessages().apply(d, local);
 				} else {
-					session().api().readReceipts().sent(local, newId);
+					if (!sent.e2eControl) {
+						session().api().readReceipts().sent(local, newId);
+					}
 					const auto existing = session().data().message(
 						id.peer,
 						newId);

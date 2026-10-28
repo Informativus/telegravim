@@ -187,6 +187,8 @@ public:
 		writePrefImpl<Type>(key, std::forward<Other>(value));
 	}
 	void clearPref(std::string_view key);
+	[[nodiscard]] std::optional<QByteArray> readE2eState() const;
+	[[nodiscard]] bool writeE2eState(const QByteArray &state);
 
 	template <typename Type, typename Other = Type>
 	[[nodiscard]] Type readPref(
