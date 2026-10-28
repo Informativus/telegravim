@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/local_transfer_format.h"
 #include "storage/local_chat_folders_format.h"
 #include "storage/local_navigation_preferences_format.h"
+#include "storage/local_quick_replies_format.h"
 #include "storage/local_pinned_items_format.h"
 
 #include "mtproto/mtproto_auth_key.h"
@@ -407,6 +408,12 @@ void SetRecords(QJsonObject &module, const QMap<QString, QJsonObject> &records) 
 			1,
 			PinnedItems::Validate,
 			[](const QJsonObject &) { return QStringList(); },
+		} },
+		{ u"quick_replies"_q, ModuleDefinition{
+			u"quick_replies"_q,
+			1,
+			QuickReplies::Validate,
+			QuickReplies::AssetReferences,
 		} },
 		{ u"saved_tags"_q, ModuleDefinition{
 			u"saved_tags"_q,

@@ -54,6 +54,7 @@ public:
 	QString getId() const {
 		return _id;
 	}
+	[[nodiscard]] const MTPBotInlineMessage *nativeMessage() const;
 	DocumentData *document() const {
 		return _document;
 	}
@@ -126,6 +127,7 @@ private:
 	PhotoData *_photo = nullptr;
 	GameData *_game = nullptr;
 
+	std::optional<MTPBotInlineMessage> _nativeMessage;
 	std::unique_ptr<HistoryMessageMarkupData> _replyMarkup;
 
 	Data::CloudImage _thumbnail;

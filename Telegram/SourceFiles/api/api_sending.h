@@ -49,6 +49,11 @@ void SendExistingPhoto(
 	not_null<PhotoData*> photo,
 	std::optional<MsgId> localMessageId = std::nullopt);
 
+void SendPreparedMedia(
+	MessageToSend &&message,
+	MTPInputMedia inputMedia,
+	MTPMessageMedia localMedia);
+
 bool SendDice(MessageToSend &message);
 
 // We can't create Data::LocationPoint() and use it

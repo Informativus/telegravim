@@ -1,0 +1,7 @@
+--- a/TMessagesProj/src/main/res/values-ar/strings.xml
++++ b/TMessagesProj/src/main/res/values-ar/strings.xml
+@@ -3,2 +3,2 @@
+-    <string name="AppName">تيليجرام</string>
+-    <string name="AppNameBeta">(Beta) تيليجرام</string>
++    <string name="AppName">Televim</string>
++    <string name="AppNameBeta">Televim Beta</string>

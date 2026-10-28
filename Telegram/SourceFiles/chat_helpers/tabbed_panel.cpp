@@ -16,6 +16,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "data/stickers/data_stickers.h"
 #include "core/application.h"
+#include "core/vim_keymap.h"
 #include "base/options.h"
 #include "styles/style_chat_helpers.h"
 
@@ -278,7 +279,9 @@ void TabbedPanel::enterEventHook(QEnterEvent *e) {
 }
 
 bool TabbedPanel::preventAutoHide() const {
-	return _selector->preventAutoHide();
+	return (Core::VimKeymap::Enabled() && Ui::InFocusChain(
+		const_cast<TabbedPanel*>(this)))
+		|| _selector->preventAutoHide();
 }
 
 void TabbedPanel::leaveEventHook(QEvent *e) {

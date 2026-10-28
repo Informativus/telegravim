@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "api/api_unread_things.h"
 #include "apiwrap.h"
+#include "api/api_read_receipts.h"
 #include "core/application.h"
 #include "data/data_changes.h"
 #include "data/data_channel.h"
@@ -679,6 +680,14 @@ void SavedSublist::readTill(MsgId tillId) {
 void SavedSublist::readTill(
 		MsgId tillId,
 		HistoryItem *tillIdItem) {
+	const auto parent = parentChat();
+	if (parent && !_parent->session().api().readReceipts().allowed(
+			parent->id,
+			tillId,
+			0,
+			sublistPeer()->id)) {
+		return;
+	}
 	if (!IsServerMsgId(tillId)) {
 		return;
 	}
@@ -713,6 +722,13 @@ void SavedSublist::sendReadTillRequest() {
 		_readRequestTimer.cancel();
 	}
 	const auto api = &_parent->session().api();
+	if (!api->readReceipts().allowed(
+			parentChat->id,
+			computeInboxReadTillFull(),
+			0,
+			sublistPeer()->id)) {
+		return;
+	}
 	api->request(base::take(_readRequestId)).cancel();
 
 	_sentReadTill = computeInboxReadTillFull();

@@ -77,6 +77,7 @@ struct ShowWindowDescriptor {
 	QString title;
 	QString submitLabel;
 	SubmitType submitType = SubmitType::Send;
+	bool localQuickReply = false;
 	QRect centerOver;
 	Fn<bool()> discarded;
 	Fn<void(std::shared_ptr<ChatHelpers::Show>)> showCreated;

@@ -25,6 +25,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_premium_limits.h"
 #include "data/data_session.h"
 #include "data/data_user.h"
+#include "data/data_document.h"
+#include "data/data_photo.h"
+#include "data/local_quick_replies.h"
+#include "data/local_quick_reply_media.h"
+#include "data/local_quick_reply_view.h"
 #include "history/view/controls/compose_controls_common.h"
 #include "history/view/controls/history_view_compose_controls.h"
 #include "history/view/history_view_corner_buttons.h"
@@ -48,7 +53,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/storage_account.h"
 #include "storage/storage_media_prepare.h"
 #include "storage/storage_shared_media.h"
+#include "ui/chat/attach/attach_prepare.h"
 #include "ui/boxes/confirm_box.h"
+#include "ui/layers/generic_box.h"
+#include "ui/widgets/labels.h"
 #include "ui/chat/attach/attach_send_files_way.h"
 #include "ui/chat/chat_style.h"
 #include "ui/chat/chat_theme.h"
@@ -69,6 +77,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_menu_icons.h"
 #include "styles/style_layers.h"
 
+#include <QtCore/QMimeData>
+
+#include <variant>
+
 namespace Settings {
 namespace {
 
@@ -84,13 +96,16 @@ public:
 		not_null<Window::SessionController*> controller,
 		not_null<Ui::ScrollArea*> scroll,
 		rpl::producer<Container> containerValue,
-		BusinessShortcutId shortcutId);
+		std::variant<BusinessShortcutId, QString> context);
 	~ShortcutMessages();
 
 	[[nodiscard]] static Type Id(BusinessShortcutId shortcutId);
+	[[nodiscard]] static Type Id(const QString &replyId);
 
 	[[nodiscard]] Type id() const final override {
-		return Id(_shortcutId.current());
+		return _localQuickReplyRef.isEmpty()
+			? Id(_shortcutId.current())
+			: Id(_localQuickReplyRef);
 	}
 
 	[[nodiscard]] rpl::producer<QString> title() override;
@@ -255,12 +270,39 @@ private:
 	void finishSending();
 	void refreshEmptyText();
 	bool showPremiumRequired() const;
+	[[nodiscard]] bool isLocal() const;
+	[[nodiscard]] int nextLocalPosition() const;
+	void prepareLocalMedia(
+		Data::LocalQuickReplyMediaRequest request,
+		Fn<void()> saved = {},
+		bool completionCaptured = false);
+	void saveLocalMessages(
+		std::vector<Data::LocalQuickReplyMessage> messages,
+		std::shared_ptr<const Data::LocalQuickReplyMediaAssets> assets = {},
+		Fn<void()> saved = {},
+		uint64 operation = 0);
+	[[nodiscard]] Data::LocalQuickReplyMediaTarget localMediaTarget() const;
+	void saveLocalText();
+	void saveLocalEdit(
+		not_null<HistoryItem*> item,
+		const TextWithTags &text,
+		std::optional<bool> spoilered = std::nullopt,
+		std::optional<bool> invertCaption = std::nullopt);
+	[[nodiscard]] Data::LocalQuickReplyMessage localMessage(
+		const QString &mediaKind,
+		QString path,
+		TextWithEntities text = {});
+	void showLocalError(const QString &text);
+	void showLocalRetry(const QString &error, Fn<void()> retry);
+	[[nodiscard]] Fn<void()> localCompletion(Fn<void()> saved);
 
 	const not_null<Window::SessionController*> _controller;
 	const not_null<Main::Session*> _session;
 	const not_null<Ui::ScrollArea*> _scroll;
 	const not_null<History*> _history;
 	rpl::variable<BusinessShortcutId> _shortcutId;
+	const QString _localQuickReplyRef;
+	rpl::variable<FullMsgId> _editingId;
 	rpl::variable<QString> _shortcut;
 	rpl::variable<Container> _container;
 	rpl::variable<int> _count;
@@ -289,13 +331,19 @@ private:
 	CornerButtons _cornerButtons;
 
 	Data::MessagesSlice _lastSlice;
+	std::unique_ptr<Data::LocalQuickReplyMedia> _localMedia;
+	std::unique_ptr<Data::LocalQuickReplyMediaOperation> _localMediaOperation;
+	uint64 _localOperation = 0;
+	bool _localSaving = false;
 	bool _choosingAttach = false;
 
 };
 
+using ShortcutContext = std::variant<BusinessShortcutId, QString>;
+
 struct Factory final : AbstractSectionFactory {
-	explicit Factory(BusinessShortcutId shortcutId)
-	: shortcutId(shortcutId) {
+	explicit Factory(ShortcutContext context)
+	: context(std::move(context)) {
 	}
 
 	object_ptr<AbstractSection> create(
@@ -309,10 +357,10 @@ struct Factory final : AbstractSectionFactory {
 			controller,
 			scroll,
 			std::move(containerValue),
-			shortcutId);
+			context);
 	}
 
-	const BusinessShortcutId shortcutId = {};
+	const ShortcutContext context;
 };
 
 [[nodiscard]] bool IsAway(const QString &shortcut) {
@@ -328,16 +376,24 @@ ShortcutMessages::ShortcutMessages(
 	not_null<Window::SessionController*> controller,
 	not_null<Ui::ScrollArea*> scroll,
 	rpl::producer<Container> containerValue,
-	BusinessShortcutId shortcutId)
+	ShortcutContext context)
 : AbstractSection(parent, controller)
 , WindowListDelegate(controller)
 , _controller(controller)
 , _session(&controller->session())
 , _scroll(scroll)
 , _history(_session->data().history(_session->user()->id))
-, _shortcutId(shortcutId)
-, _shortcut(
-	_session->data().shortcutMessages().lookupShortcut(shortcutId).name)
+, _shortcutId(std::holds_alternative<BusinessShortcutId>(context)
+	? std::get<BusinessShortcutId>(context)
+	: BusinessShortcutId())
+, _localQuickReplyRef(std::holds_alternative<QString>(context)
+	? std::get<QString>(context)
+	: QString())
+, _shortcut(_localQuickReplyRef.isEmpty()
+	? _session->data().shortcutMessages().lookupShortcut(
+		_shortcutId.current()).name
+	: _session->data().localQuickReplies().find(_localQuickReplyRef)
+		.value_or(Data::LocalQuickReply()).shortcut)
 , _container(std::move(containerValue))
 , _cornerButtons(
 		_scroll,
@@ -345,20 +401,32 @@ ShortcutMessages::ShortcutMessages(
 		static_cast<HistoryView::CornerButtonsDelegate*>(this)) {
 	const auto messages = &_session->data().shortcutMessages();
 
-	messages->shortcutIdChanged(
-	) | rpl::on_next([=](Data::ShortcutIdChange change) {
-		if (change.oldId == _shortcutId.current()) {
-			if (change.newId) {
-				_shortcutId = change.newId;
+	if (isLocal()) {
+		_localMedia = std::make_unique<Data::LocalQuickReplyMedia>(_session);
+		_session->data().localQuickReplies().changes() | rpl::on_next([=] {
+			if (const auto reply = _session->data().localQuickReplies().find(
+				_localQuickReplyRef)) {
+				_shortcut = reply->shortcut;
 			} else {
 				_showBackRequests.fire({});
 			}
-		}
-	}, lifetime());
-	messages->shortcutsChanged(
-	) | rpl::on_next([=] {
-		_shortcut = messages->lookupShortcut(_shortcutId.current()).name;
-	}, lifetime());
+		}, lifetime());
+	} else {
+		messages->shortcutIdChanged(
+		) | rpl::on_next([=](Data::ShortcutIdChange change) {
+			if (change.oldId == _shortcutId.current()) {
+				if (change.newId) {
+					_shortcutId = change.newId;
+				} else {
+					_showBackRequests.fire({});
+				}
+			}
+		}, lifetime());
+		messages->shortcutsChanged(
+		) | rpl::on_next([=] {
+			_shortcut = messages->lookupShortcut(_shortcutId.current()).name;
+		}, lifetime());
+	}
 
 	controller->chatStyle()->paletteChanged(
 	) | rpl::on_next([=] {
@@ -395,7 +463,10 @@ ShortcutMessages::ShortcutMessages(
 	) | rpl::on_next([=](auto fullId) {
 		if (const auto item = _session->data().message(fullId)) {
 			const auto media = item->media();
-			if (!media || media->webpage() || media->allowsEditCaption()) {
+			if (item->isLocalQuickReply()
+				|| !media
+				|| media->webpage()
+				|| media->allowsEditCaption()) {
 				_composeControls->editMessage(
 					fullId,
 					_inner->getSelectedTextRange(item));
@@ -414,8 +485,8 @@ ShortcutMessages::~ShortcutMessages() = default;
 
 void ShortcutMessages::refreshEmptyText() {
 	const auto &shortcut = _shortcut.current();
-	const auto away = IsAway(shortcut);
-	const auto greeting = !away && IsGreeting(shortcut);
+	const auto away = !isLocal() && IsAway(shortcut);
+	const auto greeting = !isLocal() && IsGreeting(shortcut);
 	auto text = away
 		? tr::lng_away_empty_title(
 			tr::now,
@@ -463,9 +534,15 @@ Type ShortcutMessages::Id(BusinessShortcutId shortcutId) {
 	return std::make_shared<Factory>(shortcutId);
 }
 
+Type ShortcutMessages::Id(const QString &replyId) {
+	return std::make_shared<Factory>(replyId);
+}
+
 rpl::producer<QString> ShortcutMessages::title() {
 	return _shortcut.value() | rpl::map([=](const QString &shortcut) {
-		return IsAway(shortcut)
+		return isLocal()
+			? rpl::single('/' + shortcut)
+			: IsAway(shortcut)
 			? tr::lng_away_title()
 			: IsGreeting(shortcut)
 			? tr::lng_greeting_title()
@@ -512,6 +589,42 @@ void ShortcutMessages::selectionAction(Info::SelectionAction action) {
 
 void ShortcutMessages::fillTopBarMenu(
 		const Ui::Menu::MenuCallback &addAction) {
+	if (isLocal()) {
+		const auto replies = &_session->data().localQuickReplies();
+		addAction(tr::lng_context_edit_shortcut(tr::now), [=] {
+			if (const auto reply = replies->find(_localQuickReplyRef)) {
+				ShowLocalQuickReplyMetadata(_controller, *reply);
+			}
+		}, &st::menuIconEdit);
+		addAction({
+			.text = tr::lng_context_delete_shortcut(tr::now),
+			.handler = crl::guard(this, [=] {
+				const auto remove = [=] {
+					replies->remove(_localQuickReplyRef, crl::guard(this,
+						[=](bool ok) {
+							if (!ok) _controller->showToast(replies->error());
+							else _showBackRequests.fire({});
+						}));
+				};
+				if (_count.current() == 0) {
+					remove();
+				} else {
+					_controller->show(Ui::MakeConfirmBox({
+						.text = { tr::lng_replies_delete_sure() },
+						.confirmed = [=](Fn<void()> close) {
+							remove();
+							close();
+						},
+						.confirmText = tr::lng_box_delete(),
+						.confirmStyle = &st::attentionBoxButton,
+					}));
+				}
+			}),
+			.icon = &st::menuIconDeleteAttention,
+			.isAttention = true,
+		});
+		return;
+	}
 	const auto owner = &_controller->session().data();
 	const auto messages = &owner->shortcutMessages();
 
@@ -623,9 +736,11 @@ void ShortcutMessages::updateComposeControlsPosition() {
 }
 
 void ShortcutMessages::setupComposeControls() {
-	_shortcutId.value() | rpl::on_next([=](BusinessShortcutId id) {
-		_composeControls->updateShortcutId(id);
-	}, lifetime());
+	if (!isLocal()) {
+		_shortcutId.value() | rpl::on_next([=](BusinessShortcutId id) {
+			_composeControls->updateShortcutId(id);
+		}, lifetime());
+	}
 
 	const auto state = Dialogs::EntryState{
 		.key = Dialogs::Key{ _history },
@@ -635,19 +750,23 @@ void ShortcutMessages::setupComposeControls() {
 	};
 	_composeControls->setCurrentDialogsEntryState(state);
 
-	auto writeRestriction = rpl::combine(
-		_count.value(),
-		ShortcutMessagesLimitValue(_session)
-	) | rpl::map([=](int count, int limit) {
-		return (count >= limit)
-			? Controls::WriteRestriction{
-				.text = tr::lng_business_limit_reached(
-					tr::now,
-					lt_count,
-					limit),
-				.type = Controls::WriteRestrictionType::Rights,
-			} : Controls::WriteRestriction();
-	});
+	auto writeRestriction = rpl::producer<Controls::WriteRestriction>(
+		rpl::single(Controls::WriteRestriction()));
+	if (!isLocal()) {
+		writeRestriction = rpl::combine(
+			_count.value(),
+			ShortcutMessagesLimitValue(_session)
+		) | rpl::map([=](int count, int limit) {
+			return (count >= limit)
+				? Controls::WriteRestriction{
+					.text = tr::lng_business_limit_reached(
+						tr::now,
+						lt_count,
+						limit),
+					.type = Controls::WriteRestrictionType::Rights,
+				} : Controls::WriteRestriction();
+		});
+	}
 	_composeControls->setHistory({
 		.history = _history.get(),
 		.sendActionFactory = [=] { return prepareSendAction({}); },
@@ -674,11 +793,73 @@ void ShortcutMessages::setupComposeControls() {
 		listSendBotCommand(command, FullMsgId());
 	}, lifetime());
 
+	_composeControls->editMsgIdValue() | rpl::on_next([=](FullMsgId id) {
+		_editingId = id;
+	}, lifetime());
+
 	const auto saveEditMsgRequestId = lifetime().make_state<mtpRequestId>(0);
 	_composeControls->editRequests(
 	) | rpl::on_next([=](auto data) {
 		if (const auto item = _session->data().message(data.fullId)) {
-			if (item->isBusinessShortcut()) {
+			if (item->isLocalQuickReply()) {
+				if (data.videoCover) {
+					const auto source = _composeControls->localQuickReplyEditSource();
+					if (!source || source->replyRef != _localQuickReplyRef) {
+						showLocalError(tr::lng_local_replies_edit_draft_missing(tr::now));
+						return;
+					}
+					const auto error = Data::QuickReplyMessageEditError(*source);
+					if (!error.isEmpty()) {
+						showLocalError(error);
+						return;
+					}
+					const auto cover = data.videoCover.localPrepared
+						? Data::LocalQuickReplyCover(data.videoCover.localPrepared)
+						: data.videoCover.photo
+						? Data::LocalQuickReplyCover(
+							Data::LocalQuickReplyPhoto{
+								data.videoCover.photo,
+								{}})
+						: data.videoCover.cleared
+						? Data::LocalQuickReplyCover(
+							Data::LocalQuickReplyRemoveCover())
+						: Data::LocalQuickReplyCover(
+							Data::LocalQuickReplyKeepCover());
+					const auto media = item->media();
+					const auto dimensions = (media && media->document())
+						? media->document()->dimensions
+						: (media && media->photo())
+						? QSize(
+							media->photo()->width(),
+							media->photo()->height())
+						: QSize();
+					prepareLocalMedia({
+						.target = [&] {
+							auto target = localMediaTarget();
+							target.previous = *source;
+							return target;
+						}(),
+						.caption = {
+							data.textWithTags.text,
+							TextUtilities::ConvertTextTagsToEntities(
+								data.textWithTags.tags) },
+						.options = {
+							.spoiler = data.spoilered,
+							.invertCaption = data.options.invertCaption,
+						},
+						.source = Data::LocalQuickReplyMediaPatch{
+							.cover = cover,
+							.videoDimensions = dimensions,
+						},
+					}, crl::guard(this, [=] {
+						_composeControls->cancelEditMessage();
+						finishSending();
+					}));
+				} else {
+					saveLocalEdit(item, data.textWithTags, data.spoilered,
+						data.options.invertCaption);
+				}
+			} else if (item->isBusinessShortcut()) {
 				const auto spoiler = data.spoilered;
 				edit(
 					item,
@@ -790,9 +971,13 @@ base::weak_qptr<Ui::RpWidget> ShortcutMessages::createPinnedToBottom(
 	auto placeholder = rpl::deferred([=] {
 		return _shortcutId.value();
 	}) | rpl::map([=](BusinessShortcutId id) {
-		return _session->data().shortcutMessages().lookupShortcut(id).name;
+		return isLocal()
+			? _shortcut.current()
+			: _session->data().shortcutMessages().lookupShortcut(id).name;
 	}) | rpl::map([=](const QString &shortcut) {
-		return (shortcut == u"away"_q)
+		return isLocal()
+			? tr::lng_replies_message_placeholder()
+			: (shortcut == u"away"_q)
 			? tr::lng_away_message_placeholder()
 			: (shortcut == u"hello"_q)
 			? tr::lng_greeting_message_placeholder()
@@ -816,6 +1001,7 @@ base::weak_qptr<Ui::RpWidget> ShortcutMessages::createPinnedToBottom(
 			.panelsLevel = Window::GifPauseReason::Layer,
 			.voiceCustomCancelText = tr::lng_record_cancel_stories(tr::now),
 			.voiceLockFromBottom = true,
+			.localQuickReplyRef = _localQuickReplyRef,
 			.features = {
 				.sendAs = false,
 				.ttlInfo = false,
@@ -870,6 +1056,21 @@ rpl::producer<Data::MessagesSlice> ShortcutMessages::listSource(
 		Data::MessagePosition aroundId,
 		int limitBefore,
 		int limitAfter) {
+	if (isLocal()) {
+		const auto view = &_session->data().localQuickReplyView();
+		view->request(_localQuickReplyRef);
+		return rpl::single(rpl::empty) | rpl::then(
+			view->updates(_localQuickReplyRef)
+		) | rpl::map([=] {
+			return view->slice(_localQuickReplyRef);
+		}) | rpl::after_next([=](const Data::MessagesSlice &slice) {
+			_count = slice.fullCount.value_or(0);
+			if (const auto error = view->error(_localQuickReplyRef);
+				!error.isEmpty()) {
+				showLocalError(error);
+			}
+		});
+	}
 	const auto messages = &_session->data().shortcutMessages();
 	return _shortcutId.value(
 	) | rpl::map([=](BusinessShortcutId shortcutId) {
@@ -897,7 +1098,9 @@ bool ShortcutMessages::listIsItemGoodForSelection(
 bool ShortcutMessages::listIsLessInOrder(
 		not_null<HistoryItem*> first,
 		not_null<HistoryItem*> second) {
-	return first->position() < second->position();
+	return isLocal()
+		? _session->data().localQuickReplyView().less(first, second)
+		: first->position() < second->position();
 }
 
 void ShortcutMessages::listSelectionChanged(SelectedItems &&items) {
@@ -1142,6 +1345,37 @@ void ShortcutMessages::checkReplyReturns() {
 }
 
 void ShortcutMessages::confirmDeleteSelected() {
+	if (isLocal()) {
+		const auto selected = _inner->getSelectedItems();
+		auto ids = QStringList();
+		for (const auto &selectedItem : selected) {
+			const auto item = _session->data().message(selectedItem.msgId);
+			const auto source = item
+				? _session->data().localQuickReplyView().message(item)
+				: std::nullopt;
+			if (!source || source->replyRef != _localQuickReplyRef) {
+				showLocalError(tr::lng_local_replies_edit_draft_missing(tr::now));
+				return;
+			}
+			ids.push_back(source->id);
+		}
+		if (ids.isEmpty()) return;
+		const auto replies = &_session->data().localQuickReplies();
+		_controller->show(Ui::MakeConfirmBox({
+			.text = { tr::lng_replies_delete_sure() },
+			.confirmed = [=](Fn<void()> close) {
+				replies->removeMessages(_localQuickReplyRef, ids,
+					crl::guard(this, [=](bool ok) {
+						if (!ok) showLocalError(replies->error());
+						else _inner->cancelSelection();
+						close();
+					}));
+			},
+			.confirmText = tr::lng_box_delete(),
+			.confirmStyle = &st::attentionBoxButton,
+		}));
+		return;
+	}
 	ConfirmDeleteSelectedItems(_inner);
 }
 
@@ -1149,41 +1383,295 @@ void ShortcutMessages::clearSelected() {
 	_inner->cancelSelection();
 }
 
+bool ShortcutMessages::isLocal() const {
+	return !_localQuickReplyRef.isEmpty();
+}
+
+int ShortcutMessages::nextLocalPosition() const {
+	const auto reply = _session->data().localQuickReplies().find(
+		_localQuickReplyRef);
+	if (!reply || reply->messages.empty()) return 0;
+	const auto last = ranges::max_element(
+		reply->messages,
+		[](const auto &a, const auto &b) {
+			return std::tie(a.position, a.id) < std::tie(b.position, b.id);
+		});
+	return (last->position < std::numeric_limits<int>::max())
+		? last->position + 1
+		: last->position;
+}
+
+Data::LocalQuickReplyMessage ShortcutMessages::localMessage(
+		const QString &mediaKind,
+		QString path,
+		TextWithEntities text) {
+	auto result = Data::LocalQuickReplyMessage{
+		.replyRef = _localQuickReplyRef,
+		.replyToRef = localMediaTarget().replyToRef,
+		.message = std::move(text),
+		.media = QJsonObject{ { u"kind"_q, mediaKind } },
+		.position = nextLocalPosition(),
+	};
+	if (!path.isEmpty()) result.sourcePaths = { std::move(path) };
+	return result;
+}
+
+Data::LocalQuickReplyMediaTarget ShortcutMessages::localMediaTarget() const {
+	QString replyToRef;
+	const auto reply = replyTo();
+	if (reply.messageId) {
+		if (const auto item = _session->data().message(reply.messageId)) {
+			if (const auto source = _session->data().localQuickReplyView().message(item)) {
+				replyToRef = source->id;
+			}
+		}
+	}
+	return {
+		.replyRef = _localQuickReplyRef,
+		.replyToRef = std::move(replyToRef),
+		.firstPosition = nextLocalPosition(),
+	};
+}
+
+void ShortcutMessages::prepareLocalMedia(
+		Data::LocalQuickReplyMediaRequest request,
+		Fn<void()> saved,
+		bool completionCaptured) {
+	if (_localSaving) return;
+	if (!_localMedia) {
+		showLocalError(u"Local media preparation is unavailable."_q);
+		return;
+	}
+	_localSaving = true;
+	if (!completionCaptured) saved = localCompletion(std::move(saved));
+	const auto pending = std::make_shared<Data::LocalQuickReplyMediaRequest>(
+		std::move(request));
+	const auto operation = ++_localOperation;
+	_localMediaOperation = _localMedia->prepare(
+		*pending,
+		crl::guard(this, [=, saved = std::move(saved)](
+				Data::LocalQuickReplyMediaResult result) mutable {
+			if (operation != _localOperation) return;
+			_localMediaOperation.reset();
+			if (const auto error = std::get_if<Data::LocalQuickReplyMediaError>(
+					&result)) {
+				showLocalRetry(error->detail, [=] {
+					prepareLocalMedia(*pending, saved, true);
+				});
+				return;
+			}
+			auto prepared = std::get<
+				Data::PreparedLocalQuickReplyMedia>(std::move(result));
+			saveLocalMessages(
+				std::move(prepared.messages),
+				std::move(prepared.assets),
+				std::move(saved),
+				operation);
+		}));
+}
+
+void ShortcutMessages::saveLocalMessages(
+		std::vector<Data::LocalQuickReplyMessage> messages,
+		std::shared_ptr<const Data::LocalQuickReplyMediaAssets> assets,
+		Fn<void()> saved,
+		uint64 operation) {
+	if (messages.empty()) {
+		_localSaving = false;
+		return;
+	}
+	if (!operation) {
+		if (_localSaving) return;
+		operation = ++_localOperation;
+		saved = localCompletion(std::move(saved));
+	}
+	_localSaving = true;
+	const auto pending = std::make_shared<Data::PreparedLocalQuickReplyMedia>(
+		Data::PreparedLocalQuickReplyMedia{ std::move(messages), std::move(assets) });
+	const auto replies = &_session->data().localQuickReplies();
+	replies->saveMessages(
+		_localQuickReplyRef,
+		pending->messages,
+		crl::guard(this, [=](bool ok) {
+			if (operation != _localOperation) return;
+			if (!ok) {
+				showLocalRetry(replies->error(), [=] {
+					saveLocalMessages(pending->messages, pending->assets, saved, operation);
+				});
+				return;
+			}
+			_localSaving = false;
+			for (const auto &message : pending->messages) {
+				_composeControls->localQuickReplyEditSaved(message);
+			}
+			if (saved) saved();
+		}),
+		pending->assets);
+}
+
+void ShortcutMessages::saveLocalText() {
+	const auto text = _composeControls->getTextWithAppliedMarkdown();
+	if (text.text.isEmpty()) return;
+	if (_composeControls->isEditingMessage()) {
+		const auto item = _session->data().message(_editingId.current());
+		if (!item || !item->isLocalQuickReply()) {
+			showLocalError(tr::lng_local_replies_edit_draft_missing(tr::now));
+			return;
+		}
+		saveLocalEdit(item, text);
+		return;
+	}
+	saveLocalMessages(
+		{ localMessage(
+			u"text"_q,
+			QString(),
+			{ text.text,
+				TextUtilities::ConvertTextTagsToEntities(text.tags) }) },
+		{},
+		crl::guard(this, [=] { _composeControls->clear(); }));
+}
+
+void ShortcutMessages::saveLocalEdit(
+		not_null<HistoryItem*> item,
+		const TextWithTags &text,
+		std::optional<bool> spoilered,
+		std::optional<bool> invertCaption) {
+	if (_localSaving) return;
+	const auto source = (item->fullId() == _editingId.current())
+		? _composeControls->localQuickReplyEditSource() : nullptr;
+	if (!source || source->replyRef != _localQuickReplyRef) {
+		showLocalError(tr::lng_local_replies_edit_draft_missing(tr::now));
+		return;
+	}
+	if (const auto error = Data::QuickReplyMessageEditError(*source)
+		; !error.isEmpty()) {
+		showLocalError(error);
+		return;
+	}
+	_localSaving = true;
+	const auto operation = ++_localOperation;
+	const auto editingId = item->fullId();
+	auto changed = *source;
+	changed.message = {
+		text.text,
+		TextUtilities::ConvertTextTagsToEntities(text.tags) };
+	if (spoilered) changed.media.insert(u"spoiler"_q, *spoilered);
+	if (invertCaption) changed.media.insert(u"invert_caption"_q, *invertCaption);
+	const auto completed = localCompletion(crl::guard(this, [=] {
+		_composeControls->cancelEditMessage();
+	}));
+	_session->data().localQuickReplies().saveMessages(
+		_localQuickReplyRef,
+		{ std::move(changed) },
+		crl::guard(this, [=](bool ok) {
+			if (operation == _localOperation) _localSaving = false;
+			if (operation != _localOperation
+				|| _editingId.current() != editingId) {
+				return;
+			}
+			if (!ok) {
+				showLocalError(_session->data().localQuickReplies().error());
+				return;
+			}
+			_composeControls->localQuickReplyEditSaved(*source);
+			completed();
+		}));
+}
+
+Fn<void()> ShortcutMessages::localCompletion(Fn<void()> saved) {
+	const auto text = _composeControls->getTextWithAppliedMarkdown();
+	const auto editingId = _editingId.current();
+	const auto reply = replyTo();
+	return crl::guard(this, [=] {
+		const auto current = _composeControls->getTextWithAppliedMarkdown();
+		if (_editingId.current() != editingId
+			|| replyTo() != reply
+			|| current.text != text.text
+			|| current.tags != text.tags) {
+			return;
+		}
+		if (saved) saved();
+		if (_composeControls->replyingToMessage() == reply) {
+			_composeControls->cancelReplyMessage();
+		}
+		finishSending();
+	});
+}
+
+void ShortcutMessages::showLocalRetry(const QString &error, Fn<void()> retry) {
+	_controller->show(Box([=](not_null<Ui::GenericBox*> box) {
+		box->setTitle(tr::lng_local_replies_save_failed());
+		box->setCloseByOutsideClick(false);
+		box->setCloseByEscape(false);
+		box->addRow(object_ptr<Ui::FlatLabel>(box, rpl::single(error), st::boxLabel));
+		box->addButton(tr::lng_bot_download_retry(), crl::guard(this, [=] {
+			_localSaving = false;
+			box->closeBox();
+			retry();
+		}));
+		box->addButton(tr::lng_record_lock_discard(), crl::guard(this, [=] {
+			_localSaving = false;
+			box->closeBox();
+		}));
+	}));
+}
+
+void ShortcutMessages::showLocalError(const QString &text) {
+	if (!text.isEmpty()) _controller->showToast(text);
+}
+
 void ShortcutMessages::uploadFile(
 		const QByteArray &fileContent,
 		SendMediaType type) {
-	_session->api().sendFile(fileContent, type, prepareSendAction({}));
+	if (!isLocal()) {
+		_session->api().sendFile(fileContent, type, prepareSendAction({}));
+		return;
+	}
+	prepareLocalMedia({
+		.target = localMediaTarget(),
+		.caption = {
+			_composeControls->getTextWithAppliedMarkdown().text,
+			TextUtilities::ConvertTextTagsToEntities(
+				_composeControls->getTextWithAppliedMarkdown().tags) },
+		.source = Data::LocalQuickReplyBytes{ fileContent, type },
+	}, crl::guard(this, [=] { _composeControls->clear(); }));
 }
 
 bool ShortcutMessages::showSendingFilesError(
 		const Ui::PreparedList &list) const {
-	if (showPremiumRequired()) {
+	if (!isLocal() && showPremiumRequired()) {
 		return true;
 	}
 	const auto show = _controller->uiShow();
 	const auto peer = _controller->session().user();
-	return Data::ShowSendError(show, peer, list, std::nullopt, true);
+	return Data::ShowSendError(show, peer, list, std::nullopt, true, isLocal());
 }
 
 bool ShortcutMessages::showSendingFilesError(
 		const Ui::PreparedBundle &bundle) const {
-	if (showPremiumRequired()) {
+	if (!isLocal() && showPremiumRequired()) {
 		return true;
 	}
 	const auto peer = _controller->session().user();
-	return Data::ShowSendError(_controller->uiShow(), peer, bundle, true);
+	return Data::ShowSendError(_controller->uiShow(), peer, bundle, true, isLocal());
 }
 
 Api::SendAction ShortcutMessages::prepareSendAction(
 		Api::SendOptions options) const {
 	auto result = Api::SendAction(_history, options);
 	result.replyTo = replyTo();
-	result.options.shortcutId = _shortcutId.current();
+	if (!isLocal()) {
+		result.options.shortcutId = _shortcutId.current();
+	}
+	result.options.localQuickReplyRef = _localQuickReplyRef;
 	result.options.sendAs = _composeControls->sendAsPeer();
 	return result;
 }
 
 void ShortcutMessages::send() {
+	if (isLocal()) {
+		saveLocalText();
+		return;
+	}
 	if (_composeControls->getTextWithAppliedMarkdown().text.isEmpty()) {
 		return;
 	}
@@ -1191,6 +1679,25 @@ void ShortcutMessages::send() {
 }
 
 void ShortcutMessages::sendVoice(ComposeControls::VoiceToSend &&data) {
+	if (isLocal()) {
+		prepareLocalMedia({
+			.target = localMediaTarget(),
+			.caption = {
+				_composeControls->getTextWithAppliedMarkdown().text,
+				TextUtilities::ConvertTextTagsToEntities(
+					_composeControls->getTextWithAppliedMarkdown().tags) },
+			.source = Data::LocalQuickReplyRecording{
+				.bytes = std::move(data.bytes),
+				.waveform = std::move(data.waveform),
+				.duration = data.duration,
+				.roundVideo = data.video,
+			},
+		}, crl::guard(this, [=] {
+			_composeControls->clearListenState();
+			_composeControls->clear();
+		}));
+		return;
+	}
 	if (showPremiumRequired()) {
 		return;
 	}
@@ -1208,6 +1715,10 @@ void ShortcutMessages::sendVoice(ComposeControls::VoiceToSend &&data) {
 }
 
 void ShortcutMessages::send(Api::SendOptions options) {
+	if (isLocal()) {
+		saveLocalText();
+		return;
+	}
 	if (showPremiumRequired()) {
 		return;
 	}
@@ -1230,6 +1741,10 @@ void ShortcutMessages::edit(
 		mtpRequestId *const saveEditMsgRequestId,
 		bool spoilered,
 		Api::VideoCoverEdit videoCover) {
+	if (isLocal()) {
+		showLocalError(u"Local quick reply edits must use the native editor."_q);
+		return;
+	}
 	if (*saveEditMsgRequestId) {
 		return;
 	}
@@ -1398,6 +1913,17 @@ void ShortcutMessages::sendingFilesConfirmed(
 	if (showSendingFilesError(*bundle)) {
 		return;
 	}
+	if (isLocal()) {
+		prepareLocalMedia({
+			.target = localMediaTarget(),
+			.caption = {
+				_composeControls->getTextWithAppliedMarkdown().text,
+				TextUtilities::ConvertTextTagsToEntities(
+					_composeControls->getTextWithAppliedMarkdown().tags) },
+			.source = Data::LocalQuickReplyFileBundle{ std::move(bundle) },
+		}, crl::guard(this, [=] { _composeControls->clear(); }));
+		return;
+	}
 	const auto compress = bundle->way.sendImagesAsPhotos();
 	const auto type = compress ? SendMediaType::Photo : SendMediaType::File;
 	auto action = prepareSendAction(options);
@@ -1486,7 +2012,20 @@ bool ShortcutMessages::sendExistingDocument(
 		not_null<DocumentData*> document,
 		Api::SendOptions options,
 		std::optional<MsgId> localId) {
-	if (showPremiumRequired()) {
+	if (isLocal()) {
+		prepareLocalMedia({
+			.target = localMediaTarget(),
+			.caption = {
+				_composeControls->getTextWithAppliedMarkdown().text,
+				TextUtilities::ConvertTextTagsToEntities(
+					_composeControls->getTextWithAppliedMarkdown().tags) },
+			.source = Data::LocalQuickReplyDocument{ document, {} },
+		}, crl::guard(this, [=] {
+			_composeControls->clearFieldAfterStickerSend();
+			_composeControls->clear();
+		}));
+		return true;
+	} else if (showPremiumRequired()) {
 		return false;
 	}
 
@@ -1508,7 +2047,19 @@ void ShortcutMessages::sendExistingPhoto(not_null<PhotoData*> photo) {
 bool ShortcutMessages::sendExistingPhoto(
 		not_null<PhotoData*> photo,
 		Api::SendOptions options) {
-	if (showPremiumRequired()) {
+	if (isLocal()) {
+		prepareLocalMedia({
+			.target = localMediaTarget(),
+			.caption = {
+				_composeControls->getTextWithAppliedMarkdown().text,
+				TextUtilities::ConvertTextTagsToEntities(
+					_composeControls->getTextWithAppliedMarkdown().tags) },
+			.source = Data::LocalQuickReplyPhoto{ photo, {} },
+		}, crl::guard(this, [=] {
+			_composeControls->clear();
+		}));
+		return true;
+	} else if (showPremiumRequired()) {
 		return false;
 	}
 	Api::SendExistingPhoto(
@@ -1523,9 +2074,10 @@ bool ShortcutMessages::sendExistingPhoto(
 void ShortcutMessages::sendInlineResult(
 		std::shared_ptr<InlineBots::Result> result,
 		not_null<UserData*> bot) {
-	if (showPremiumRequired()) {
+	if (!isLocal() && showPremiumRequired()) {
 		return;
-	} else if (const auto error = result->getErrorOnSend(_history)) {
+	} else if (const auto error = isLocal()
+		? Data::SendError() : result->getErrorOnSend(_history)) {
 		Data::ShowSendErrorToast(_controller, _history->peer, error);
 		return;
 	}
@@ -1537,7 +2089,17 @@ void ShortcutMessages::sendInlineResult(
 		not_null<UserData*> bot,
 		Api::SendOptions options,
 		std::optional<MsgId> localMessageId) {
-	if (showPremiumRequired()) {
+	if (isLocal()) {
+		prepareLocalMedia({
+			.target = localMediaTarget(),
+			.caption = {
+				_composeControls->getTextWithAppliedMarkdown().text,
+				TextUtilities::ConvertTextTagsToEntities(
+					_composeControls->getTextWithAppliedMarkdown().tags) },
+			.source = Data::LocalQuickReplyInline{ std::move(result), bot },
+		}, crl::guard(this, [=] { _composeControls->clear(); }));
+		return;
+	} else if (showPremiumRequired()) {
 		return;
 	}
 	auto action = prepareSendAction(options);
@@ -1579,7 +2141,9 @@ FullReplyTo ShortcutMessages::replyTo() const {
 }
 
 bool ShortcutMessages::showPremiumRequired() const {
-	if (!_controller->session().premium()) {
+	if (isLocal()) {
+		return false;
+	} else if (!_controller->session().premium()) {
 		ShowPremiumPreviewToBuy(_controller, PremiumFeature::QuickReplies);
 		return true;
 	}
@@ -1590,6 +2154,10 @@ bool ShortcutMessages::showPremiumRequired() const {
 
 Type ShortcutMessagesId(int shortcutId) {
 	return ShortcutMessages::Id(shortcutId);
+}
+
+Type ShortcutMessagesId(QString replyId) {
+	return ShortcutMessages::Id(replyId);
 }
 
 } // namespace Settings

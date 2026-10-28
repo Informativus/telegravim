@@ -151,6 +151,54 @@ settingsTTLChatsOn: icon {{ "settings/ttl/autodelete_on", windowActiveTextFg }};
 
 settingsIconAdd: icon {{ "settings/add", windowFgActive }};
 settingsIconRemove: icon {{ "settings/remove", windowFgActive }};
+settingsQuickReplyHelpButton: IconButton(defaultIconButton) {
+	width: 44px;
+	height: 44px;
+	icon: icon {{ "settings/faq", windowActiveTextFg }};
+	iconOver: icon {{ "settings/faq", windowActiveTextFg }};
+	rippleAreaPosition: point(2px, 2px);
+	rippleAreaSize: 40px;
+	ripple: defaultRippleAnimationBgOver;
+}
+settingsQuickReplyHelpFocusInset: 2px;
+settingsQuickReplyHelpSkip: 8px;
+settingsQuickReplyGuideButtonPadding: margins(0px, 0px, 0px, 0px);
+settingsQuickReplyGuidePanelMargin: margins(24px, 0px, 24px, 12px);
+settingsQuickReplyGuidePanelPadding: 12px;
+settingsQuickReplyGuidePanelRadius: 12px;
+settingsQuickReplyGuideCaption: FlatLabel(defaultFlatLabel) {
+	style: TextStyle(semiboldTextStyle) {
+		font: font(13px semibold);
+	}
+}
+settingsQuickReplyGuideCaptionPadding: margins(0px, 0px, 0px, 6px);
+settingsQuickReplyGuideSampleMargin: margins(0px, 4px, 0px, 0px);
+settingsQuickReplyGuideInputPadding: 7px;
+settingsQuickReplyGuideInputRadius: 6px;
+settingsQuickReplyGuideBubbleRadius: 12px;
+settingsQuickReplyGuideBubbleTail: 6px;
+settingsQuickReplyGuideSendIcon: icon {{ "chat/input_send", activeButtonFg }};
+settingsQuickReplyGuideLabelSkip: 8px;
+settingsQuickReplyGuideLabelWidth: 80px;
+settingsQuickReplyGuideStackWidth: 240px;
+settingsQuickReplyGuideLabel: FlatLabel(defaultFlatLabel) {
+	textFg: windowSubTextFg;
+	style: TextStyle(defaultTextStyle) {
+		font: font(12px);
+	}
+}
+settingsQuickReplyGuideValue: FlatLabel(defaultFlatLabel) {
+	palette: TextPalette(defaultTextPalette) {
+		monoFg: windowActiveTextFg;
+	}
+}
+settingsQuickReplyGuideBubbleValue: FlatLabel(settingsQuickReplyGuideValue) {
+	textFg: historyTextInFg;
+}
+settingsQuickReplyGuideAction: FlatLabel(defaultFlatLabel) {
+	textFg: activeButtonFg;
+	style: semiboldTextStyle;
+}
 settingsFolderShareIcon: icon {{ "settings/folder_links", lightButtonFg }};
 
 settingsCheckbox: Checkbox(defaultBoxCheckbox) {
@@ -535,6 +583,10 @@ settingsSearchNoResults: FlatLabel(defaultFlatLabel) {
 	align: align(center);
 }
 settingsSearchNoResultsPadding: margins(22px, 32px, 22px, 32px);
+settingsQuickRepliesNoResults: FlatLabel(settingsSearchNoResults) {
+	align: align(left);
+}
+settingsQuickRepliesNoResultsPadding: margins(22px, 16px, 22px, 16px);
 
 powerSavingButton: SettingsButton(settingsButton) {
 	style: boxTextStyle;

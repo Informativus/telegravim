@@ -27,6 +27,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/discrete_sliders.h"
 #include "ui/widgets/fields/input_field.h"
 #include "ui/widgets/labels.h"
+#include "ui/wrap/vertical_layout.h"
+#include "ui/painter.h"
+#include "ui/ui_utility.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/widgets/scroll_area.h"
 #include "window/window_controller.h"
@@ -46,6 +49,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtGui/QKeyEvent>
 
 #include <algorithm>
+#include <array>
 #include <memory>
 #include <vector>
 
@@ -55,10 +59,13 @@ namespace {
 constexpr auto kHoldScrollTickMs = 16;
 constexpr auto kHoldScrollStartDelayMs = 90;
 constexpr auto kSingleScrollDurationMs = 190;
-constexpr auto kTelegraVimBuild = "2026.09.11-103";
+constexpr auto kTelegraVimBuild = "2026.10.28-104";
 
 bool NormalModeEnabled = false;
 bool LegacyDefaultsMigrated = false;
+
+QPointer<QWidget> PanePrefixWindow;
+QPointer<QWidget> PanePrefixFocus;
 
 KeyEventLog KeyLog;
 
@@ -426,10 +433,11 @@ void CleanupScrollAnimations() {
 		not_null<QObject*> object,
 		not_null<QKeyEvent*> e) {
 	const auto navigation = NavigationKey(e);
-	if (!navigation) {
+	const auto page = NormalMode() ? Bindings::PageNavigationDelta(e) : 0;
+	if (!navigation && !page) {
 		return false;
 	}
-	const auto direction = (*navigation == Qt::Key_Down) ? 1 : -1;
+	const auto direction = page ? page : (*navigation == Qt::Key_Down) ? 1 : -1;
 	const auto delta = ScrollStep();
 	const auto objectWidget = WidgetFromObject(object.get());
 	const auto focus = QApplication::focusWidget();
@@ -441,7 +449,10 @@ void CleanupScrollAnimations() {
 	};
 	for (const auto candidate : candidates) {
 		if (const auto area = NearestScrollArea(candidate)) {
-			if (SmoothScrollBy(area, direction * delta, e->isAutoRepeat())) {
+			if (SmoothScrollBy(
+					area,
+					direction * (page ? area->height() : delta),
+					e->isAutoRepeat())) {
 				return true;
 			}
 		}
@@ -450,7 +461,10 @@ void CleanupScrollAnimations() {
 		if (candidate == active) {
 			continue;
 		} else if (const auto area = ContainedScrollArea(candidate)) {
-			if (SmoothScrollBy(area, direction * delta, e->isAutoRepeat())) {
+			if (SmoothScrollBy(
+					area,
+					direction * (page ? area->height() : delta),
+					e->isAutoRepeat())) {
 				return true;
 			}
 		}
@@ -459,7 +473,7 @@ void CleanupScrollAnimations() {
 		if (const auto area = NearestQtScrollArea(candidate)) {
 			if (SmoothScrollBy(
 					area->verticalScrollBar(),
-					direction * delta,
+					direction * (page ? area->viewport()->height() : delta),
 					e->isAutoRepeat())) {
 				return true;
 			}
@@ -696,6 +710,105 @@ void UpdateKeyboardScope(QWidget *scope) {
 	}
 }
 
+[[nodiscard]] bool HandlePaneNavigationKey(not_null<QKeyEvent*> e) {
+	if (!PanePrefixWindow) {
+		auto pending = false;
+		if (Bindings::PaneNavigationKey(e, pending) == Bindings::PaneNavigationAction::None) {
+			return false;
+		}
+	}
+	const auto window = QApplication::activeWindow();
+	const auto focus = QApplication::focusWidget();
+	const auto root = GlobalFocusRoot(focus);
+	if (!window || !NormalMode() || ActiveKeyboardScope()
+		|| (IsKeyboardPane(root) && KeyboardScopeHasTextInput(root, focus))
+		|| TextInputPassthroughRequested(e)) {
+		PanePrefixWindow = nullptr;
+		PanePrefixFocus = nullptr;
+		return false;
+	}
+	if (PanePrefixWindow != window || PanePrefixFocus != focus) {
+		PanePrefixWindow = nullptr;
+		PanePrefixFocus = nullptr;
+	}
+	auto pending = (PanePrefixWindow != nullptr);
+	const auto action = Bindings::PaneNavigationKey(e, pending);
+	if (action == Bindings::PaneNavigationAction::None) {
+		return false;
+	} else if (e->type() == QEvent::ShortcutOverride) {
+		return true;
+	}
+	PanePrefixWindow = pending ? window : nullptr;
+	PanePrefixFocus = pending ? focus : nullptr;
+	if (action == Bindings::PaneNavigationAction::Left) {
+		FocusForCurrentMode();
+		KeyLog.recordCommand(u"Ctrl+A, h"_q, u"focus chat"_q);
+	} else if (action == Bindings::PaneNavigationAction::Right) {
+		auto found = false;
+		for (const auto &root : GlobalFocusRoots(window)) {
+			if (IsKeyboardPane(root)) {
+				found = true;
+				const auto navigation = QPointer<KeyboardNavigation>(
+					KeyboardNavigation::Get(root));
+				navigation->restoreFocus();
+				if (navigation && root) {
+					const auto targets = KeyboardFocusTargets(root);
+					if (std::find(targets.begin(), targets.end(), QApplication::focusWidget())
+						== targets.end()) {
+						navigation->focusNext(true);
+					}
+				}
+				break;
+			}
+		}
+		KeyLog.recordCommand(u"Ctrl+A, l"_q, found
+			? u"focus right pane"_q
+			: u"right pane is not open"_q);
+	} else {
+		KeyLog.recordCommand(u"Ctrl+A"_q, pending
+			? u"choose pane: h = chat, l = right pane"_q
+			: u"pane command cancelled"_q);
+	}
+	return true;
+}
+
+[[nodiscard]] bool HandleChatClipboardKey(
+		not_null<QKeyEvent*> e,
+		QWidget *pane) {
+	if (!NormalMode()) {
+		return false;
+	}
+	const auto select = SelectMessageTextKey(e);
+	const auto copy = pane
+		&& MatchesBindings(VimKeymapKeyCopyMessageOption, e, true);
+	if ((!select && !copy) || TextInputPassthroughRequested(e)) {
+		return false;
+	}
+	const auto navigation = pane ? KeyboardNavigation::Find(pane) : nullptr;
+	if (!select && navigation && navigation->hasHints()) {
+		return false;
+	} else if (e->type() == QEvent::ShortcutOverride || e->isAutoRepeat()) {
+		return true;
+	}
+	if (pane) {
+		if (navigation) {
+			navigation->clearHints();
+		}
+		FocusForCurrentMode();
+		if (HandlePreLayerKey(e)) {
+			return true;
+		}
+	}
+	const auto action = select ? Action::SelectMessageText : Action::CopyMessage;
+	const auto handled = HandleRegisteredAction(action);
+	KeyLog.recordCommand(
+		select ? u"Select message text"_q : u"Copy message"_q,
+		handled
+			? u"chat: choose a message by its hint"_q
+			: u"chat: no matching message visible"_q);
+	return true;
+}
+
 void SetNormalModeValue(bool enabled) {
 	const auto was = NormalMode();
 	const auto value = enabled;
@@ -703,6 +816,8 @@ void SetNormalModeValue(bool enabled) {
 		return;
 	}
 	NormalModeEnabled = value;
+	PanePrefixWindow = nullptr;
+	PanePrefixFocus = nullptr;
 	if (was != NormalMode()) {
 		RefreshModeIndicator();
 	}
@@ -758,30 +873,382 @@ void SetNormalModeValue(bool enabled) {
 		: RussianHintAlphabet();
 }
 
+struct HelpEntry {
+	int section = 0;
+	QString keys;
+	QString description;
+	QString detail;
+	QString aliases;
+};
+
+[[nodiscard]] std::vector<HelpEntry> HelpEntries(bool russian) {
+	auto result = std::vector<HelpEntry>();
+	const auto add = [&](int section, QString keys, QString ru, QString en,
+			QString ruDetail = {}, QString enDetail = {}) {
+		result.push_back({ section, std::move(keys),
+			russian ? std::move(ru) : std::move(en),
+			russian ? std::move(ruDetail) : std::move(enDetail), {} });
+	};
+	const auto binding = [&](int section, auto &option, QString ru, QString en,
+			QString ruDetail = {}, QString enDetail = {}) {
+		if (option.value().trimmed().isEmpty()) {
+			return;
+		}
+		const auto aliases = BindingLabel(option);
+		add(section, aliases.section(QChar(','), 0, 0).trimmed(),
+			std::move(ru), std::move(en), std::move(ruDetail), std::move(enDetail));
+		result.back().aliases = aliases;
+	};
+	binding(0, VimKeymapKeyToggleModeOption,
+		u"Ввод / навигация"_q,
+		u"Typing / navigation"_q,
+		u"Если открыто окно, меню или фото, Esc сначала закрывает его."_q,
+		u"Esc closes an open dialog, menu or photo first."_q);
+	binding(0, VimKeymapKeyScrollDownOption,
+		u"Прокрутить вниз"_q,
+		u"Scroll down"_q);
+	binding(0, VimKeymapKeyScrollUpOption,
+		u"Прокрутить вверх"_q,
+		u"Scroll up"_q);
+	add(0, u"Shift+U, Shift+D"_q,
+		u"На экран вверх / вниз"_q,
+		u"One screen up / down"_q);
+	binding(0, VimKeymapKeyJumpBottomOption,
+		u"К последним сообщениям"_q,
+		u"Jump to the latest messages"_q);
+	binding(0, VimKeymapKeyFocusHintsOption,
+		u"Выбрать элемент по букве"_q,
+		u"Choose a control by its letter"_q,
+		u"Медиа, ссылки, опросы, ответы и авторы пересланных сообщений."_q,
+		u"Media, links, polls, replies and forwarded authors."_q);
+	add(0, u"Ctrl+A → L, Ctrl+A → H"_q,
+		u"Правая панель / обратно в чат"_q,
+		u"Right pane / back to chat"_q,
+		u"В панели: f — метки, j/k — прокрутка, Tab — кнопки, Esc — в чат."_q,
+		u"In the pane: f for hints, j/k to scroll, Tab for controls, Esc to return."_q);
+	add(0, u"c"_q,
+		u"Закрыть элемент по букве"_q,
+		u"Close a control by its letter"_q,
+		u"Кнопки закрытия и плавающие видеосообщения."_q,
+		u"Close buttons and floating round videos."_q);
+	add(0, u"f → hint, Space, Enter"_q,
+		u"Пауза / пуск видеосообщения"_q,
+		u"Pause / resume a round video"_q,
+		u"Shift+F и буква кружка — перейти к сообщению."_q,
+		u"Shift+F and its hint go to the original message."_q);
+	binding(0, VimKeymapKeyHelpOption,
+		u"Открыть эту справку"_q,
+		u"Open this help"_q);
+	binding(1, VimKeymapKeyNextChatOption,
+		u"Следующий чат"_q,
+		u"Next chat"_q,
+		u"Добавьте Shift, чтобы перейти через один чат."_q,
+		u"Add Shift to skip one chat."_q);
+	binding(1, VimKeymapKeyPreviousChatOption,
+		u"Предыдущий чат"_q,
+		u"Previous chat"_q,
+		u"Добавьте Shift, чтобы перейти через один чат."_q,
+		u"Add Shift to skip one chat."_q);
+	binding(1, VimKeymapKeyNextFolderOption,
+		u"Следующая папка"_q,
+		u"Next folder"_q);
+	binding(1, VimKeymapKeyPreviousFolderOption,
+		u"Предыдущая папка"_q,
+		u"Previous folder"_q);
+	binding(1, VimKeymapKeyOpenChatHintsOption,
+		u"Открыть чат по букве"_q,
+		u"Open a chat by its letter"_q);
+	binding(1, VimKeymapKeyChatPreviewOption,
+		u"Предпросмотр чата по букве"_q,
+		u"Preview a chat by its letter"_q,
+		u"Без открытия чата и отметки о прочтении."_q,
+		u"Without opening the chat or marking it read."_q);
+	add(1, u"Ctrl+V"_q,
+		u"Предпросмотр выбранного чата"_q,
+		u"Preview the selected chat"_q,
+		u"В режиме навигации по чатам; не отмечает сообщения прочитанными."_q,
+		u"In chat navigation mode; leaves messages unread."_q);
+	binding(1, VimKeymapKeySearchOption,
+		u"Поиск в режиме навигации"_q,
+		u"Search in navigation mode"_q);
+	binding(1, VimKeymapKeyGlobalSearchOption,
+		u"Открыть поиск из любого режима"_q,
+		u"Open search from any mode"_q);
+	binding(1, VimKeymapKeyCallOption,
+		u"Позвонить / войти в групповой звонок"_q,
+		u"Call / join a group call"_q);
+	binding(2, VimKeymapKeyCopyMessageOption,
+		u"Копировать сообщение или фото"_q,
+		u"Copy a message or photo"_q,
+		u"В альбоме: своя буква у каждого фото и отдельная — для всех фото сразу."_q,
+		u"Albums have a hint for each photo and another for all photos as separate files."_q);
+	binding(2, VimKeymapKeyReplyToMessageOption,
+		u"Ответить на сообщение по букве"_q,
+		u"Reply to a message by its letter"_q);
+	binding(2, VimKeymapKeyCancelReplyOption,
+		u"Снять активный ответ"_q,
+		u"Clear the active reply"_q);
+	binding(2, VimKeymapKeyEditMessageOption,
+		u"Редактировать своё сообщение"_q,
+		u"Edit your message"_q);
+	binding(2, VimKeymapKeyCancelEditOption,
+		u"Отменить редактирование"_q,
+		u"Cancel message editing"_q);
+	binding(2, VimKeymapKeyDeleteMessageOption,
+		u"Удалить сообщение или фото"_q,
+		u"Delete a message or photo"_q,
+		u"Выберите отдельное фото или весь альбом, затем подтвердите удаление."_q,
+		u"Choose one photo or the whole album, then confirm deletion."_q);
+	add(2, u"Shift+R"_q,
+		u"Выбрать реакцию"_q,
+		u"Choose a reaction"_q,
+		u"Нажмите букву сообщения. h/j/k/l или стрелки — выбор, Enter — поставить."_q,
+		u"Choose a message hint. h/j/k/l or arrows select; Enter applies."_q);
+	add(2, u"Ctrl+F, Tab, Shift+Tab"_q,
+		u"Поиск и выбор в реакциях"_q,
+		u"Search and browse reactions"_q,
+		u"Esc закрывает панель. Мышью: правый клик → эмодзи над меню; стрелка раскрывает остальные."_q,
+		u"Esc closes the picker. With a mouse: right-click → emoji above the menu; the arrow reveals more."_q);
+	add(2, u"s"_q,
+		u"Выделить несколько сообщений"_q,
+		u"Select several messages"_q,
+		u"Буква добавляет или убирает сообщение; j/k — прокрутка. Enter — закончить, Esc — отменить."_q,
+		u"Toggle messages by letter; j/k scrolls. Enter finishes; Esc cancels."_q);
+	add(2, u"Shift+S"_q,
+		u"Выделить диапазон сообщений"_q,
+		u"Select a message range"_q,
+		u"Выберите стартовое сообщение по букве; Ctrl+J/K меняет диапазон, d — удалить."_q,
+		u"Choose the starting message by letter; Ctrl+J/K adjusts the range, d deletes."_q);
+	add(2, u"m, Tab, Shift+Tab, Enter"_q,
+		u"Меню бота"_q,
+		u"Bot menu"_q,
+		u"m/ь открывает меню; Tab / Shift+Tab выбирают команду; Enter запускает её. Enter также нажимает START, когда кнопка видна."_q,
+		u"m opens the menu; Tab / Shift+Tab selects a command; Enter runs it. Enter also activates START when visible."_q);
+	add(2, u"d, f, y, Esc"_q,
+		u"Действия с выделенными сообщениями"_q,
+		u"Act on selected messages"_q,
+		u"Удалить с подтверждением / переслать / копировать / выйти."_q,
+		u"Confirm deletion / forward / copy / cancel."_q);
+	binding(2, VimKeymapKeySelectMessageTextOption,
+		u"Выделить текст сообщения"_q,
+		u"Select message text"_q,
+		u"В поиске: закрыть поиск и сохранить место в чате."_q,
+		u"In search: close search and keep the current chat position."_q);
+	add(2, u"gg, G, {, }"_q,
+		u"Движение по тексту сообщения"_q,
+		u"Move through message text"_q,
+		u"Начало / конец / абзацы. Esc — выйти; остальные клавиши сохраняют выделение."_q,
+		u"Start / end / paragraphs. Esc exits; other keys preserve the selection."_q);
+	add(2, u"yiw, yaw, yi', yi\", yi(, yi[, yi{, yit"_q,
+		u"Копировать текстовый объект сообщения"_q,
+		u"Yank a message text object"_q,
+		u"i — внутри, a — с границами. w/W — слово, s — предложение, p — абзац, t — тег. Кавычки и скобки; счётчики: 2yiw, y2i(."_q,
+		u"i selects inside, a includes boundaries. w/W: word, s: sentence, p: paragraph, t: tag. Quotes and brackets; counts: 2yiw, y2i(."_q);
+	add(2, u"yw, ye, y$, yy, viw, va', f<char>, t<char>"_q,
+		u"Копировать диапазон или выделить объект"_q,
+		u"Yank a range or select an object"_q,
+		u"y + движение копирует диапазон. v + i/a выделяет объект. f/t находят символ в строке; F/T — назад. Esc отменяет комбинацию."_q,
+		u"y + motion copies a range. v + i/a selects an object. f/t find a character on the line; F/T search backward. Esc cancels a pending command."_q);
+	add(3, u"i, a, I, A, o, O"_q,
+		u"Перейти к вводу текста"_q,
+		u"Start typing"_q);
+	add(3, u"h j k l"_q,
+		u"Двигать курсор"_q,
+		u"Move the cursor"_q,
+		u"Влево / вниз / вверх / вправо."_q,
+		u"Left / down / up / right."_q);
+	add(3, u"w, b, e"_q,
+		u"Перемещаться по словам"_q,
+		u"Move by words"_q);
+	add(3, u"0, ^, $, |"_q,
+		u"Движение внутри строки"_q,
+		u"Move within a line"_q,
+		u"Начало, первый символ, конец или колонка."_q,
+		u"Start, first character, end or column."_q);
+	add(3, u"gg, G, {, }"_q,
+		u"Начало, конец и абзацы"_q,
+		u"Start, end and paragraphs"_q);
+	add(3, u"x, X, dd, D, diw"_q,
+		u"Удалять текст"_q,
+		u"Delete text"_q,
+		u"d ждёт 500 мс: dd удаляет строку черновика; одиночное d показывает буквы удаления сообщений."_q,
+		u"d waits 500 ms: dd deletes a draft line; single d shows message deletion hints."_q);
+	add(3, u"yy, Y, yiw, p, P"_q,
+		u"Копировать и вставлять текст"_q,
+		u"Yank and paste text"_q);
+	binding(3, VimKeymapKeyUndoOption,
+		u"Отменить изменение текста"_q,
+		u"Undo a text change"_q);
+	binding(3, VimKeymapKeyRedoOption,
+		u"Повторить изменение текста"_q,
+		u"Redo a text change"_q);
+	add(3, u"c, cw, cc, C, ciw"_q,
+		u"Заменять текст с переходом ко вводу"_q,
+		u"Change text and start typing"_q);
+	add(3, u"s, S, r<char>, J, ~"_q,
+		u"Другие команды правки"_q,
+		u"More editing commands"_q,
+		u"Замена символа или строки, объединение строк, смена регистра."_q,
+		u"Substitute a character or line, join lines, change case."_q);
+	add(3, u"v, V"_q,
+		u"Выделять текст посимвольно / построчно"_q,
+		u"Select characters / lines"_q,
+		u"y — копировать, d или x — удалить."_q,
+		u"y copies; d or x deletes."_q);
+	add(3, u"Ctrl+E"_q,
+		u"Исправить слово под курсором"_q,
+		u"Spelling suggestions at the cursor"_q);
+	add(3, u"Option+H, Option+L, Ctrl+H, Ctrl+L"_q,
+		u"Двигать курсор во время ввода"_q,
+		u"Move the cursor while typing"_q,
+		u"Option или Ctrl и H/L — на один символ влево / вправо."_q,
+		u"Option or Ctrl with H/L moves one character left or right."_q);
+	binding(4, VimKeymapKeyEmojiPanelOption,
+		u"Открыть панель"_q,
+		u"Open the picker"_q);
+	binding(4, VimKeymapKeyFocusEmojiOption,
+		u"Открыть панель и перейти к выбору"_q,
+		u"Open and focus the picker"_q);
+	binding(4, VimKeymapKeyFocusChatOption,
+		u"Вернуться в чат или к подписи фото"_q,
+		u"Return to the chat or photo caption"_q);
+	add(4, u"h j k l"_q,
+		u"Выбрать эмодзи, стикер или GIF"_q,
+		u"Choose an emoji, sticker or GIF"_q,
+		u"Работает и в русской раскладке: р о л д."_q,
+		u"Also works in the Russian layout: р о л д."_q);
+	add(4, u"Enter, Space"_q,
+		u"Вставить эмодзи / отправить стикер или GIF"_q,
+		u"Insert an emoji / send a sticker or GIF"_q,
+		u"В окне с фотографиями эмодзи вставляется в подпись; фотографии не отправляются."_q,
+		u"In the photo preview, emoji go into the caption; photos remain unsent."_q);
+	add(4, u"Tab, Shift+Tab"_q,
+		u"Переключить раздел панели"_q,
+		u"Switch picker tabs"_q,
+		u"В окне с фотографиями — между поиском и сеткой."_q,
+		u"In the photo preview: switch between search and the grid."_q);
+	add(4, u"Ctrl+J, Ctrl+K"_q,
+		u"Прокрутить панель / выйти из поиска к сетке"_q,
+		u"Scroll the picker / leave search for the grid"_q);
+	add(4, u"Ctrl+F"_q,
+		u"Поиск внутри панели"_q,
+		u"Search inside the picker"_q,
+		u"В поле поиска j/k вводят буквы."_q,
+		u"In search, j/k type letters."_q);
+	add(4, u"Esc"_q,
+		u"Вернуться из поиска / закрыть панель"_q,
+		u"Leave search / close the picker"_q);
+	add(3, u"Settings"_q,
+		u"Настройка клавиш и курсора"_q, u"Customize keys and cursor"_q,
+		u"Settings → Vim keymap. Основная комбинация показана в строке; все варианты — при наведении."_q,
+		u"Settings → Vim keymap. Rows show the primary shortcut; hover to see every binding."_q);
+	return result;
+}
+
+class HelpShortcutRow final : public Ui::RpWidget {
+public:
+	HelpShortcutRow(QWidget *parent, HelpEntry entry)
+	: Ui::RpWidget(parent)
+	, _entry(std::move(entry))
+	, _title(Ui::CreateChild<Ui::FlatLabel>(this, _entry.description, st::vimHelpRowTitle))
+	, _detail(Ui::CreateChild<Ui::FlatLabel>(this, _entry.detail, st::vimHelpRowDetail)) {
+		_title->setSelectable(true);
+		_detail->setSelectable(true);
+		setToolTip(_entry.aliases.isEmpty() ? _entry.keys : _entry.aliases);
+	}
+
+	QAccessible::Role accessibilityRole() override {
+		return QAccessible::Role::StaticText;
+	}
+
+	QString accessibilityName() override {
+		return _entry.keys + u": "_q + _entry.description + u". "_q + _entry.detail;
+	}
+
+	int resizeGetHeight(int newWidth) override {
+		const auto column = std::min(st::vimHelpKeyColumn, newWidth / 3);
+		const auto left = column + st::vimHelpColumnGap;
+		const auto top = st::vimHelpRowPadding;
+		_title->resizeToWidth(std::max(1, newWidth - left));
+		_detail->resizeToWidth(std::max(1, newWidth - left));
+		_title->moveToLeft(left, top, newWidth);
+		_detail->moveToLeft(left, top + _title->height() + st::vimHelpDetailGap, newWidth);
+		auto x = 0;
+		auto y = top;
+		_badges.clear();
+		for (const auto &key : _entry.keys.split(QChar(','), Qt::SkipEmptyParts)) {
+			const auto text = key.trimmed();
+			const auto w = std::min(column,
+				st::vimHelpKeyFont->width(text) + 2 * st::vimHelpKeyPadding);
+			if (x && x + w > column) {
+				x = 0;
+				y += st::vimHelpKeyHeight + st::vimHelpKeyGap;
+			}
+			_badges.push_back({ QRect(x, y, w, st::vimHelpKeyHeight), text });
+			x += w + st::vimHelpKeyGap;
+		}
+		const auto textHeight = _title->height() + (_entry.detail.isEmpty()
+			? 0 : st::vimHelpDetailGap + _detail->height());
+		return top + std::max(textHeight, y - top + st::vimHelpKeyHeight) + top;
+	}
+
+protected:
+	void paintEvent(QPaintEvent *event) override {
+		auto p = Painter(this);
+		auto hq = PainterHighQualityEnabler(p);
+		p.setFont(st::vimHelpKeyFont);
+		for (const auto &badge : _badges) {
+			p.setPen(Qt::NoPen);
+			p.setBrush(st::windowBgOver);
+			p.drawRoundedRect(badge.rect, st::vimHelpKeyRadius, st::vimHelpKeyRadius);
+			p.setPen(st::windowFg);
+			const auto available = badge.rect.width() - 2 * st::vimHelpKeyPadding;
+			p.drawText(badge.rect, Qt::AlignCenter,
+				st::vimHelpKeyFont->elided(badge.text, available));
+		}
+		p.fillRect(0, height() - st::lineWidth, width(), st::lineWidth, st::boxDividerBg);
+	}
+
+private:
+	struct Badge {
+		QRect rect;
+		QString text;
+	};
+
+	HelpEntry _entry;
+	not_null<Ui::FlatLabel*> _title;
+	not_null<Ui::FlatLabel*> _detail;
+	std::vector<Badge> _badges;
+
+};
+
 class HelpTabsWidget final : public Ui::RpWidget {
 public:
 	HelpTabsWidget(
 		QWidget *parent,
-		QString hints,
+		std::vector<HelpEntry> entries,
 		bool russian,
-		not_null<Ui::InputField*> search)
+		not_null<Ui::InputField*> search,
+		not_null<Ui::SettingsSlider*> slider,
+		not_null<Ui::GenericBox*> box)
 	: Ui::RpWidget(parent)
-	, _hints(std::move(hints))
+	, _entries(std::move(entries))
 	, _russian(russian)
 	, _search(search)
-	, _slider(Ui::CreateChild<Ui::SettingsSlider>(this, st::settingsSlider))
-	, _label(Ui::CreateChild<Ui::FlatLabel>(this, st::boxLabel)) {
+	, _slider(slider)
+	, _box(box)
+	, _content(Ui::CreateChild<Ui::VerticalLayout>(this)) {
 		setFocusPolicy(Qt::StrongFocus);
-		_slider->addSection(tabTitle(0));
-		_slider->addSection(tabTitle(1));
+		for (auto i = 0; i != kTabsCount; ++i) {
+			_slider->addSection(tabTitle(i));
+		}
 		_slider->setActiveSectionFast(_activeTab);
-		_slider->sectionActivated(
-		) | rpl::on_next([=](int index) {
+		_slider->sectionActivated() | rpl::on_next([=](int index) {
 			setActiveTab(index);
-		}, _slider->lifetime());
-		_label->setSelectable(true);
+		}, lifetime());
 		_search->changes() | rpl::on_next([=] {
-			updateLabel();
+			updateContent();
+			_box->scrollTo({ 0, 0 }, anim::type::instant);
 		}, lifetime());
 		_search->cancelled() | rpl::on_next([=] {
 			cancelSearch();
@@ -789,15 +1256,15 @@ public:
 		_search->submits() | rpl::on_next([=] {
 			setFocus(Qt::ShortcutFocusReason);
 		}, lifetime());
-		updateLabel();
+		updateContent();
 	}
 
 	QAccessible::Role accessibilityRole() override {
-		return QAccessible::Role::PageTabList;
+		return QAccessible::Role::Pane;
 	}
 
 	QString accessibilityName() override {
-		return currentTitle() + u"\n"_q + currentText();
+		return tabTitle(_activeTab);
 	}
 
 	bool handleSearchEscape(not_null<QKeyEvent*> e) {
@@ -881,8 +1348,8 @@ public:
 					? u"help scroll down"_q
 					: u"help scroll up"_q,
 				true);
-			if (_activeTab == 1) {
-				updateLabel();
+			if (_activeTab == kLogTab) {
+				updateContent();
 			}
 			e->accept();
 			return true;
@@ -891,10 +1358,8 @@ public:
 	}
 
 	int resizeGetHeight(int newWidth) override {
-		_slider->resizeToWidth(newWidth);
-		_label->resizeToWidth(newWidth);
-		layoutChildren(newWidth);
-		return _slider->height() + st::vimHelpTabGap + _label->height();
+		_content->resizeToWidth(newWidth);
+		return _content->height();
 	}
 
 protected:
@@ -921,14 +1386,9 @@ public:
 		return handleBoxKey(box, e);
 	}
 
-protected:
-	void resizeEvent(QResizeEvent *e) override {
-		layoutChildren(e->size().width());
-		Ui::RpWidget::resizeEvent(e);
-	}
-
 private:
-	static constexpr auto kTabsCount = 2;
+	static constexpr auto kTabsCount = 6;
+	static constexpr auto kLogTab = kTabsCount - 1;
 
 	void cancelSearch() {
 		if (_search->getLastText().isEmpty()) {
@@ -939,36 +1399,31 @@ private:
 	}
 
 	[[nodiscard]] QString tabTitle(int index) const {
-		if (_russian) {
-			return index == 0 ? u"Подсказки"_q : u"Лог клавиш"_q;
-		}
-		return index == 0 ? u"Hints"_q : u"Key log"_q;
+		const auto ru = std::array{
+			u"Основное"_q, u"Чаты"_q, u"Сообщения"_q,
+			u"Текст"_q, u"Эмодзи"_q, u"Лог"_q };
+		const auto en = std::array{
+			u"Basics"_q, u"Chats"_q, u"Messages"_q,
+			u"Text"_q, u"Emoji"_q, u"Key log"_q };
+		return _russian ? ru[index] : en[index];
 	}
 
-	[[nodiscard]] QString currentTitle() const {
-		return tabTitle(_activeTab);
-	}
-
-	[[nodiscard]] QString currentText() const {
-		const auto content = (_activeTab == 0) ? _hints : keyLogText();
-		const auto words = _search->getLastText().simplified().split(
-			QChar(' '),
-			Qt::SkipEmptyParts);
-		if (words.empty()) {
-			return content;
-		}
-		auto matches = QStringList();
-		for (const auto &line : content.split(QChar('\n'))) {
-			if (ranges::all_of(words, [&](const QString &word) {
-				return line.contains(word, Qt::CaseInsensitive);
-			})) {
-				matches.push_back(line);
-			}
-		}
-		return matches.empty()
-			? (_russian ? u"Ничего не найдено. Измените запрос."_q
-				: u"No matches. Try another search."_q)
-			: matches.join(QChar('\n'));
+	[[nodiscard]] QString sectionNote() const {
+		const auto ru = std::array{
+			u"Выбор сообщений, прокрутка и элементы интерфейса в режиме навигации."_q,
+			u"Переключение чатов, папок и поиск доступны и во время ввода текста."_q,
+			u"Нажмите команду, затем букву нужного сообщения или фотографии."_q,
+			u"Команды редактора работают в режиме навигации внутри поля сообщения."_q,
+			u"Управление панелью эмодзи, стикеров и GIF, в том числе над фотографиями."_q,
+			u"История команд для диагностики. Вводимый текст скрыт."_q };
+		const auto en = std::array{
+			u"Navigate messages, scroll the chat and choose controls in navigation mode."_q,
+			u"Switch chats, folders and search even while typing a message."_q,
+			u"Press a command, then the hint letter on a message or photo."_q,
+			u"Editor commands work in navigation mode inside the message field."_q,
+			u"Control emoji, stickers and GIFs, including the picker above photo attachments."_q,
+			u"Recent commands for troubleshooting. Typed text stays hidden."_q };
+		return _russian ? ru[_activeTab] : en[_activeTab];
 	}
 
 	void setActiveTab(int tab) {
@@ -978,13 +1433,55 @@ private:
 		}
 		_activeTab = value;
 		_slider->setActiveSectionFast(_activeTab);
-		updateLabel();
+		_search->setText(QString());
+		updateContent();
+		_box->scrollTo({ 0, 0 }, anim::type::instant);
 		accessibilityNameChanged();
-		update();
 	}
 
-	void updateLabel() {
-		_label->setText(currentText());
+	void updateContent() {
+		_content->clear();
+		const auto words = _search->getLastText().simplified().split(
+			QChar(' '), Qt::SkipEmptyParts);
+		const auto matches = [&](const QString &text) {
+			return ranges::all_of(words, [&](const auto &word) {
+				return text.contains(word, Qt::CaseInsensitive);
+			});
+		};
+		if (_activeTab == kLogTab) {
+			auto lines = keyLogText().split(QChar('\n'));
+			lines.removeIf([&](const auto &line) { return !matches(line); });
+			_content->add(object_ptr<Ui::FlatLabel>(
+				_content, lines.join(QChar('\n')), st::vimHelpRowDetail))->setSelectable(true);
+		} else {
+			if (words.empty()) {
+				_content->add(object_ptr<Ui::FlatLabel>(
+					_content, sectionNote(), st::vimHelpRowDetail), st::vimHelpNotePadding);
+			}
+			auto section = -1;
+			auto count = 0;
+			for (const auto &entry : _entries) {
+				if (words.empty() ? entry.section != _activeTab
+					: !matches(entry.keys + u" "_q + entry.aliases + u" "_q
+						+ entry.description + u" "_q + entry.detail + u" "_q
+						+ tabTitle(entry.section))) {
+					continue;
+				}
+				if (!words.empty() && section != entry.section) {
+					section = entry.section;
+					_content->add(object_ptr<Ui::FlatLabel>(
+						_content, tabTitle(section), st::vimHelpSectionTitle), st::vimHelpNotePadding);
+				}
+				_content->add(object_ptr<HelpShortcutRow>(_content, entry));
+				++count;
+			}
+			if (!count) {
+				_content->add(object_ptr<Ui::FlatLabel>(_content, _russian
+					? u"Ничего не найдено. Попробуйте название действия или клавишу."_q
+					: u"No matches. Try an action name or a key."_q,
+					st::vimHelpRowDetail), st::vimHelpNotePadding);
+			}
+		}
 		resizeToWidth(std::max(1, width()));
 	}
 
@@ -994,7 +1491,9 @@ private:
 			result += u"Последние "_q
 				+ QString::number(KeyEventLog::kLimit)
 				+ u" клавиш:\n"_q;
-			result += u"Самое свежее нажатие находится внизу.\n\n"_q;
+			result += u"Самое свежее нажатие находится внизу.\n"_q;
+			result += u"Вводимый текст скрыт; выполненные команды показаны по имени.\n"_q;
+			result += u"Cmd и Ctrl — физические клавиши. J/о — одна клавиша в двух раскладках.\n\n"_q;
 			if (const auto recent = RecentKeyLogText(); !recent.isEmpty()) {
 				result += recent;
 			} else {
@@ -1004,7 +1503,9 @@ private:
 			result += u"Last "_q
 				+ QString::number(KeyEventLog::kLimit)
 				+ u" keys:\n"_q;
-			result += u"The latest key is at the bottom.\n\n"_q;
+			result += u"The latest key is at the bottom.\n"_q;
+			result += u"Typed text is hidden; completed commands appear by name.\n"_q;
+			result += u"Cmd and Ctrl are physical keys. J/о shows the key and its layout character.\n\n"_q;
 			if (const auto recent = RecentKeyLogText(); !recent.isEmpty()) {
 				result += recent;
 			} else {
@@ -1014,16 +1515,12 @@ private:
 		return result;
 	}
 
-	void layoutChildren(int newWidth) {
-		_slider->moveToLeft(0, 0, newWidth);
-		_label->moveToLeft(0, _slider->height() + st::vimHelpTabGap, newWidth);
-	}
-
-	QString _hints;
+	std::vector<HelpEntry> _entries;
 	bool _russian = false;
 	not_null<Ui::InputField*> _search;
 	not_null<Ui::SettingsSlider*> _slider;
-	not_null<Ui::FlatLabel*> _label;
+	not_null<Ui::GenericBox*> _box;
+	not_null<Ui::VerticalLayout*> _content;
 	int _activeTab = 0;
 
 };
@@ -1035,239 +1532,38 @@ void ShowHelpBox() {
 		return;
 	}
 	const auto russian = UseRussianHelp();
-	const auto toggle = BindingLabel(VimKeymapKeyToggleModeOption);
-	const auto cancelReply = BindingLabel(VimKeymapKeyCancelReplyOption);
-	const auto cancelEdit = BindingLabel(VimKeymapKeyCancelEditOption);
-	const auto cancelEditEnabled
-		= !VimKeymapKeyCancelEditOption.value().trimmed().isEmpty();
-	const auto help = BindingLabel(VimKeymapKeyHelpOption);
-	const auto scrollDown = BindingLabel(VimKeymapKeyScrollDownOption);
-	const auto scrollUp = BindingLabel(VimKeymapKeyScrollUpOption);
-	const auto jumpBottom = BindingLabel(VimKeymapKeyJumpBottomOption);
-	const auto copy = BindingLabel(VimKeymapKeyCopyMessageOption);
-	const auto selectMessageText = BindingLabel(
-		VimKeymapKeySelectMessageTextOption);
-	const auto reply = BindingLabel(VimKeymapKeyReplyToMessageOption);
-	const auto edit = BindingLabel(VimKeymapKeyEditMessageOption);
-	const auto deleteMessage = BindingLabel(VimKeymapKeyDeleteMessageOption);
-	const auto focus = BindingLabel(VimKeymapKeyFocusHintsOption);
-	const auto openChats = BindingLabel(VimKeymapKeyOpenChatHintsOption);
-	const auto preview = BindingLabel(VimKeymapKeyChatPreviewOption);
-	const auto search = BindingLabel(VimKeymapKeySearchOption);
-	const auto globalSearch = BindingLabel(VimKeymapKeyGlobalSearchOption);
-	const auto undo = BindingLabel(VimKeymapKeyUndoOption);
-	const auto redo = BindingLabel(VimKeymapKeyRedoOption);
-	const auto nextChat = BindingLabel(VimKeymapKeyNextChatOption);
-	const auto previousChat = BindingLabel(VimKeymapKeyPreviousChatOption);
-	const auto nextFolder = BindingLabel(VimKeymapKeyNextFolderOption);
-	const auto previousFolder = BindingLabel(VimKeymapKeyPreviousFolderOption);
-	const auto emojiPanel = BindingLabel(VimKeymapKeyEmojiPanelOption);
-	const auto emojiPanelEnabled
-		= !VimKeymapKeyEmojiPanelOption.value().trimmed().isEmpty();
-	const auto focusChat = BindingLabel(VimKeymapKeyFocusChatOption);
-	const auto focusEmoji = BindingLabel(VimKeymapKeyFocusEmojiOption);
-	const auto call = BindingLabel(VimKeymapKeyCallOption);
-	const auto version = u"TelegraVim "_q
-		+ QString::fromLatin1(kTelegraVimBuild)
-		+ u" / Telegram "_q
-		+ QString::fromLatin1(AppVersionStr);
-	const auto hints = [&] {
-		auto result = QString();
-		if (russian) {
-			result += u"Версия: "_q + version + u"\n\n"_q;
-			result += toggle
-				+ u" - режим ввода / навигации, если не открыт слой Telegram\n"_q;
-			result += u"Если открыто фото, меню или окно - Esc сначала закрывает его.\n\n"_q;
-			result += cancelReply
-				+ u" - снять активный reply у сообщения\n\n"_q;
-			if (cancelEditEnabled) {
-				result += cancelEdit
-					+ u" - отменить редактирование сообщения\n\n"_q;
-			}
-			result += u"Индикатор режима:\n"_q;
-			result += u"\U0001F7E2 ввод\n"_q;
-			result += u"\U0001F7E1 навигация\n"_q;
-			result += u"\U0001F7E3 visual selection\n\n"_q;
-			result += u"Режим навигации:\n"_q;
-			result += scrollDown + u" - скролл вниз\n"_q;
-			result += scrollUp + u" - скролл вверх\n"_q;
-			result += jumpBottom + u" - перейти вниз\n"_q;
-			result += copy + u" - копирование; в альбоме своя буква у каждого фото\n"_q;
-			result += selectMessageText
-				+ u" - подсказки для visual-выделения текста сообщения\n"_q;
-			result += u"В поиске эта команда закрывает поиск, сохраняя место в чате\n"_q;
-			result += u"В тексте сообщения: gg/G - начало/конец, {/} - абзацы\n"_q;
-			result += u"Лишние клавиши сохраняют курсор и выделение; Esc - выход\n"_q;
-			result += reply + u" - подсказки для ответа на сообщение\n"_q;
-			result += u"Shift+R / Shift+К - реакции: нажмите букву сообщения, чтобы открыть панель\n"_q;
-			result += u"В реакциях: h/j/k/l или стрелки - выбор; Enter - поставить; Esc - закрыть\n"_q;
-			result += u"Поиск реакций: Ctrl+F / ⌘F; Tab / Shift+Tab - поиск или сетка\n"_q;
-			result += edit
-				+ u" - подсказки для редактирования своих сообщений\n"_q;
-			result += deleteMessage
-				+ u" - подсказки для удаления сообщений\n"_q;
-			result += u"s/ы - показать буквы; буква сообщения - начать выделение с него; j/k - изменить диапазон\n"_q;
-			result += u"В выделении: d - удалить с подтверждением, f - переслать, y - копировать, Esc - выйти\n"_q;
-			result += u"Реакции: правый клик по сообщению → эмодзи над контекстным меню.\n"_q;
-			result += u"Больше реакций: стрелка раскрытия рядом с эмодзи, если она доступна.\n"_q;
-			result += focus
-				+ u" - подсказки для медиа, ссылок, голосований, ответов и пересланных авторов\n"_q;
-			result += u"c/с - метки крестиков и кружков для закрытия\n"_q;
-			result += u"f/а и метка плавающего кружка - пауза/пуск; затем Space или Enter\n"_q;
-			result += u"Shift+F / Shift+А и метка кружка - перейти к сообщению\n"_q;
-			result += openChats + u" - подсказки для открытия чатов\n"_q;
-			result += preview
-				+ u" - буквы для предпросмотра чата без прочтения\n"_q;
-			result += u"Ctrl+V - preview чата в view mode, без открытия и прочтения\n"_q;
-			result += search + u" - поиск\n"_q;
-			result += undo + u" - откатить последнее изменение текста\n"_q;
-			result += redo + u" - вернуть откатанное изменение текста\n"_q;
-			result += u"h/j/k/l, w/b/e, 0/^/$/|, gg/G, {/} - движение в composer\n"_q;
-			result += u"x/X, dd/D, diw, yy/Y, yiw, p/P, u/Ctrl+R - правка текста\n"_q;
-			result += u"Ctrl+E - исправления слова под курсором\n"_q;
-			result += u"c/cw/cc/C/ciw, s/S, r<char>, J, ~ - Vim-команды composer\n"_q;
-			result += u"v/V - visual/visual line заготовка: y копирует, d/x удаляет\n"_q;
-			result += u"i/a/I/A/o/O - вернуться к вводу текста\n"_q;
-			result += u"Option+h/l - двигать курсор на одну букву во время ввода\n"_q;
-			result += u"Cursor style/width/height/blink меняются в Settings > Vim keymap\n"_q;
-			result += help + u" - эта подсказка\n\n"_q;
-			result += u"Всегда доступно:\n"_q;
-			result += nextChat + u" - следующий чат\n"_q;
-			result += previousChat + u" - предыдущий чат\n"_q;
-			result += nextChat + u" + Shift - перейти через один чат\n"_q;
-			result += previousChat + u" + Shift - перейти через один чат\n"_q;
-			result += globalSearch + u" - поиск\n"_q;
-			result += call + u" - звонок / войти в групповой звонок\n"_q;
-			result += nextFolder + u" - следующая папка\n"_q;
-			result += previousFolder + u" - предыдущая папка\n\n"_q;
-			result += u"Emoji / stickers:\n"_q;
-			if (emojiPanelEnabled) {
-				result += emojiPanel + u" - открыть и сфокусировать панель\n"_q;
-			}
-			result += focusEmoji + u" - открыть и сфокусировать панель\n"_q;
-			result += focusChat + u" - фокус обратно в чат\n\n"_q;
-			result += u"h/j/k/l или р/о/л/д - выбор emoji/sticker/gif\n"_q;
-			result += u"Enter или Space - отправить выбранное\n"_q;
-			result += u"Tab / Shift+Tab - emoji, stickers, GIFs\n"_q;
-			result += u"Ctrl+J/K - скролл внутри панели\n"_q;
-			result += u"Ctrl+F - поиск внутри панели\n\n"_q;
-			result += u"Настройки: Settings > Vim keymap"_q;
-		} else {
-			result += u"Version: "_q + version + u"\n\n"_q;
-			result += toggle
-				+ u" - input / navigation mode when no Telegram layer is open\n"_q;
-			result += u"If a photo, menu or dialog is open, Esc closes it first.\n\n"_q;
-			result += cancelReply + u" - clear the active message reply\n\n"_q;
-			if (cancelEditEnabled) {
-				result += cancelEdit + u" - cancel message editing\n\n"_q;
-			}
-			result += u"Mode indicator:\n"_q;
-			result += u"\U0001F7E2 input\n"_q;
-			result += u"\U0001F7E1 navigation\n"_q;
-			result += u"\U0001F7E3 visual selection\n\n"_q;
-			result += u"Navigation mode:\n"_q;
-			result += scrollDown + u" - scroll down\n"_q;
-			result += scrollUp + u" - scroll up\n"_q;
-			result += jumpBottom + u" - jump to bottom\n"_q;
-			result += copy + u" - copy hints; each album photo has its own letter\n"_q;
-			result += selectMessageText
-				+ u" - show message text visual selection hints\n"_q;
-			result += u"In search, this closes search and keeps the current chat position\n"_q;
-			result += u"Message text: gg/G - start/end, {/} - paragraphs\n"_q;
-			result += u"Other keys keep the cursor and selection; Esc exits\n"_q;
-			result += reply + u" - show reply message hints\n"_q;
-			result += u"Shift+R / Shift+К - reactions: press a message letter to open its picker\n"_q;
-			result += u"In reactions: h/j/k/l or arrows - choose; Enter - apply; Esc - close\n"_q;
-			result += u"Search reactions: Ctrl+F / ⌘F; Tab / Shift+Tab - search or grid\n"_q;
-			result += edit + u" - show edit message hints\n"_q;
-			result += deleteMessage + u" - show delete message hints\n"_q;
-			result += u"s - show letters; a message letter - start selection there; j/k - change the range\n"_q;
-			result += u"While selected: d - confirm deletion, f - forward, y - copy, Esc - cancel\n"_q;
-			result += u"Reactions: right-click a message → choose an emoji above the context menu.\n"_q;
-			result += u"More reactions: click the expand arrow beside the emoji, when available.\n"_q;
-			result += focus
-				+ u" - show media, link, poll, reply and forwarded-source hints\n"_q;
-			result += u"c - show close-button and floating round-video hints\n"_q;
-			result += u"f and a floating round-video hint - pause/resume; then Space or Enter\n"_q;
-			result += u"Shift+F and a round-video hint - go to its message\n"_q;
-			result += openChats + u" - show chat open hints\n"_q;
-			result += preview
-				+ u" - show chat preview hints without marking read\n"_q;
-			result += u"Ctrl+V - chat preview in view mode, without opening or marking read\n"_q;
-			result += search + u" - focus search\n"_q;
-			result += undo + u" - undo the last compose text change\n"_q;
-			result += redo + u" - redo the last compose text change\n"_q;
-			result += u"h/j/k/l, w/b/e, 0/^/$/|, gg/G, {/} - compose motions\n"_q;
-			result += u"x/X, dd/D, diw, yy/Y, yiw, p/P, u/Ctrl+R - edit text\n"_q;
-			result += u"Ctrl+E - spelling suggestions at the cursor\n"_q;
-			result += u"c/cw/cc/C/ciw, s/S, r<char>, J, ~ - compose Vim commands\n"_q;
-			result += u"v/V - visual/visual line groundwork: y copies, d/x deletes\n"_q;
-			result += u"i/a/I/A/o/O - return to text input\n"_q;
-			result += u"Option+h/l - move one character while typing\n"_q;
-			result += u"Cursor style/width/height/blink are in Settings > Vim keymap\n"_q;
-			result += help + u" - show this help\n\n"_q;
-			result += u"Always available:\n"_q;
-			result += nextChat + u" - next chat\n"_q;
-			result += previousChat + u" - previous chat\n"_q;
-			result += nextChat + u" + Shift - skip one chat\n"_q;
-			result += previousChat + u" + Shift - skip one chat\n"_q;
-			result += globalSearch + u" - search\n"_q;
-			result += call + u" - call / join group call\n"_q;
-			result += nextFolder + u" - next folder\n"_q;
-			result += previousFolder + u" - previous folder\n\n"_q;
-			result += u"Emoji / stickers:\n"_q;
-			if (emojiPanelEnabled) {
-				result += emojiPanel + u" - open and focus the panel\n"_q;
-			}
-			result += focusEmoji + u" - open and focus the panel\n"_q;
-			result += focusChat + u" - focus back to chat\n\n"_q;
-			result += u"h/j/k/l or р/о/л/д - select emoji/sticker/gif\n"_q;
-			result += u"Enter or Space - send selected item\n"_q;
-			result += u"Tab / Shift+Tab - emoji, stickers, GIFs\n"_q;
-			result += u"Ctrl+J/K - scroll inside the panel\n"_q;
-			result += u"Ctrl+F - search inside the panel\n\n"_q;
-			result += u"Settings: Settings > Vim keymap"_q;
-		}
-		return result;
-	}();
+	const auto entries = HelpEntries(russian);
 	window->show(Box([=](not_null<Ui::GenericBox*> box) {
-		box->setTitle(russian ? u"Vim-навигация"_q : u"Vim navigation"_q);
+		box->setTitle(russian ? u"Горячие клавиши"_q : u"Keyboard shortcuts"_q);
+		box->setAdditionalTitle(rpl::single(QString::fromLatin1(kTelegraVimBuild)));
 		box->setWidth(st::vimHelpWidth);
 		box->setMaxHeight(st::vimHelpMaxHeight);
-		const auto top = box->setPinnedToTopContent(
-			object_ptr<Ui::VerticalLayout>(box));
-		const auto searchField = top->add(
-			object_ptr<Ui::InputField>(
-				top,
-				st::defaultInputField,
-				rpl::single(russian
-					? u"Поиск по справке ( / или Ctrl+F / ⌘F )"_q
-					: u"Search help ( / or Ctrl+F / ⌘F )"_q)),
+		const auto top = box->setPinnedToTopContent(object_ptr<Ui::VerticalLayout>(box));
+		const auto search = top->add(object_ptr<Ui::InputField>(top,
+			st::defaultInputField, rpl::single(russian
+				? u"Найти команду или клавишу…"_q : u"Find an action or a key…"_q)),
 			st::boxRowPadding);
-		const auto tabs = box->addRow(
-			object_ptr<HelpTabsWidget>(
-				box.get(),
-				hints,
-				russian,
-				searchField));
-		searchField->changes() | rpl::on_next([=] {
-			box->scrollTo({ 0, 0 }, anim::type::instant);
-		}, box->lifetime());
+		const auto slider = top->add(object_ptr<Ui::SettingsSlider>(top, st::settingsSlider),
+			st::boxRowPadding);
+		const auto tabs = box->addRow(object_ptr<HelpTabsWidget>(
+			box.get(), entries, russian, search, slider, box));
 		RegisterKeyHandler(tabs, [=](not_null<QKeyEvent*> e) {
 			return tabs->handleGlobalKey(box, e);
 		});
 		RegisterPreLayerKeyHandler(tabs, [=](not_null<QKeyEvent*> e) {
-			return tabs->handleSearchEscape(e);
+			return tabs->handleSearchEscape(e)
+				|| (e->type() == QEvent::KeyPress
+					&& !Ui::InFocusChain(search)
+					&& tabs->handleGlobalKey(box, e));
 		}, true);
-		box->setFocusCallback([=] {
-			tabs->setFocus(Qt::ShortcutFocusReason);
-		});
-		box->setShowFinishedCallback([=] {
-			tabs->setFocus(Qt::ShortcutFocusReason);
-		});
-		box->addButton(tr::lng_box_ok(), [=] {
-			box->closeBox();
-		});
+		box->setFocusCallback([=] { tabs->setFocus(Qt::ShortcutFocusReason); });
+		box->setShowFinishedCallback([=] { tabs->setFocus(Qt::ShortcutFocusReason); });
+		const auto bottom = box->setPinnedToBottomContent(object_ptr<Ui::VerticalLayout>(box));
+		bottom->add(object_ptr<Ui::FlatLabel>(bottom, russian
+			? u"h / l  разделы    ·    j / k  прокрутка    ·    /  поиск"_q
+			: u"h / l  sections    ·    j / k  scroll    ·    /  search"_q,
+			st::vimHelpRowDetail), st::boxRowPadding);
+		box->addButton(tr::lng_box_ok(), [=] { box->closeBox(); });
 	}));
 }
 
@@ -1275,6 +1571,13 @@ void ShowHelpBox() {
 
 void TraceKey(not_null<QKeyEvent*> e, const QString &status) {
 	RecordKeyEvent(e, status, true);
+}
+
+void TraceCommand(const QString &command, const QString &status) {
+	const auto active = App().activeWindow();
+	if (Enabled() && !App().passcodeLocked() && (!active || !active->locked())) {
+		KeyLog.recordCommand(command, status);
+	}
 }
 
 QString RecentKeyLogText() {
@@ -1447,11 +1750,24 @@ int SingleScrollDurationMs() {
 
 bool HandleApplicationShortcutOverride(not_null<QKeyEvent*> e) {
 	const auto active = App().activeWindow();
-	return Enabled()
-		&& !App().passcodeLocked()
-		&& (!active || !active->locked())
-		&& !ActiveKeyboardScope()
-		&& HandlePreLayerKey(e);
+	if (!Enabled() || App().passcodeLocked() || (active && active->locked())) {
+		PanePrefixWindow = nullptr;
+		PanePrefixFocus = nullptr;
+		return false;
+	}
+	if (HandlePaneNavigationKey(e)) {
+		return true;
+	}
+	if (ActiveKeyboardScope()
+		|| (!Bindings::IsPlainEscape(e) && TextInputPassthroughRequested(e))) {
+		return false;
+	}
+	const auto focus = QApplication::focusWidget();
+	const auto root = GlobalFocusRoot(focus);
+	const auto pane = IsKeyboardPane(root) ? root : nullptr;
+	return HandlePreLayerKey(e, pane)
+		|| (!(pane && KeyboardScopeHasTextInput(pane, focus))
+			&& HandleChatClipboardKey(e, pane));
 }
 
 bool HandleApplicationKeyPress(
@@ -1460,9 +1776,13 @@ bool HandleApplicationKeyPress(
 	const auto active = App().activeWindow();
 	if (App().passcodeLocked() || (active && active->locked())) {
 		KeyLog.clear();
+		PanePrefixWindow = nullptr;
+		PanePrefixFocus = nullptr;
 		return false;
 	}
 	if (!Enabled()) {
+		PanePrefixWindow = nullptr;
+		PanePrefixFocus = nullptr;
 		return false;
 	}
 	const auto wasSuppressed = KeyLog.suppressed();
@@ -1475,12 +1795,33 @@ bool HandleApplicationKeyPress(
 	}
 	const auto scope = QPointer<QWidget>(ActiveKeyboardScope());
 	UpdateKeyboardScope(scope);
-	if (!scope && HandlePreLayerKey(e)) {
-		RecordKeyEvent(e, u"pre-layer handler"_q, true);
+	if (HandlePaneNavigationKey(e)) {
 		e->accept();
 		return true;
 	}
+	if (!scope
+		&& !Bindings::IsPlainEscape(e)
+		&& TextInputPassthroughRequested(e)) {
+		return false;
+	}
 	const auto focus = QApplication::focusWidget();
+	const auto globalRoot = scope ? nullptr : GlobalFocusRoot(focus);
+	const auto pane = IsKeyboardPane(globalRoot) ? globalRoot : nullptr;
+	const auto preLayerLogGeneration = KeyLog.generation();
+	if (!scope && HandlePreLayerKey(e, pane)) {
+		if (KeyLog.generation() == preLayerLogGeneration) {
+			RecordKeyEvent(e, u"active selection or hint"_q, true);
+		}
+		e->accept();
+		return true;
+	}
+	if (pane && KeyboardScopeHasTextInput(pane, object)) {
+		return false;
+	}
+	if (!scope && HandleChatClipboardKey(e, pane)) {
+		e->accept();
+		return true;
+	}
 	const auto hintScope = scope ? scope.data() : QApplication::activeWindow();
 	if (hintScope) {
 		if (const auto navigation = KeyboardNavigation::Find(hintScope)) {
@@ -1515,9 +1856,12 @@ bool HandleApplicationKeyPress(
 		return true;
 	}
 
-	const auto globalRoot = scope ? nullptr : GlobalFocusRoot(focus);
 	if (globalRoot) {
 		const auto navigation = KeyboardNavigation::Find(globalRoot);
+		if (pane && navigation && navigation->handleHintKey(e, HintInput(e))) {
+			e->accept();
+			return true;
+		}
 		if (!navigation || !navigation->hasHints()) {
 			if (CleanModifiers(e) == Qt::NoModifier
 				&& (e->key() == Qt::Key_Return
@@ -1528,6 +1872,13 @@ bool HandleApplicationKeyPress(
 				return true;
 			} else if (const auto delta = Bindings::TabNavigationDelta(e)) {
 				KeyboardNavigation::Get(globalRoot)->focusNext(delta > 0);
+				if (pane) {
+					KeyLog.recordCommand(
+						delta > 0 ? u"Tab"_q : u"Shift+Tab"_q,
+						delta > 0
+							? u"right pane: focus next control"_q
+							: u"right pane: focus previous control"_q);
+				}
 				e->accept();
 				return true;
 			} else if (dynamic_cast<Ui::AbstractButton*>(focus)
@@ -1542,6 +1893,50 @@ bool HandleApplicationKeyPress(
 	const auto controlScope = scope ? scope.data()
 		: globalRoot ? globalRoot : QApplication::activeWindow();
 	if (!scope && controlScope && HandleKeyboardControlKey(controlScope, e)) {
+		e->accept();
+		return true;
+	}
+	if (pane && NormalMode()) {
+		if (HandleHelp(e)) {
+			return true;
+		}
+		if (Bindings::IsPlainEscape(e)) {
+			if (!e->isAutoRepeat()) {
+				FocusForCurrentMode();
+				KeyLog.recordCommand(u"Esc"_q, u"focus chat"_q);
+			}
+		} else if (FocusHintsKey(e)) {
+			if (!e->isAutoRepeat()) {
+				KeyboardNavigation::Get(pane)->showHints(
+					HintLabel,
+					QFont(u"Menlo"_q, HintSize(), QFont::DemiBold),
+					st::vimHintPadding,
+					st::vimHintGap);
+				KeyLog.recordCommand(
+					u"Focus controls"_q,
+					u"right pane: choose a control by its hint"_q);
+			}
+		} else if (const auto page = Bindings::PageNavigationDelta(e)) {
+			KeyboardNavigation::Get(pane)->scroll(
+				page,
+				e->isAutoRepeat(),
+				SingleScrollDurationMs(),
+				true);
+			KeyLog.recordCommand(u"Page scroll"_q, page > 0
+				? u"right pane: one screen down"_q
+				: u"right pane: one screen up"_q);
+		} else if (const auto direction = ScrollNavigationKey(e)) {
+			const auto down = *direction == Qt::Key_Down;
+			KeyboardNavigation::Get(pane)->scroll(
+				(down ? 1 : -1) * ScrollStep(),
+				e->isAutoRepeat(),
+				SingleScrollDurationMs());
+			KeyLog.recordCommand(u"Scroll"_q, down
+				? u"right pane: scroll down"_q
+				: u"right pane: scroll up"_q);
+		} else {
+			return false;
+		}
 		e->accept();
 		return true;
 	}
@@ -1618,6 +2013,15 @@ bool HandleApplicationKeyPress(
 			return true;
 		}
 		if (!QApplication::activePopupWidget()) {
+			if (const auto page = Bindings::PageNavigationDelta(e)) {
+				KeyboardNavigation::Get(scope)->scroll(
+					page,
+					e->isAutoRepeat(),
+					SingleScrollDurationMs(),
+					true);
+				e->accept();
+				return true;
+			}
 			if (const auto navigation = ScrollNavigationKey(e)) {
 				const auto down = *navigation == Qt::Key_Down;
 				const auto handled = KeyboardNavigation::Get(scope)->scroll(
@@ -1657,11 +2061,21 @@ bool HandleApplicationKeyPress(
 	const auto forcedNormalMode = ForcedNormalMode();
 	if (const auto action = ActionKey(e)) {
 		if (HandleRegisteredAction(*action)) {
-			RecordKeyEvent(e, u"action handler"_q, true);
+			if (*action == Action::CopyMessage) {
+				KeyLog.recordCommand(
+					u"Copy message"_q,
+					u"chat: choose a message by its hint"_q);
+			} else {
+				RecordKeyEvent(e, u"action handler"_q, true);
+			}
 			e->accept();
 			return true;
 		}
-		RecordKeyEvent(e, u"action without target"_q, true);
+		if (*action == Action::CopyMessage) {
+			KeyLog.recordCommand(u"Copy message"_q, u"chat: no matching message visible"_q);
+		} else {
+			RecordKeyEvent(e, u"action without target"_q, true);
+		}
 		e->accept();
 		return true;
 	}
@@ -1962,7 +2376,7 @@ bool SelectMessageTextKey(not_null<QKeyEvent*> e) {
 }
 
 std::optional<Action> ActionKey(not_null<QKeyEvent*> e) {
-	if (!NormalMode()) {
+	if (!NormalMode() || Bindings::PageNavigationDelta(e)) {
 		return std::nullopt;
 	} else if (Bindings::IsMessageReaction(e)) {
 		return e->isAutoRepeat()
@@ -1984,6 +2398,8 @@ std::optional<Action> ActionKey(not_null<QKeyEvent*> e) {
 		return Action::LinkHints;
 	} else if (Bindings::IsMessageSelection(e)) {
 		return Action::SelectMessages;
+	} else if (Bindings::IsMessageSelection(e, true)) {
+		return Action::SelectMessageRange;
 	}
 	return std::nullopt;
 }
@@ -2008,8 +2424,38 @@ bool IsJumpToBottomKey(not_null<QKeyEvent*> e) {
 		&& MatchesBindings(VimKeymapKeyJumpBottomOption, e);
 }
 
+QString MessageHintLabel(int index, int photoIndex) {
+	if (index < 0) {
+		return {};
+	}
+	auto alphabet = CurrentHintAlphabet();
+	for (const auto ch : u"jkол"_q) {
+		alphabet.remove(ch);
+	}
+	const auto kQuickCount = std::max(1, int(alphabet.size()) - 3);
+	const auto prefixCount = int(alphabet.size()) - kQuickCount - 1;
+	auto result = alphabet.mid(index % kQuickCount, 1);
+	for (auto prefix = index / kQuickCount; prefix > 0; prefix /= prefixCount) {
+		--prefix;
+		result.prepend(alphabet[kQuickCount + prefix % prefixCount]);
+	}
+	if (photoIndex >= 0 && photoIndex < kQuickCount) {
+		result.prepend(alphabet.back());
+		result.append(alphabet[photoIndex]);
+	}
+	return result;
+}
+
 QString HintLabel(int index, int total) {
 	return Bindings::ShortestHintLabel(index, total, CurrentHintAlphabet());
+}
+
+QString SelectionHintLabel(int index, int total) {
+	auto alphabet = CurrentHintAlphabet();
+	for (const auto ch : u"jkол"_q) {
+		alphabet.remove(ch);
+	}
+	return Bindings::ShortestHintLabel(index, total, alphabet);
 }
 
 QString HintInput(not_null<QKeyEvent*> e) {

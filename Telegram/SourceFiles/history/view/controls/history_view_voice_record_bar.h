@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/controls/compose_controls_common.h"
 #include "media/audio/media_audio_capture_common.h"
 #include "ui/controls/round_video_recorder.h"
+#include "ui/controls/send_button.h"
 #include "ui/effects/animations.h"
 #include "ui/round_rect.h"
 #include "ui/rp_widget.h"
@@ -30,6 +31,7 @@ namespace Ui {
 class AbstractButton;
 class SendButton;
 class RoundVideoRecorder;
+class GenericBox;
 } // namespace Ui
 
 namespace Window {
@@ -79,11 +81,15 @@ public:
 		anim::type animated = anim::type::instant);
 
 	void startRecordingAndLock(bool round);
+	[[nodiscard]] Ui::SendButton::Type recordButtonType(bool videoAvailable) const;
+	void cycleRecordButtonType(bool videoAvailable);
 
 	void finishAnimating();
 	void hideAnimated();
 	void hideFast();
 	void clearListenState();
+	void closeReview();
+	[[nodiscard]] bool isReviewing() const;
 
 	void orderControls();
 
@@ -137,6 +143,7 @@ private:
 
 	void stop(bool send);
 	void stopRecording(StopType type, bool ttlBeforeHide = false);
+	void reviewOrSend(VoiceToSend data);
 	void visibilityAnimate(bool show, Fn<void()> &&callback);
 
 	void drawDuration(QPainter &p);
@@ -183,6 +190,9 @@ private:
 	const std::unique_ptr<CancelButton> _cancel;
 	std::unique_ptr<Ui::AbstractButton> _ttlButton;
 	std::unique_ptr<ListenWrap> _listen;
+	QPointer<Ui::GenericBox> _review;
+	bool _recordingTranscription = false;
+	uint64 _reviewGeneration = 0;
 
 	Ui::RoundVideoResult _data;
 	Ui::RoundVideoResult _resumePrefixData;

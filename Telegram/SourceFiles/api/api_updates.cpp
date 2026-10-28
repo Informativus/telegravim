@@ -71,6 +71,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "iv/editor/iv_editor_session.h"
 #include "ui/boxes/confirm_box.h"
 #include "apiwrap.h"
+#include "api/api_read_receipts.h"
 #include "ui/text/format_values.h" // Ui::FormatPhone
 
 namespace Api {
@@ -1655,6 +1656,7 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 				} else if (local->isBusinessShortcut()) {
 					session().data().shortcutMessages().apply(d, local);
 				} else {
+					session().api().readReceipts().sent(local, newId);
 					const auto existing = session().data().message(
 						id.peer,
 						newId);

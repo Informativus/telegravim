@@ -1,0 +1,120 @@
+--- a/TMessagesProj/src/main/AndroidManifest.xml
++++ b/TMessagesProj/src/main/AndroidManifest.xml
+@@ -89,0 +90 @@
++        <provider android:authorities="com.android.externalstorage.documents" />
+@@ -99,3 +100,2 @@
+-        android:allowBackup="true"
+-        android:restoreAnyVersion="true"
+-        android:backupAgent=".BackupAgent"
++        android:allowBackup="false"
++        android:restoreAnyVersion="false"
+@@ -210,0 +211,78 @@
++            android:name="org.telegram.ui.OfflineSettingsRouterActivity"
++            android:theme="@android:style/Theme.NoDisplay"
++            android:exported="true"
++            android:excludeFromRecents="true">
++            <meta-data android:name="android.service.chooser.chooser_target_service" android:value="androidx.sharetarget.ChooserTargetServiceCompat" />
++            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
++            <intent-filter>
++                <action android:name="android.intent.action.SEND"/>
++                <category android:name="android.intent.category.DEFAULT"/>
++                <data android:mimeType="image/*"/>
++            </intent-filter>
++            <intent-filter>
++                <action android:name="android.intent.action.SEND"/>
++                <category android:name="android.intent.category.DEFAULT"/>
++                <data android:mimeType="video/*"/>
++            </intent-filter>
++            <intent-filter>
++                <action android:name="android.intent.action.SEND_MULTIPLE"/>
++                <category android:name="android.intent.category.DEFAULT"/>
++                <data android:mimeType="image/*"/>
++            </intent-filter>
++            <intent-filter>
++                <action android:name="android.intent.action.SEND"/>
++                <category android:name="android.intent.category.DEFAULT"/>
++                <data android:mimeType="text/plain"/>
++            </intent-filter>
++            <intent-filter>
++                <action android:name="android.intent.action.SEND"/>
++                <category android:name="android.intent.category.DEFAULT"/>
++                <data android:mimeType="*/*"/>
++            </intent-filter>
++            <intent-filter>
++                <action android:name="android.intent.action.SEND_MULTIPLE"/>
++                <category android:name="android.intent.category.DEFAULT"/>
++                <data android:mimeType="*/*"/>
++            </intent-filter>
++        </activity>
++
++        <activity
++            android:name="org.telegram.ui.OfflineSettingsActivity"
++            android:theme="@style/TelevimOfflineTheme"
++            android:enableOnBackInvokedCallback="false"
++            android:label="@string/AppName"
++            android:windowSoftInputMode="adjustResize"
++            android:launchMode="singleTop"
++            android:exported="true"
++            android:excludeFromRecents="true">
++            <intent-filter>
++                <action android:name="android.intent.action.VIEW" />
++                <category android:name="android.intent.category.DEFAULT" />
++                <category android:name="android.intent.category.BROWSABLE" />
++                <data android:scheme="televim" />
++            </intent-filter>
++            <intent-filter>
++                <action android:name="android.intent.action.VIEW" />
++                <category android:name="android.intent.category.DEFAULT" />
++                <data android:scheme="content" />
++                <data android:mimeType="application/x-televim-settings" />
++                <data android:mimeType="application/json" />
++            </intent-filter>
++            <intent-filter>
++                <action android:name="android.intent.action.VIEW" />
++                <category android:name="android.intent.category.DEFAULT" />
++                <data android:scheme="content" android:host="*" android:pathPattern=".*\\.tgv" android:mimeType="application/octet-stream" />
++            </intent-filter>
++        </activity>
++
++        <meta-data android:name="firebase_messaging_auto_init_enabled" android:value="false" />
++        <meta-data android:name="firebase_data_collection_default_enabled" android:value="false" />
++        <provider android:name="com.google.mlkit.common.internal.MlKitInitProvider" tools:node="remove" />
++        <provider
++            android:name="androidx.startup.InitializationProvider"
++            android:authorities="${applicationId}.androidx-startup"
++            tools:node="merge">
++            <meta-data android:name="androidx.emoji2.text.EmojiCompatInitializer" tools:node="remove" />
++        </provider>
++
++        <activity
+@@ -221,30 +298,0 @@
+-            </intent-filter>
+-            <intent-filter>
+-                <action android:name="android.intent.action.SEND"/>
+-                <category android:name="android.intent.category.DEFAULT"/>
+-                <data android:mimeType="image/*"/>
+-            </intent-filter>
+-            <intent-filter>
+-                <action android:name="android.intent.action.SEND"/>
+-                <category android:name="android.intent.category.DEFAULT"/>
+-                <data android:mimeType="video/*"/>
+-            </intent-filter>
+-            <intent-filter>
+-                <action android:name="android.intent.action.SEND_MULTIPLE"/>
+-                <category android:name="android.intent.category.DEFAULT"/>
+-                <data android:mimeType="image/*"/>
+-            </intent-filter>
+-            <intent-filter>
+-                <action android:name="android.intent.action.SEND"/>
+-                <category android:name="android.intent.category.DEFAULT"/>
+-                <data android:mimeType="text/plain"/>
+-            </intent-filter>
+-            <intent-filter>
+-                <action android:name="android.intent.action.SEND"/>
+-                <category android:name="android.intent.category.DEFAULT"/>
+-                <data android:mimeType="*/*"/>
+-            </intent-filter>
+-            <intent-filter>
+-                <action android:name="android.intent.action.SEND_MULTIPLE"/>
+-                <category android:name="android.intent.category.DEFAULT"/>
+-                <data android:mimeType="*/*"/>

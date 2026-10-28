@@ -156,11 +156,18 @@ void VideoCoverUploader::chosen(std::shared_ptr<Ui::PreparedFile> file) {
 		? nullptr
 		: std::make_unique<Image>(PrepareCoverPreview(file->preview));
 	_photo = nullptr;
-	startUpload(std::move(*file));
+	if (_item && _item->isLocalQuickReply()) {
+		cancelRequests();
+		_localPrepared = std::move(file);
+	} else {
+		_localPrepared = nullptr;
+		startUpload(std::move(*file));
+	}
 	_updated();
 }
 
 void VideoCoverUploader::startUpload(Ui::PreparedFile &&file) {
+	if (_item && _item->isLocalQuickReply()) return;
 	cancelRequests();
 
 	const auto item = _item;
@@ -362,12 +369,18 @@ void VideoCoverUploader::cancelRequests() {
 	++_generation;
 }
 
+void VideoCoverUploader::detachLocalItem() {
+	cancelRequests();
+	_item = nullptr;
+}
+
 void VideoCoverUploader::reset() {
 	cancelRequests();
 	_item = nullptr;
 	_preview = nullptr;
 	_photo = nullptr;
 	_prepared = nullptr;
+	_localPrepared = nullptr;
 }
 
 Image *VideoCoverUploader::preview() const {
@@ -376,6 +389,10 @@ Image *VideoCoverUploader::preview() const {
 
 PhotoData *VideoCoverUploader::photo() const {
 	return _photo;
+}
+
+std::shared_ptr<Ui::PreparedFile> VideoCoverUploader::localPrepared() const {
+	return _localPrepared;
 }
 
 bool VideoCoverUploader::uploading() const {

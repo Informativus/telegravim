@@ -8,6 +8,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 
 #include "data/local_pinned_dialogs.h"
+#include "data/local_quick_replies.h"
+#include "data/local_quick_reply_view.h"
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
 #include "main/main_app_config.h"
@@ -354,6 +356,8 @@ Session::Session(not_null<Main::Session*> session)
 , _businessInfo(std::make_unique<BusinessInfo>(this))
 , _shortcutMessages(std::make_unique<ShortcutMessages>(this)) {
 	_localPinnedDialogs = std::make_unique<LocalPinnedDialogs>(this);
+	_localQuickReplies = std::make_unique<LocalQuickReplies>(nullptr, _session);
+	_localQuickReplyView = std::make_unique<LocalQuickReplyView>(this);
 	_cache->open(_session->local().cacheKey());
 	_bigFileCache->open(_session->local().cacheBigFileKey());
 
@@ -500,6 +504,8 @@ void Session::subscribeForTopicRepliesLists() {
 void Session::clear() {
 	_sessionDataAboutToBeCleared.fire({});
 	_localPinnedDialogs->stop();
+	_localQuickReplyView->clear();
+	_localQuickReplies->stop();
 
 	// Optimization: clear notifications before destroying items.
 	Core::App().notifications().clearFromSession(_session);
@@ -3032,6 +3038,14 @@ const std::vector<Dialogs::Key> &Session::pinnedChatsOrder(
 const std::vector<Dialogs::Key> &Session::pinnedChatsOrder(
 		not_null<Data::SavedMessages*> saved) const {
 	return saved->chatsList()->pinned()->order();
+}
+
+LocalQuickReplyView &Session::localQuickReplyView() const {
+	return *_localQuickReplyView;
+}
+
+LocalQuickReplies &Session::localQuickReplies() const {
+	return *_localQuickReplies;
 }
 
 LocalPinnedDialogs &Session::localPinnedDialogs() const {
