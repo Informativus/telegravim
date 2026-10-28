@@ -916,6 +916,9 @@ struct HelpEntry {
 	binding(0, VimKeymapKeyJumpBottomOption,
 		u"К последним сообщениям"_q,
 		u"Jump to the latest messages"_q);
+	binding(0, VimKeymapKeyMarkReadOption,
+		u"Пометить чат прочитанным"_q,
+		u"Mark the chat as read"_q);
 	binding(0, VimKeymapKeyFocusHintsOption,
 		u"Выбрать элемент по букве"_q,
 		u"Choose a control by its letter"_q,
@@ -1614,6 +1617,11 @@ bool IsLegacyGlobalSearchDefault(const QString &bindings) {
 		|| value == u"ctrl+\u0430,ctrl+f"_q;
 }
 
+bool IsLegacyChatPreviewDefault(const QString &bindings) {
+	return NormalizeBindingToken(bindings)
+		== u"ctrl+v,ctrl+\u043c"_q;
+}
+
 QString WithoutLegacyCtrlE(const QString &bindings) {
 	auto result = QStringList();
 	const auto parts = bindings.split(',', Qt::SkipEmptyParts);
@@ -1641,6 +1649,9 @@ bool EscapeClosesComposer() {
 }
 
 void MigrateLegacyDefaults() {
+	if (IsLegacyChatPreviewDefault(VimKeymapKeyChatPreviewOption.value())) {
+		VimKeymapKeyChatPreviewOption.set(u"Ctrl+V"_q);
+	}
 	if (LegacyDefaultsMigrated || VimKeymapDefaultsMigratedOption.value()) {
 		return;
 	}
@@ -2333,6 +2344,12 @@ bool FocusChatKey(not_null<QKeyEvent*> e) {
 	return Enabled()
 		&& !e->isAutoRepeat()
 		&& MatchesBindings(VimKeymapKeyFocusChatOption, e);
+}
+
+bool MarkReadKey(not_null<QKeyEvent*> e) {
+	return NormalMode()
+		&& !e->isAutoRepeat()
+		&& MatchesBindings(VimKeymapKeyMarkReadOption, e);
 }
 
 bool FocusEmojiKey(not_null<QKeyEvent*> e) {
