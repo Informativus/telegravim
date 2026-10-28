@@ -97,8 +97,8 @@
     "025-e2e-MentionsAdapter.patch": "91c86506b01ba1a1a50e908bcdb50a2713ae5886f8adf2de918076e340ac6512",
     "026-e2e-ChatActivityEnterView.patch": "7618e0b1fb16bb6c9165364512ae9ca71382c090a248909a97873b470f97f987",
     "027-e2e-TranslateController.patch": "02cc195f65fe2413193ef3c8f4b0dc783b0f0dfae5b0c82aba190ec9e21ecb77",
-    "028-private-reading-native.patch": "8d73362f9459777648deb662b1a8f5c4845521875c07e6d97c715c88353007a6",
-    "029-private-reading-ui.patch": "b101000e0ef7c947a185b57df3eeb014fb3d30cdbb55994a1e119419284f2bc4"
+    "028-private-reading-native.patch": "ddfcd55c26cd8fcf5f05a4a83373261f5f849b221303388359db0c3b5da984f8",
+    "029-private-reading-ui.patch": "02ec5d1ed8199500c3fe3ce0615d6e06a14bb6102fc6e3bc15cfcf1f1697fbdb"
   },
   "upstream_commit": "3de37c8cfb039452be7398909461da6288babf15"
 }
