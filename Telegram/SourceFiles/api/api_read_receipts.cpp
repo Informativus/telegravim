@@ -107,6 +107,52 @@ void ReadReceipts::sent(not_null<HistoryItem*> local, MsgId serverId) {
 	});
 }
 
+void ReadReceipts::markRead(not_null<Data::Thread*> thread) {
+	const auto history = thread->owningHistory();
+	const auto peer = history->peer->id;
+	if (const auto topic = thread->asTopic()) {
+		markRead(Key(peer, topic->rootId(), {}),
+			topic->lastKnownServerMessageId());
+	} else if (const auto sublist = thread->asSublist()) {
+		if (sublist->inMonoforum()) {
+			markRead(Key(peer, 0, sublist->sublistPeer()->id),
+				sublist->lastKnownServerMessageId());
+		} else {
+			sublist->readTillEnd();
+		}
+	} else if (thread->asHistory()) {
+		if (!enabled()) {
+			history->owner().histories().readInbox(history);
+		} else if (history->lastServerMessageKnown()) {
+			if (const auto last = history->lastServerMessage()) {
+				markRead(Key(peer, 0, {}), last->id);
+			} else if (history->unreadMark()) {
+				history->owner().histories().changeDialogUnreadMark(history, false);
+			}
+		} else if (history->loadedAtBottom() && history->maxMsgId()) {
+			markRead(Key(peer, 0, {}), history->maxMsgId());
+		} else {
+			const auto generation = _generation;
+			history->owner().histories().requestDialogEntry(history, [=] {
+				if (generation == _generation && history->lastServerMessageKnown()) {
+					markRead(history);
+				}
+			});
+		}
+	}
+}
+
+void ReadReceipts::markRead(Key conversation, MsgId till) {
+	if (!IsServerMsgId(till)) {
+		return;
+	}
+	if (enabled()) {
+		auto &limit = _limits[conversation];
+		limit = std::max(limit, till);
+	}
+	acknowledge(conversation, till);
+}
+
 void ReadReceipts::acknowledge(Key conversation, MsgId till) {
 	const auto [peerId, root, sublistPeer] = conversation;
 	const auto history = _session->data().history(peerId);

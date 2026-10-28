@@ -14,6 +14,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 class HistoryItem;
 
+namespace Data {
+class Thread;
+} // namespace Data
+
 namespace Main {
 class Session;
 } // namespace Main
@@ -34,10 +38,12 @@ public:
 		PeerId sublist = {}) const;
 	bool deferContents(not_null<HistoryItem*> item);
 	void sent(not_null<HistoryItem*> local, MsgId serverId);
+	void markRead(not_null<Data::Thread*> thread);
 
 private:
 	using Key = std::tuple<PeerId, MsgId, PeerId>;
 	[[nodiscard]] static Key key(not_null<HistoryItem*> item);
+	void markRead(Key key, MsgId till);
 	void acknowledge(Key key, MsgId till);
 
 	const not_null<Main::Session*> _session;
