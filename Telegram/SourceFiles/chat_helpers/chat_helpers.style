@@ -1240,6 +1240,10 @@ historyUnreadPollVotes: TwoIconButton(historyToDown) {
 	iconAbove: icon {{ "history_unread_poll_vote-40x40", historyToDownFg, point(6px, 6px) }};
 	iconAboveOver: icon {{ "history_unread_poll_vote-40x40", historyToDownFgOver, point(6px, 6px) }};
 }
+historyMarkRead: TwoIconButton(historyToDown) {
+	iconAbove: icon {{ "menu/read", historyToDownFg, point(14px, 14px) }};
+	iconAboveOver: icon {{ "menu/read", historyToDownFgOver, point(14px, 14px) }};
+}
 historyUnreadThingsSkip: 4px;
 
 historyQuoteStyle: QuoteStyle(defaultQuoteStyle) {
