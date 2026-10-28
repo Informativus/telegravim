@@ -82,4 +82,9 @@ set(desktop_app_skip_libs
 )
 
 add_subdirectory(cmake)
+
+if (WIN32 AND NOT DESKTOP_APP_USE_PACKAGED)
+    target_link_libraries(external_qt INTERFACE dnsapi)
+endif()
+
 add_subdirectory(Telegram)
