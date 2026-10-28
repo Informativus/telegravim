@@ -1,7 +1,7 @@
 package org.telegram.ui;
 
 import android.Manifest;
-import android.content.Context;
+import android.app.Activity;
 import android.content.pm.PackageManager;
 import android.graphics.ImageFormat;
 import android.hardware.Camera;
@@ -20,13 +20,8 @@ import com.google.zxing.MultiFormatReader;
 import com.google.zxing.PlanarYUVLuminanceSource;
 import com.google.zxing.common.HybridBinarizer;
 
-import org.telegram.messenger.AndroidUtilities;
-import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.televim.OfflineTransfer;
-import org.telegram.ui.ActionBar.ActionBar;
-import org.telegram.ui.ActionBar.BaseFragment;
-import org.telegram.ui.ActionBar.Theme;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -37,91 +32,52 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @SuppressWarnings("deprecation")
-public final class OfflineSettingsQrActivity extends BaseFragment implements SurfaceHolder.Callback {
-    private static final int CAMERA_PERMISSION = 65174;
+public final class OfflineSettingsQrView extends LinearLayout implements SurfaceHolder.Callback {
     private static final ExecutorService DECODER = Executors.newSingleThreadExecutor();
     private final java.util.function.Consumer<String> accepted;
-    private final AtomicBoolean decoding = new AtomicBoolean();
+    private final Runnable unavailable;
+    private final Activity activity;
+    private static final AtomicBoolean decoding = new AtomicBoolean();
     private Camera camera;
     private SurfaceView surface;
     private TextView status;
     private boolean resumed;
     private boolean finished;
 
-    public OfflineSettingsQrActivity(java.util.function.Consumer<String> accepted) {
+    public OfflineSettingsQrView(Activity context, java.util.function.Consumer<String> accepted, Runnable unavailable) {
+        super(context);
+        activity = context;
         this.accepted = accepted;
-    }
-
-    @Override
-    protected boolean shouldCancelAccountRequestsOnDestroy() {
-        return false;
-    }
-
-    @Override
-    public View createView(Context context) {
-        actionBar.setTitle(LocaleController.getString(R.string.TelevimImportScan));
-        actionBar.setBackButtonImage(R.drawable.ic_ab_back);
-        actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
-            @Override
-            public void onItemClick(int id) {
-                if (id == -1) {
-                    finishFragment();
-                }
-            }
-        });
-        LinearLayout content = new LinearLayout(context);
-        content.setOrientation(LinearLayout.VERTICAL);
-        content.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        this.unavailable = unavailable;
+        setOrientation(LinearLayout.VERTICAL);
         status = new TextView(context);
-        status.setText(LocaleController.getString(R.string.TelevimImportScanAbout));
-        status.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+        status.setText(activity.getString(R.string.TelevimImportScanAbout));
         int padding = context.getResources().getDimensionPixelSize(R.dimen.televim_spacing);
         status.setPadding(padding, padding, padding, padding);
-        content.addView(status);
+        addView(status);
         surface = new SurfaceView(context);
         surface.getHolder().addCallback(this);
-        content.addView(surface, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
-        fragmentView = content;
-        return content;
+        addView(surface, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
     }
 
-    @Override
-    public void onResume() {
-        super.onResume();
+    public void resume() {
         resumed = true;
-        if (getParentActivity().checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            getParentActivity().requestPermissions(new String[]{Manifest.permission.CAMERA}, CAMERA_PERMISSION);
+        if (activity.checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            unavailable.run();
         } else {
             openCamera();
         }
     }
 
-    @Override
-    public void onPause() {
+    public void close() {
         resumed = false;
-        closeCamera();
-        super.onPause();
-    }
-
-    @Override
-    public void onFragmentDestroy() {
         finished = true;
         closeCamera();
-        super.onFragmentDestroy();
-    }
-
-    @Override
-    public void onRequestPermissionsResultFragment(int requestCode, String[] permissions, int[] results) {
-        if (requestCode == CAMERA_PERMISSION && results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) {
-            openCamera();
-        } else if (requestCode == CAMERA_PERMISSION) {
-            status.setText(LocaleController.getString(R.string.TelevimImportCameraUnavailable));
-        }
     }
 
     private void openCamera() {
         if (!resumed || finished || camera != null || surface == null || !surface.getHolder().getSurface().isValid()
-                || getParentActivity().checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                || activity.checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             return;
         }
         try {
@@ -155,7 +111,7 @@ public final class OfflineSettingsQrActivity extends BaseFragment implements Sur
                 parameters.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE);
             }
             camera.setParameters(parameters);
-            int rotation = getParentActivity().getWindowManager().getDefaultDisplay().getRotation();
+            int rotation = activity.getWindowManager().getDefaultDisplay().getRotation();
             int degrees = rotation == Surface.ROTATION_90 ? 90 : rotation == Surface.ROTATION_180 ? 180 : rotation == Surface.ROTATION_270 ? 270 : 0;
             camera.setDisplayOrientation((info.orientation - degrees + 360) % 360);
             camera.setPreviewDisplay(surface.getHolder());
@@ -166,7 +122,7 @@ public final class OfflineSettingsQrActivity extends BaseFragment implements Sur
             camera.startPreview();
         } catch (Exception error) {
             closeCamera();
-            status.setText(LocaleController.getString(R.string.TelevimImportCameraUnavailable));
+            unavailable.run();
         }
     }
 
@@ -191,7 +147,7 @@ public final class OfflineSettingsQrActivity extends BaseFragment implements Sur
             }
             String decoded = value;
             if (decoded != null) {
-                AndroidUtilities.runOnUIThread(() -> {
+                activity.runOnUiThread(() -> {
                     if (!resumed || finished || camera != owner) {
                         return;
                     }
@@ -201,9 +157,8 @@ public final class OfflineSettingsQrActivity extends BaseFragment implements Sur
                         finished = true;
                         closeCamera();
                         accepted.accept(decoded);
-                        finishFragment();
                     } catch (Exception error) {
-                        status.setText(LocaleController.getString(R.string.TelevimImportInvalidQr));
+                        status.setText(activity.getString(R.string.TelevimImportInvalidQr));
                     }
                 });
             }

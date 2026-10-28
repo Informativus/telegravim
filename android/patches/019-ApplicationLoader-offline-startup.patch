@@ -1,0 +1,22 @@
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java
+@@ -190,0 +191,4 @@
++    public static boolean isApplicationInitialized() {
++        return applicationInited;
++    }
++
+@@ -195,0 +200,3 @@
++        com.google.mlkit.common.MlKit.initialize(applicationContext);
++        androidx.startup.AppInitializer.getInstance(applicationContext)
++                .initializeComponent(androidx.emoji2.text.EmojiCompatInitializer.class);
+@@ -275,0 +283,2 @@
++        ProxyRotationController.init();
++        AndroidUtilities.runOnUIThread(ApplicationLoader::startPushService);
+@@ -353 +361,0 @@
+-        AndroidUtilities.runOnUIThread(ApplicationLoader::startPushService);
+@@ -356 +363,0 @@
+-        ProxyRotationController.init();
+@@ -388,0 +396,3 @@
++        if (!applicationInited) {
++            return;
++        }

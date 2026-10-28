@@ -1462,8 +1462,8 @@ void EditCaptionBox::saveLocal() {
 	auto request = Data::LocalQuickReplyMediaRequest{
 		.target = {
 			.replyRef = _localSource->replyRef,
-			.previous = _localRecoveryApproved ? std::nullopt : _localSource,
 			.firstPosition = _localSource->position,
+			.previous = _localRecoveryApproved ? std::nullopt : _localSource,
 		},
 		.caption = { text.text, TextUtilities::ConvertTextTagsToEntities(text.tags) },
 		.options = {
