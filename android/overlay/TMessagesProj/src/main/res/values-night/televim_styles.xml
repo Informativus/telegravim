@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="TelevimOfflineTheme" parent="@android:style/Theme.Material.NoActionBar">
-        <item name="android:colorAccent">#008577</item>
+        <item name="android:colorAccent">@color/televim_accent</item>
+        <item name="android:windowBackground">@color/televim_background</item>
+        <item name="android:fontFamily">sans-serif</item>
         <item name="android:windowActionModeOverlay">true</item>
     </style>
 </resources>

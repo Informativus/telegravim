@@ -1,0 +1,15 @@
+--- a/TMessagesProj/src/main/java/org/telegram/ui/Components/BlockingUpdateView.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/Components/BlockingUpdateView.java
+@@ -282,6 +282,12 @@
+     public void show(int account, TLRPC.TL_help_appUpdate update, boolean check) {
+         pressCount = 0;
+         appUpdate = update;
++        if (ApplicationLoader.applicationLoaderInstance.isCustomUpdate()) {
++            SharedConfig.pendingAppUpdate = null;
++            SharedConfig.saveConfig();
++            setVisibility(GONE);
++            return;
++        }
+         accountNum = account;
+         if (update.document instanceof TLRPC.TL_document) {
+             fileName = FileLoader.getAttachFileName(update.document);

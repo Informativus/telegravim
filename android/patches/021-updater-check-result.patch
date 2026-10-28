@@ -1,0 +1,22 @@
+--- a/TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java
+@@ -6083,9 +6083,19 @@
+             final boolean first = firstAppUpdateCheck;
+             firstAppUpdateCheck = false;
+             ApplicationLoader.applicationLoaderInstance.checkUpdate(force, () -> {
++                if (isFinishing() || isDestroyed() || LaunchActivity.instance != this) {
++                    return;
++                }
+                 final BetaUpdate pendingUpdate = ApplicationLoader.applicationLoaderInstance.getUpdate();
+                 if (progress != null) {
+                     progress.end();
++                    if (org.telegram.messenger.televim.UpdateController.getInstance().hasError()) {
++                        BaseFragment fragment = getLastFragment();
++                        if (fragment != null) {
++                            BulletinFactory.of(fragment).createErrorBulletin(LocaleController.getString(R.string.televim_update_failed)).show();
++                        }
++                        return;
++                    }
+                     if (pendingUpdate == null) {
+                         BaseFragment fragment = getLastFragment();
+                         if (fragment != null) {

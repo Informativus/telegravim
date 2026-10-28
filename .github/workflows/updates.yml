@@ -1,0 +1,161 @@
+name: Publish verified automatic updates
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Publish a complete new release or refresh the current catalog expiry
+        type: choice
+        options: [release, refresh]
+        default: release
+      release_tag:
+        description: Existing stable draft tag on main (all builds must use this commit)
+        type: string
+        required: false
+      mac_run:
+        description: Successful macOS package workflow run ID
+        type: string
+        required: false
+      win_run:
+        description: Successful Windows package workflow run ID
+        type: string
+        required: false
+      linux_run:
+        description: Successful Linux package workflow run ID
+        type: string
+        required: false
+      android_run:
+        description: Successful universal Android package workflow run ID
+        type: string
+        required: false
+      bootstrap:
+        description: Allow the first catalog only when no catalog exists (HTTP 404)
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: telegravim-update-publication
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Verify complete release, sign packages and publish catalog
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: network-review
+    permissions:
+      contents: write
+      actions: read
+      pages: write
+    steps:
+      - name: Validate the release tag
+        if: inputs.operation == 'release'
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          if not re.fullmatch(r'[0-9]{4}\.[0-9]{2}\.[0-9]{2}-[0-9]+', os.environ['RELEASE_TAG']):
+              raise SystemExit('An exact stable release tag is required.')
+          PY
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.operation == 'release' && inputs.release_tag || github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify workflow and source provenance
+        env:
+          WORKFLOW_SHA: ${{ github.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$WORKFLOW_SHA"
+          git merge-base --is-ancestor HEAD origin/main
+          git diff --exit-code HEAD
+      - name: Require the configured owner approval policy
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import subprocess
+          environment = json.loads(subprocess.check_output([
+              'gh', 'api', 'repos/Informativus/telegravim/environments/network-review']))
+          rules = [rule for rule in environment.get('protection_rules', [])
+                   if rule.get('type') == 'required_reviewers']
+          reviewers = rules[0].get('reviewers', []) if len(rules) == 1 else []
+          if (len(reviewers) != 1 or reviewers[0].get('type') != 'User'
+                  or reviewers[0].get('reviewer', {}).get('login') != 'Informativus'
+                  or rules[0].get('prevent_self_review') is not False
+                  or environment.get('can_admins_bypass') is not False):
+              raise SystemExit('The required owner approval policy is missing or changed.')
+          PY
+      - name: Build native signature verification and packing tools
+        if: inputs.operation == 'release'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qt6-base-dev libssl-dev liblzma-dev zlib1g-dev g++
+          mkdir -p .local/update-tools
+          g++ -std=c++20 -O2 -DPACKER_DISABLE_PRIVATE -DPACKER_USE_PACKAGED \
+            -ITelegram/SourceFiles $(pkg-config --cflags Qt6Core openssl liblzma) \
+            Telegram/SourceFiles/_other/packer.cpp Telegram/SourceFiles/core/update_verify.cpp \
+            $(pkg-config --libs Qt6Core openssl liblzma) -lz -o .local/update-tools/Packer
+      - name: Verify and publish all four platforms
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OPERATION: ${{ inputs.operation }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          MAC_RUN: ${{ inputs.mac_run }}
+          WIN_RUN: ${{ inputs.win_run }}
+          LINUX_RUN: ${{ inputs.linux_run }}
+          ANDROID_RUN: ${{ inputs.android_run }}
+          BOOTSTRAP: ${{ inputs.bootstrap }}
+          UPDATE_SIGNING_KEY: ${{ secrets.TELEVIM_UPDATE_SIGNING_KEY }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import subprocess
+          import tempfile
+
+          root = pathlib.Path.cwd()
+          with tempfile.TemporaryDirectory(dir=os.environ['RUNNER_TEMP']) as private:
+              key = pathlib.Path(private) / 'release.pem'
+              key.write_text(os.environ.pop('UPDATE_SIGNING_KEY'))
+              key.chmod(0o600)
+              command = ['python3', 'Telegram/build/update_release.py', os.environ['OPERATION'],
+                         '--key', str(key), '--output', str(root / '.local/update-publication')]
+              if os.environ['OPERATION'] == 'release':
+                  notes = pathlib.Path(private) / 'notes.txt'
+                  notes.write_bytes(subprocess.check_output([
+                      'gh', 'release', 'view', os.environ['RELEASE_TAG'], '--repo',
+                      'Informativus/telegravim', '--json', 'body', '--jq', '.body']))
+                  command += ['--tag', os.environ['RELEASE_TAG'], '--notes', str(notes),
+                              '--packer', str(root / '.local/update-tools/Packer')]
+                  for platform in ('mac', 'win', 'linux', 'android'):
+                      command += ['--' + platform + '-run', os.environ[platform.upper() + '_RUN']]
+                  if os.environ['BOOTSTRAP'] == 'true':
+                      command.append('--bootstrap')
+              subprocess.run(command, check=True)
+          PY
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+        with:
+          path: .local/update-publication/site
+
+  deploy:
+    name: Atomically deploy the signed catalog
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

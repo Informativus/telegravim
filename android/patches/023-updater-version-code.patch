@@ -1,0 +1,5 @@
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/BetaUpdate.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/BetaUpdate.java
+@@ -19 +19 @@
+-        return update == null || SharedConfig.versionBiggerOrEqual(version, update.version) && versionCode > update.versionCode;
++        return update == null || versionCode > update.versionCode;

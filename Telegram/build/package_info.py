@@ -26,7 +26,7 @@ subprocess.run(["git", "diff", "--exit-code", "HEAD"], cwd=root, check=True)
         "commit": commit,
         "platform": platform,
         "configuration": "Release",
-        "automatic_updates": False,
+        "automatic_updates": True,
     }, indent=2) + "\n",
     encoding="utf-8",
 )
@@ -39,6 +39,6 @@ subprocess.run(["git", "diff", "--exit-code", "HEAD"], cwd=root, check=True)
     "Shift+R opens reactions; r replies. / searches the Vim help window.\n"
     "Cmd+Shift+V (macOS) or Ctrl+Shift+V (Windows/Linux) leaves search\n"
     "at the selected position and starts message text selection.\n"
-    "This package does not automatically install official Telegram updates.\n",
+    "Updates are verified with Telegravim release keys before installation.\n",
     encoding="utf-8",
 )

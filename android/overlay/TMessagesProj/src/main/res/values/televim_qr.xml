@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="televim_qr_inset">16dp</dimen>
+    <dimen name="televim_qr_text_inset">36dp</dimen>
+    <dimen name="televim_qr_text_gap">64dp</dimen>
+    <dimen name="televim_qr_description_gap">8dp</dimen>
+    <dimen name="televim_qr_title_size">24sp</dimen>
+    <dimen name="televim_qr_text_size">16sp</dimen>
+    <dimen name="televim_qr_line_spacing">2dp</dimen>
+    <dimen name="televim_qr_corner_width">4dp</dimen>
+    <dimen name="televim_qr_corner_length">20dp</dimen>
+    <dimen name="televim_qr_corner_radius">8dp</dimen>
+    <dimen name="televim_qr_torch_size">60dp</dimen>
+    <dimen name="televim_qr_torch_gap">80dp</dimen>
+    <fraction name="televim_qr_frame_fraction">66.666667%</fraction>
+    <color name="televim_qr_background">#FF000000</color>
+    <color name="televim_qr_foreground">#FFFFFFFF</color>
+    <color name="televim_qr_shade">#7F000000</color>
+    <color name="televim_qr_torch_idle">#22FFFFFF</color>
+    <color name="televim_qr_torch_active">#44FFFFFF</color>
+</resources>
