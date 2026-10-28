@@ -82,7 +82,8 @@ jobs:
                 -D CMAKE_CONFIGURATION_TYPES=Release \\
                 -D TDESKTOP_API_TEST=OFF \\
                 -D DESKTOP_APP_TEST_APPS=ON \\
-                -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON \\
+                -D DESKTOP_APP_DISABLE_AUTOUPDATE=OFF \\
+                -D TELEGRAVIM_BUILD_UPDATE_PACKER=ON \\
                 -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
               cmake --build ../out --config Release --target "$BUILD_TARGET"
               ccache --show-stats
@@ -120,11 +121,16 @@ jobs:
         run: |
           strip --strip-unneeded out/Release/Telegram
           mkdir -p artifact/Telegravim
-          cp out/Release/Telegram artifact/Telegravim/
+          cp out/Release/Telegram out/Release/Updater artifact/Telegravim/
           cp LICENSE Telegram/Resources/dictionaries/LICENSE_*.txt artifact/Telegravim/
           python3 Telegram/build/package_info.py artifact/Telegravim linux-x86_64
           file artifact/Telegravim/Telegram
           ldd artifact/Telegravim/Telegram
+          docker run --rm --user "$(id -u):$(id -g)" \
+            --volume "$PWD:/usr/src/tdesktop" --workdir /usr/src/tdesktop \
+            "$BUILD_IMAGE" python3 Telegram/build/update_release.py pack \
+            --packer out/Release/Packer --stage artifact/Telegravim \
+            --output artifact --platform linux-x86_64
           tar -C artifact -cJf artifact/Telegravim-linux-x86_64.tar.xz Telegravim
           cd artifact
           sha256sum Telegravim-linux-x86_64.tar.xz > SHA256-linux-x86_64.txt
@@ -135,5 +141,7 @@ jobs:
           path: |
             artifact/Telegravim-linux-x86_64.tar.xz
             artifact/SHA256-linux-x86_64.txt
+            artifact/*.unsigned
+            artifact/update-linux-x86_64.json
           retention-days: 14
           if-no-files-found: error

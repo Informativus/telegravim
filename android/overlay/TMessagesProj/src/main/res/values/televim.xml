@@ -52,4 +52,5 @@
     <string name="TelevimImportRetry">Try again in %1$d seconds.</string>
     <string name="TelevimImportInterrupted">The preview was cancelled when you left this screen or the app was locked. Enter the export password and preview again before applying.</string>
     <string name="TelevimImportFinishing">The previous local operation is still finishing. Wait a moment, then preview again.</string>
+    <string name="televim_update_failed">Could not verify or download the update. Please try again later.</string>
 </resources>

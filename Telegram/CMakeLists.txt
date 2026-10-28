@@ -2654,8 +2654,9 @@ if (NOT DESKTOP_APP_DISABLE_AUTOUPDATE AND NOT build_macstore AND NOT build_wins
         )
     endif()
 
-    if (DESKTOP_APP_SPECIAL_TARGET)
+    if (DESKTOP_APP_SPECIAL_TARGET OR TELEGRAVIM_BUILD_UPDATE_PACKER)
         add_executable(Packer)
+        target_compile_definitions(Packer PRIVATE PACKER_DISABLE_PRIVATE)
         init_target(Packer)
 
         add_dependencies(Telegram Packer)

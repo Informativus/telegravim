@@ -221,7 +221,7 @@ jobs:
               subprocess.run(["cmake", "-S", str(source), "-B", str(build), "-G", "Ninja",
                               "-C", str(config), "-DCMAKE_BUILD_TYPE=Release",
                               "-DCMAKE_OSX_ARCHITECTURES=arm64", "-DDESKTOP_APP_DISABLE_SWIFT6=ON",
-                              "-DDESKTOP_APP_DISABLE_AUTOUPDATE=ON",
+                              "-DDESKTOP_APP_DISABLE_AUTOUPDATE=OFF", "-DTELEGRAVIM_BUILD_UPDATE_PACKER=ON",
                               "-DDESKTOP_APP_DISABLE_CRASH_REPORTS=ON"], env=environment, check=True)
               subprocess.run(["cmake", "--build", str(build), "--config", "Release",
                               "--target", "Telegram", "--parallel", "1"], env=environment, check=True)
@@ -273,6 +273,10 @@ jobs:
                       "platform": "macos-arm64", "configuration": "Release", "sha256": digest,
                       "artifact": dmg.name, "signature": "ad-hoc", "notarized": False}
           (destination / "source.json").write_text(json.dumps(metadata, indent=2) + "\n")
+          subprocess.run(["python3", str(source / "Telegram/build/update_release.py"), "pack",
+                          "--packer", str(root / ".local/builds/macos-release/Packer"),
+                          "--stage", str(stage), "--output", str(destination),
+                          "--platform", "macos-arm64"], check=True)
           PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
