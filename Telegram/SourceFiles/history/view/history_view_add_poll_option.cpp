@@ -121,7 +121,9 @@ AddPollOptionWidget::AddPollOptionWidget(
 , _session(&controller->session())
 , _mediaState(std::make_shared<PollMediaUpload::PollMediaState>())
 , _webpageResolver(
-	std::make_shared<HistoryView::Controls::WebpageResolver>(_session)) {
+	std::make_shared<HistoryView::Controls::WebpageResolver>(
+		_session,
+		_itemId.peer)) {
 	const auto item = _session->data().message(_itemId);
 	const auto peer = item ? item->history()->peer.get() : nullptr;
 	if (peer) {

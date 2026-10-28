@@ -1,0 +1,13 @@
+--- a/TMessagesProj/src/main/java/org/telegram/ui/Components/ChatActivityEnterView.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/Components/ChatActivityEnterView.java
+@@ -7788 +7788,2 @@
+-        int maxLength = accountInstance.getMessagesController().getMaxMessageLength();
++        boolean e2e = org.telegram.messenger.televim.E2eChat.enabled(currentAccount, dialog_id);
++        int maxLength = e2e ? org.telegram.messenger.televim.E2eChat.TEXT_LIMIT : accountInstance.getMessagesController().getMaxMessageLength();
+@@ -7830,0 +7832 @@
++                if (e2e && end < text.length() && end > start && Character.isHighSurrogate(text.charAt(end - 1))) end--;
+@@ -7892,0 +7895 @@
++                if (!org.telegram.messenger.televim.E2eChat.prepare(currentAccount, params)) return false;
+@@ -7894 +7897 @@
+-                start = end + 1;
++                start = e2e ? end : end + 1;

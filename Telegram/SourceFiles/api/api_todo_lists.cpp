@@ -38,6 +38,12 @@ void TodoLists::create(
 		SendAction action,
 		Fn<void()> done,
 		Fn<void(QString)> fail) {
+	if (_session->api().preventUnencryptedSend(action.history->peer)) {
+		if (fail) {
+			fail(u"Todo lists are unavailable in E2E mode."_q);
+		}
+		return;
+	}
 	StripEphemeralReply(_session, action.replyTo);
 	_session->api().sendAction(action);
 

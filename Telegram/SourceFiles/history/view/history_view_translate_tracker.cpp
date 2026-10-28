@@ -313,6 +313,9 @@ void TranslateTracker::requestSome() {
 	ids.reserve(_requested.size());
 	for (const auto &id : _requested) {
 		if (const auto item = owner->message(id)) {
+			if (item->isE2eProtected()) {
+				continue;
+			}
 			requests.push_back(Ui::PrepareTranslateProviderRequest(
 				_provider.get(),
 				session->data().peer(id.peer),

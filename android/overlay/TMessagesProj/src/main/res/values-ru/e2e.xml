@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="TelevimE2eTitle">Шифрование чата</string>
+    <string name="TelevimE2eTextOnly">В режиме шифрования доступен только текст. Отключите его для отправки другого содержимого. Отложенная отправка и быстрые ответы недоступны.</string>
+    <string name="TelevimE2eNoEdit">Зашифрованные сообщения нельзя редактировать.</string>
+    <string name="TelevimE2eFailed">Не удалось выполнить шифрование. Проверьте ключи и локальное хранилище. Сообщение не отправлено.</string>
+    <string name="TelevimE2ePending">Ожидание включения шифрования собеседником. Отправка открытого текста заблокирована.</string>
+    <string name="TelevimE2eTooLong">Разделите текст на более короткие сообщения для отправки с шифрованием.</string>
+    <string name="TelevimE2eUnavailable">Зашифрованное сообщение недоступно: не удалось проверить ключ, отправителя или целостность.</string>
+    <string name="TelevimE2eKeySent">Вы отправили свой открытый ключ шифрования.</string>
+    <string name="TelevimE2eKeyChanged">Ключ собеседника изменился. Перед отправкой сверьте новый отпечаток в разделе «Ключи шифрования».</string>
+    <string name="TelevimE2eKeyReceived">Собеседник отправил ключ шифрования. Перед включением сверьте отпечаток через другой доверенный канал.</string>
+    <string name="TelevimE2eRequested">Вы запросили режим шифрования в этом чате. Ожидание подтверждения.</string>
+    <string name="TelevimE2ePeerRequested">Собеседник запросил режим шифрования. Проверьте его ключ и включите шифрование в этом чате.</string>
+    <string name="TelevimE2eDisabled">Вы отключили шифрование новых сообщений.</string>
+    <string name="TelevimE2ePeerDisabled">Собеседник отключил шифрование. Ваш режим отправки не изменился.</string>
+    <string name="TelevimE2eAcknowledged">Запрос шифрования подтверждён.</string>
+    <string name="TelevimE2eActive">Шифрование новых текстовых сообщений в этом чате включено.</string>
+    <string name="TelevimE2eOff">Новые сообщения отправляются в обычном режиме Telegram. Зашифрованная история остаётся доступной на этом устройстве.</string>
+    <string name="TelevimE2eEnable">Включить шифрование</string>
+    <string name="TelevimE2eDisable">Отключить шифрование</string>
+    <string name="TelevimE2eKeys">Ключи шифрования</string>
+    <string name="TelevimE2eRetry">Повторить запрос</string>
+    <string name="TelevimE2eSetup">Отправьте свой открытый ключ ниже, вставьте ключ собеседника и сверьте отпечаток через другой доверенный канал. Затем оба включите шифрование в этом же чате. Приватные ключи остаются на устройстве.</string>
+    <string name="TelevimE2ePeerKey">Вставьте открытый ключ собеседника или сообщение с ключом целиком</string>
+    <string name="TelevimE2eVerified">Я сверил этот отпечаток с собеседником через другой доверенный канал</string>
+    <string name="TelevimE2eFingerprint">Отпечаток собеседника</string>
+    <string name="TelevimE2eSendKey">Отправить мой ключ</string>
+    <string name="TelevimE2eVerifyFirst">Сверьте отпечаток с собеседником, затем поставьте отметку подтверждения.</string>
+</resources>

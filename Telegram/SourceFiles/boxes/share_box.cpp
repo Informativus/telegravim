@@ -1915,6 +1915,11 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 			&& result.front()->peer()->isSelf()
 			&& history->session().premium();
 		for (const auto &thread : result) {
+			if (api.preventUnencryptedSend(thread->peer())) {
+				return;
+			}
+		}
+		for (const auto &thread : result) {
 			const auto peer = thread->peer();
 			const auto threadHistory = thread->owningHistory();
 			const auto forum = threadHistory->asForum();

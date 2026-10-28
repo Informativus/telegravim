@@ -419,6 +419,7 @@ public:
 		SendAction action,
 		std::optional<MsgId> localMessageId,
 		Fn<void(bool)> done = nullptr);
+	[[nodiscard]] bool preventUnencryptedSend(not_null<PeerData*> peer);
 	void sendMessageFail(
 		const MTP::Error &error,
 		not_null<PeerData*> peer,

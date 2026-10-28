@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "inline_bots/inline_results_widget.h"
 
+#include "e2e/e2e_chat.h"
+
 #include "data/data_user.h"
 #include "data/data_session.h"
 #include "inline_bots/inline_bot_result.h"
@@ -455,6 +457,11 @@ void Widget::queryInlineBot(UserData *bot, PeerData *peer, QString query) {
 
 void Widget::onInlineRequest() {
 	if (_inlineRequestId || !_inlineBot || !_inlineQueryPeer) return;
+	if (_inlineQueryPeer->session().e2e().enabled(_inlineQueryPeer->id)) {
+		_inlineRequestTimer.cancel();
+		_requesting.fire(false);
+		return;
+	}
 	_inlineQuery = _inlineNextQuery;
 
 	QString nextOffset;

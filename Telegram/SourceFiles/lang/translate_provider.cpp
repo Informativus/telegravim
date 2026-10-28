@@ -50,6 +50,11 @@ TranslateProviderRequest PrepareTranslateProviderRequest(
 		not_null<PeerData*> peer,
 		MsgId msgId,
 		TextWithEntities text) {
+	if (const auto item = peer->owner().message(peer, msgId)) {
+		if (item->isE2eProtected()) {
+			return {};
+		}
+	}
 	auto result = TranslateProviderRequest{
 		.peerId = uint64(peer->id.value),
 		.msgId = IsServerMsgId(msgId) ? msgId.bare : 0,
