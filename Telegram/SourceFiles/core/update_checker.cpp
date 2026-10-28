@@ -31,11 +31,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings/settings_intro.h"
 #include "ui/layers/box_content.h"
 
+#include <QtCore/QCryptographicHash>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <QtCore/QFileSystemWatcher>
 
 #include <ksandbox.h>
+
+#include <limits>
 
 #if !defined Q_OS_WIN && !defined Q_OS_MAC
 #include "base/platform/linux/base_linux_xdp_utilities.h"
@@ -152,6 +155,14 @@ struct Implementation {
 
 };
 
+struct UpdateDescriptor {
+	QString url;
+	QByteArray sha256;
+	uint64 version = 0;
+	int64 size = 0;
+	int64 expires = 0;
+};
+
 class HttpChecker : public Checker {
 public:
 	HttpChecker(bool testing);
@@ -165,7 +176,8 @@ private:
 	void gotFailure(QNetworkReply::NetworkError e);
 	void clearSentRequest();
 	bool handleResponse(const QByteArray &response);
-	std::optional<QString> parseResponse(const QByteArray &response) const;
+	std::optional<UpdateDescriptor> parseResponse(
+		const QByteArray &response) const;
 	QString validateLatestUrl(
 		uint64 availableVersion,
 		bool isAvailableAlpha,
@@ -180,7 +192,9 @@ class HttpLoaderActor;
 
 class HttpLoader : public Loader {
 public:
-	HttpLoader(const QString &url);
+	HttpLoader(UpdateDescriptor descriptor);
+
+	const UpdateDescriptor &descriptor() const;
 
 	~HttpLoader();
 
@@ -189,7 +203,7 @@ private:
 
 	friend class HttpLoaderActor;
 
-	QString _url;
+	UpdateDescriptor _descriptor;
 	std::unique_ptr<QThread> _thread;
 	HttpLoaderActor *_actor = nullptr;
 
@@ -530,7 +544,8 @@ QString ExtractFilename(const QString &url) {
 
 [[nodiscard]] bool UnpackUpdateV2(
 		const QString &filepath,
-		const QByteArray &content) {
+		const QByteArray &content,
+		uint64 expectedVersion) {
 	// The expected target follows the feed key, not the build: an x64
 	// build under Rosetta asks for armac and must accept that package.
 	const auto target = Updates::TargetFromPlatformKey(
@@ -556,6 +571,10 @@ QString ExtractFilename(const QString &url) {
 		&error);
 	if (!verified) {
 		LOG(("Update Error: v2 update rejected: %1").arg(error));
+		return false;
+	}
+	if (verified->envelope.version != expectedVersion) {
+		LOG(("Update Error: Package version differs from the catalog."));
 		return false;
 	}
 	if (verified->adoptManifest) {
@@ -627,28 +646,40 @@ QString ExtractFilename(const QString &url) {
 
 #endif // !TDESKTOP_DISABLE_AUTOUPDATE
 
-bool UnpackUpdate(const QString &filepath) {
+bool UnpackUpdate(
+		const QString &filepath,
+		const std::optional<UpdateDescriptor> &descriptor) {
 #ifndef TDESKTOP_DISABLE_AUTOUPDATE
 	if (filepath.isEmpty()) {
 		return true;
 	}
 
+	if (!descriptor || descriptor->expires <= base::unixtime::now()) {
+		LOG(("Update Error: Missing or expired package descriptor."));
+		return false;
+	}
 	QFile input(filepath);
 	if (!input.open(QIODevice::ReadOnly)) {
 		LOG(("Update Error: cant read updates file!"));
 		return false;
-	} else if (input.size() > Loader::kMaxFileSize) {
-		LOG(("Update Error: updates file is too large: %1").arg(input.size()));
+	} else if (input.size() > Loader::kMaxFileSize
+		|| input.size() != descriptor->size) {
+		LOG(("Update Error: Unexpected update file size: %1").arg(input.size()));
 		return false;
 	}
 
 	const auto compressed = input.readAll();
 	input.close();
+	if (QCryptographicHash::hash(compressed, QCryptographicHash::Sha256)
+		!= descriptor->sha256) {
+		LOG(("Update Error: Package digest differs from the catalog."));
+		return false;
+	}
 	if (!Updates::IsV2UpdateFile(compressed)) {
 		LOG(("Update Error: only signed v2 packages are accepted."));
 		return false;
 	}
-	return UnpackUpdateV2(filepath, compressed);
+	return UnpackUpdateV2(filepath, compressed, descriptor->version);
 #else // !TDESKTOP_DISABLE_AUTOUPDATE
 	return false;
 #endif // TDESKTOP_DISABLE_AUTOUPDATE
@@ -794,9 +825,9 @@ void HttpChecker::start() {
 	_manager = std::make_unique<QNetworkAccessManager>();
 	_reply = _manager->get(request);
 	_reply->setReadBufferSize(kMaxResponseSize + 1);
-	_reply->connect(_reply, &QNetworkReply::readyRead, [=] {
-		if (_reply->bytesAvailable() > kMaxResponseSize) {
-			_reply->abort();
+	_reply->connect(_reply, &QNetworkReply::readyRead, [reply = _reply] {
+		if (reply->bytesAvailable() > kMaxResponseSize) {
+			reply->abort();
 		}
 	});
 	_reply->connect(_reply, &QNetworkReply::finished, [=] {
@@ -830,10 +861,7 @@ bool HttpChecker::handleResponse(const QByteArray &response) {
 	const auto signature = QByteArray::fromBase64(
 		wrapper.value(u"signature"_q).toString().toLatin1(),
 		QByteArray::AbortOnBase64DecodingErrors);
-	const auto manifest = Updates::ParseVerifiedManifest(
-		Updates::EmbeddedManifest(),
-		Updates::EmbeddedManifestSignature(),
-		Updates::RootPublicKeyPem());
+	const auto manifest = HeldManifest();
 	const auto now = base::unixtime::now();
 	if (!manifest
 		|| payload.isEmpty()
@@ -856,14 +884,14 @@ bool HttpChecker::handleResponse(const QByteArray &response) {
 		|| expires - issued > 366 * 86400) {
 		return false;
 	}
-	const auto handle = [&](const QString &url) {
-		done(url.isEmpty() ? nullptr : std::make_shared<HttpLoader>(url));
-		return true;
-	};
-	if (const auto url = parseResponse(
+	if (auto descriptor = parseResponse(
 			QJsonDocument(catalog.value(u"desktop"_q).toObject())
 				.toJson(QJsonDocument::Compact))) {
-		return handle(*url);
+		descriptor->expires = expires;
+		done(descriptor->url.isEmpty()
+			? nullptr
+			: std::make_shared<HttpLoader>(std::move(*descriptor)));
+		return true;
 	}
 	return false;
 }
@@ -890,11 +918,11 @@ void HttpChecker::gotFailure(QNetworkReply::NetworkError e) {
 	fail();
 }
 
-std::optional<QString> HttpChecker::parseResponse(
+std::optional<UpdateDescriptor> HttpChecker::parseResponse(
 		const QByteArray &response) const {
 	auto bestAvailableVersion = 0ULL;
 	auto bestIsAvailableAlpha = false;
-	auto bestLink = QString();
+	auto descriptor = UpdateDescriptor();
 	const auto accumulate = [&](
 			uint64 version,
 			bool isAlpha,
@@ -911,8 +939,17 @@ std::optional<QString> HttpChecker::parseResponse(
 				).arg(version));
 			return false;
 		}
-		bestLink = (*link).toString();
-		const auto url = QUrl(bestLink, QUrl::StrictMode);
+		const auto digest = map.value(u"sha256"_q).toString();
+		descriptor.size = map.value(u"size"_q).toInteger();
+		if (isAlpha || version > std::numeric_limits<quint32>::max()
+			|| descriptor.size <= 0 || descriptor.size > Loader::kMaxFileSize
+			|| !QRegularExpression(u"^[0-9a-f]{64}$"_q).match(digest).hasMatch()) {
+			return false;
+		}
+		descriptor.sha256 = QByteArray::fromHex(digest.toLatin1());
+		descriptor.version = Updates::MakeUpdateVersion(quint32(version), 0);
+		descriptor.url = (*link).toString();
+		const auto url = QUrl(descriptor.url, QUrl::StrictMode);
 		if (!url.isValid()
 			|| url.scheme() != u"https"_q
 			|| url.host() != u"github.com"_q
@@ -930,10 +967,11 @@ std::optional<QString> HttpChecker::parseResponse(
 	if (!result) {
 		return std::nullopt;
 	}
-	return validateLatestUrl(
+	descriptor.url = validateLatestUrl(
 		bestAvailableVersion,
 		bestIsAvailableAlpha,
-		bestLink);
+		descriptor.url);
+	return descriptor;
 }
 
 QString HttpChecker::validateLatestUrl(
@@ -962,16 +1000,20 @@ HttpChecker::~HttpChecker() {
 	clearSentRequest();
 }
 
-HttpLoader::HttpLoader(const QString &url)
-: Loader(UpdatesFolder() + '/' + ExtractFilename(url), kChunkSize)
-, _url(url) {
+HttpLoader::HttpLoader(UpdateDescriptor descriptor)
+: Loader(UpdatesFolder() + '/' + ExtractFilename(descriptor.url), kChunkSize)
+, _descriptor(std::move(descriptor)) {
+}
+
+const UpdateDescriptor &HttpLoader::descriptor() const {
+	return _descriptor;
 }
 
 void HttpLoader::startLoading() {
-	LOG(("Update Info: Loading using HTTP from '%1'.").arg(_url));
+	LOG(("Update Info: Loading a verified catalog package using HTTP."));
 
 	_thread = std::make_unique<QThread>();
-	_actor = new HttpLoaderActor(this, _thread.get(), _url);
+	_actor = new HttpLoaderActor(this, _thread.get(), _descriptor.url);
 	_thread->start();
 }
 
@@ -1055,7 +1097,10 @@ void HttpLoaderActor::gotMetaData() {
 		if (QString::fromUtf8(pair.first).toLower() == "content-range") {
 			const auto m = QRegularExpression(u"/(\\d+)([^\\d]|$)"_q).match(QString::fromUtf8(pair.second));
 			if (m.hasMatch()) {
-				_parent->writeChunk({}, m.captured(1).toLongLong());
+				if (m.captured(1).toLongLong() != _parent->descriptor().size) {
+					_reply->abort();
+					return;
+				}
 			}
 		}
 	}
@@ -1080,7 +1125,12 @@ void HttpLoaderActor::partFinished(qint64 got, qint64 total) {
 	DEBUG_LOG(("Update Info: part %1 of %2").arg(got).arg(total));
 
 	const auto data = _reply->readAll();
-	_parent->writeChunk(bytes::make_span(data), total);
+	const auto expected = _parent->descriptor().size;
+	if (_parent->alreadySize() + data.size() > expected) {
+		_reply->abort();
+		return;
+	}
+	_parent->writeChunk(bytes::make_span(data), expected);
 }
 
 void HttpLoaderActor::partFailed(QNetworkReply::NetworkError e) {
@@ -1619,10 +1669,14 @@ void Updater::finalize(QString filepath) {
 		return;
 	}
 	_retryTimer.cancel();
+	const auto http = dynamic_cast<HttpLoader*>(_activeLoader.get());
+	const auto descriptor = http
+		? std::make_optional(http->descriptor())
+		: std::nullopt;
 	_activeLoader = nullptr;
 	_action = Action::Unpacking;
 	crl::async([=] {
-		const auto ready = UnpackUpdate(filepath);
+		const auto ready = UnpackUpdate(filepath, descriptor);
 		crl::on_main([=] {
 			GetUpdaterInstance()->unpackDone(ready);
 		});

@@ -14,7 +14,9 @@ telemetry. A hosting provider necessarily receives the connection IP address and
 ordinary HTTP/TLS transport information. The updater does not use Telegram's
 account API, Telegram update channels or a server-provided update prefix.
 Android import activities do not construct or start the updater; automatic checks
-run from the existing normal application lifecycle after initialization.
+run from the existing normal application lifecycle after initialization. Android
+notifications appear in the application; this does not add background push
+notifications while the application is closed.
 
 The resource contains base64-encoded `payload` and `signature` fields. The
 signature is ES256 with a 64-byte raw `r || s` representation, over the exact bytes
@@ -28,7 +30,10 @@ installed version is current when discovery failed.
 Desktop packages use the existing TDUP v2 envelope and native Packer/Updater.
 The fork's Ed25519 root authenticates the delegated ES256 release key manifest.
 Clients verify channel, operating system, architecture, increasing native version
-and payload signature before decompression. Legacy RSA updates are rejected.
+and payload signature before decompression. The downloaded bytes must also match
+the signed catalog size, SHA-256 and exact native version before extraction;
+catalog verification honors persisted root-authorized key revocations. Legacy RSA
+updates are rejected.
 The four native channel entries remain in the trust manifest; this publication
 workflow publishes only stable packages. Existing beta opt-in falls back to the
 stable feed. Public/private canary releases are not published by this workflow.

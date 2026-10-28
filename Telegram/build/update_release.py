@@ -56,6 +56,11 @@ def pack(args):
                 else 'Updater.exe' if args.platform == 'windows-x64' else 'Updater')
     if not (stage / required).is_file():
         raise ValueError('The staged package lacks its native updater')
+    for item in stage.rglob('*'):
+        if item == stage / 'Applications':
+            continue
+        if item.is_symlink():
+            raise ValueError('Native update format cannot preserve staged symlinks')
     command = [args.packer.resolve()]
     for item in sorted(stage.iterdir()):
         if item.name == 'Applications':
@@ -162,7 +167,6 @@ def sign_envelope(path, platform, native_version, key, directory, packer, existi
     if result != header + signature + data[payload_offset:]:
         raise ValueError('Native envelope verification produced unexpected bytes')
     return result
-
 
 
 def previous_catalog(directory, bootstrap):
