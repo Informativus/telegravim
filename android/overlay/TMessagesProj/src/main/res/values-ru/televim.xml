@@ -7,7 +7,7 @@
     <string name="TelevimImportScan">Сканировать QR с настройками</string>
     <string name="TelevimImportPreview">Посмотреть изменения</string>
     <string name="TelevimImportApply">Применить настройки и сохранить пакет</string>
-    <string name="TelevimImportFiles">Для файла откройте память устройства в системном приложении «Файлы». Для JSON выберите «Открыть с помощью» → Televim. Для зашифрованного файла .tgv выберите «Открыть с помощью» или «Поделиться» → Televim. Принимаются только локальные файлы системного хранилища. Облачные, виртуальные файлы и веб-ссылки отклоняются. Зашифрованный файл — до 8 МиБ, JSON — до 2 МиБ.</string>
+    <string name="TelevimImportFiles">Импорт принимает один файл за раз. «Поделиться» для обычного JSON открывает штатную отправку в чат Telegram с доступом к сети; для импорта JSON используйте «Открыть с помощью». Для файла откройте память устройства в системном приложении «Файлы». Для JSON выберите «Открыть с помощью» → Televim. Для зашифрованного файла .tgv выберите «Открыть с помощью» или «Поделиться» → Televim. Принимаются только локальные файлы системного хранилища. Облачные, виртуальные файлы и веб-ссылки отклоняются. Зашифрованный файл — до 8 МиБ, JSON — до 2 МиБ.</string>
     <string name="TelevimImportLocalFile">Локальный файл настроек</string>
     <string name="TelevimImportFileReady">Выбран локальный файл. Для зашифрованного файла введите пароль экспорта и откройте просмотр. Для JSON пароль не нужен.</string>
     <string name="TelevimImportWorking">Проверяем пакет на устройстве…</string>
@@ -32,4 +32,12 @@
     <string name="TelevimImportRestart">Результат записи не подтверждён. Импорт отключён до перезапуска Televim. Успешный импорт не подтверждается.</string>
     <string name="TelevimImportScanAbout">Наведите камеру на QR с настройками на компьютере. Распознавание выполняется на устройстве. Другие ссылки из QR не открываются.</string>
     <string name="TelevimImportCameraUnavailable">Камера недоступна или доступ запрещён. Вернитесь и вставьте ссылку с настройками либо откройте локальный файл.</string>
+    <string name="TelevimImportSendByEnter">Отправлять сообщения клавишей Enter</string>
+    <string name="TelevimImportAppPasscode">Код или пароль блокировки Televim на этом устройстве</string>
+    <string name="TelevimImportUnlock">Разблокировать импорт настроек</string>
+    <string name="TelevimImportUnlockAbout">Сначала введите локальный код или пароль блокировки Televim. Это откроет только импорт настроек, а не чаты. Отдельный пароль, заданный при экспорте на компьютере, вводится на следующем экране.</string>
+    <string name="TelevimImportWrongPasscode">Неверный код или пароль блокировки Televim.</string>
+    <string name="TelevimImportRetry">Повторите попытку через %1$d сек.</string>
+    <string name="TelevimImportInterrupted">Предпросмотр отменён после выхода с экрана или блокировки приложения. Введите пароль экспорта и снова проверьте изменения перед применением.</string>
+    <string name="TelevimImportFinishing">Предыдущая локальная операция ещё завершается. Немного подождите и повторите предпросмотр.</string>
 </resources>

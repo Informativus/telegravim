@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <dimen name="televim_toolbar_height">56dp</dimen>
     <dimen name="televim_spacing">16dp</dimen>
     <dimen name="televim_text_size">16sp</dimen>
     <string name="TelevimImportTitle">Import desktop settings</string>
@@ -9,7 +10,7 @@
     <string name="TelevimImportScan">Scan settings QR</string>
     <string name="TelevimImportPreview">Preview import</string>
     <string name="TelevimImportApply">Apply settings and retain package</string>
-    <string name="TelevimImportFiles">For a file, open your device storage in the system Files app. For JSON, choose Open with → Televim. For an encrypted .tgv file, choose Open with or Share → Televim. Only physical local storage from the system provider is accepted. Cloud files, virtual files, and web links are rejected. Encrypted files can be at most 8 MiB; JSON can be at most 2 MiB.</string>
+    <string name="TelevimImportFiles">Import accepts one file at a time. Sharing an ordinary JSON file opens normal Telegram chat sending, which uses the network; use Open with to import JSON. For a file, open your device storage in the system Files app. For JSON, choose Open with → Televim. For an encrypted .tgv file, choose Open with or Share → Televim. Only physical local storage from the system provider is accepted. Cloud files, virtual files, and web links are rejected. Encrypted files can be at most 8 MiB; JSON can be at most 2 MiB.</string>
     <string name="TelevimImportLocalFile">Local settings file</string>
     <string name="TelevimImportFileReady">A local file is selected. Enter its export password if encrypted, then preview. A JSON settings file does not need a password.</string>
     <string name="TelevimImportWorking">Checking the package locally…</string>
@@ -34,4 +35,12 @@
     <string name="TelevimImportRestart">The write result could not be confirmed. Import is disabled until you restart Televim. No successful import is being reported.</string>
     <string name="TelevimImportScanAbout">Point the camera at the settings QR on your computer. Decoding runs on this device. Other QR links are not opened.</string>
     <string name="TelevimImportCameraUnavailable">The camera is unavailable or permission was denied. Go back and paste a settings link or open a local file instead.</string>
+    <string name="TelevimImportSendByEnter">Send messages with Enter</string>
+    <string name="TelevimImportAppPasscode">Televim app-lock code or password on this device</string>
+    <string name="TelevimImportUnlock">Unlock settings import</string>
+    <string name="TelevimImportUnlockAbout">Enter the local Televim app-lock code or password first. This unlocks settings import only, not your chats. The separate password created during Desktop export is entered on the next screen.</string>
+    <string name="TelevimImportWrongPasscode">Incorrect Televim app-lock code or password.</string>
+    <string name="TelevimImportRetry">Try again in %1$d seconds.</string>
+    <string name="TelevimImportInterrupted">The preview was cancelled when you left this screen or the app was locked. Enter the export password and preview again before applying.</string>
+    <string name="TelevimImportFinishing">The previous local operation is still finishing. Wait a moment, then preview again.</string>
 </resources>
