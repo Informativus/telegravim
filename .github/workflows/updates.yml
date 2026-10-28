@@ -9,7 +9,7 @@ on:
         options: [release, refresh]
         default: release
       release_tag:
-        description: Existing stable draft tag on main (all builds must use this commit)
+        description: Existing stable draft tag on main (all client builds must use this commit)
         type: string
         required: false
       mac_run:
@@ -63,16 +63,33 @@ jobs:
           PY
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ inputs.operation == 'release' && inputs.release_tag || github.ref }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - name: Verify workflow and source provenance
         env:
           WORKFLOW_SHA: ${{ github.sha }}
+          OPERATION: ${{ inputs.operation }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           test "$(git rev-parse HEAD)" = "$WORKFLOW_SHA"
           git merge-base --is-ancestor HEAD origin/main
           git diff --exit-code HEAD
+          python3 - <<'PY'
+          import os
+          import subprocess
+          if os.environ['OPERATION'] == 'release':
+              source = subprocess.check_output([
+                  'git', 'rev-parse', os.environ['RELEASE_TAG'] + '^{commit}'], text=True).strip()
+              subprocess.run(['git', 'merge-base', '--is-ancestor', source, 'HEAD'], check=True)
+              changed = set(subprocess.check_output([
+                  'git', 'diff', '--no-renames', '--name-only', '-z', source, 'HEAD'
+              ]).decode().rstrip('\0').split('\0')) - {''}
+              allowed = {'Telegram/build/update_release.py', '.github/workflows/updates.yml',
+                         'docs/automatic-updates.md'}
+              if changed - allowed:
+                  raise SystemExit('Client source, build workflows and trust must match the release tag.')
+          PY
       - name: Require the configured owner approval policy
         env:
           GH_TOKEN: ${{ github.token }}
