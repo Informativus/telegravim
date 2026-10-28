@@ -1858,5 +1858,161 @@
         "reason": "The diagnostic measures comment percentage in SendButton::setState, which updates native animation, slowmode and accessibility state. Relative to the accepted cumulative baseline, dictation only adds the Transcribe case returning its accessible label. This metric identifies no execution or security defect; adding filler comments would conflict with project style."
       }
     ]
+  },
+  {
+    "path": "Telegram/SourceFiles/api/api_sending.cpp",
+    "source_sha256": [
+      "e0a85d77c56f1620ddb2f5c752d4ebcc4a54690367bc855af9fb6f4b3d24eca6"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/use-in-own-initializer",
+        "level": "warning",
+        "line_hash": "c1e3359987366920:1",
+        "message_sha256": "b14f9a4008fce95a515ff44c112384e25c4c9d1ae4f1ec0a8d0c039942992366",
+        "reason": "The call performRequest(performRequest, false) follows the completed lambda initializer. Recursive retries use the repeatRequest parameter, not an uninitialized local. No-build extraction merges the invocation with the initializer; the reviewed source has an intervening closing brace and semicolon."
+      },
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "3747821e69952254:1",
+        "message_sha256": "670b6fac44faa4c9c84bd01db0d131d3abd783db5c3e3172e9c0f1888079191b",
+        "reason": "SendSimpleMedia assembles Telegram media flags, local message bookkeeping and the request. Its early local-quick-reply and E2E guards precede sendAction, draft handling and network submission. This exact comment-percentage diagnostic reports no execution defect; adding narration to satisfy a ratio would conflict with repository style."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/main/main_session.h",
+    "source_sha256": [
+      "3675dc9562e8b7f48feb9eff35da07c010a551edbcf9f78a1a2c51c82e6f76e6"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/non-member-const-no-effect",
+        "level": "warning",
+        "line_hash": "cb12405772f32f4c:1",
+        "message_sha256": "f6d6b0e33cbe3d9f7224c6e05409bb96f381b85162ccae4a5571c1c3cd12d08a",
+        "reason": "Session::windows returns a reference to a const flat_set. Const qualifies the referenced container and prevents mutation through the accessor; it is not an ineffective top-level const on a value return. Missing template definitions cause no-build extraction to lose the reference."
+      },
+      {
+        "rule": "cpp/member-const-no-effect",
+        "level": "warning",
+        "line_hash": "cb12405772f32f4c:1",
+        "message_sha256": "dc2cb9240322c1efe5fe9182c19e33c8f4abe06c2c0d70b3d60ab3bb6afec682",
+        "reason": "Session::windows returns a reference to a const flat_set. Const qualifies the referenced container and prevents mutation through the accessor; it is not an ineffective top-level const on a value return. Missing template definitions cause no-build extraction to lose the reference."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/storage/storage_account.cpp",
+    "source_sha256": [
+      "26ac3acefa67296de684c1a8e010dd57a55c9863f2ab1aa43b3cadc642411d1d"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/non-member-const-no-effect",
+        "level": "warning",
+        "line_hash": "765c3a7353b2e91:1",
+        "message_sha256": "f6d6b0e33cbe3d9f7224c6e05409bb96f381b85162ccae4a5571c1c3cd12d08a",
+        "reason": "EmptyMessageDraftSources returns a const reference to the static empty flat_map. The trailing ampersand is explicit and const prevents mutation of the shared container; the diagnostic treats the template return as a value after no-build parser recovery."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/history/history_item.h",
+    "source_sha256": [
+      "6dfad19dcc26c46dacc39c9706060455563fe75bbd5b3a7a1a5e7ed9c546dd15"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/member-const-no-effect",
+        "level": "warning",
+        "line_hash": "e9f2cbf91bcb35c2:1",
+        "message_sha256": "dc2cb9240322c1efe5fe9182c19e33c8f4abe06c2c0d70b3d60ab3bb6afec682",
+        "reason": "HistoryItem::reactions and recentReactions return const references to their containers. The trailing ampersand is explicit; const protects the referenced data. No-build extraction loses the template reference return, so removing const as suggested would change the API contract."
+      },
+      {
+        "rule": "cpp/member-const-no-effect",
+        "level": "warning",
+        "line_hash": "f1f94dd4ac70edba:1",
+        "message_sha256": "dc2cb9240322c1efe5fe9182c19e33c8f4abe06c2c0d70b3d60ab3bb6afec682",
+        "reason": "HistoryItem::reactions and recentReactions return const references to their containers. The trailing ampersand is explicit; const protects the referenced data. No-build extraction loses the template reference return, so removing const as suggested would change the API contract."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/history/view/history_view_element.cpp",
+    "source_sha256": [
+      "282d60eebe412ea28fdb4aa87123e4c3cfb9b2d557ef7f78d056bee46768a14a"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/constant-comparison",
+        "level": "warning",
+        "line_hash": "21e77fd901c348e6:1",
+        "message_sha256": "16553ee0cc00d87e99ec11a3ca5072f6940e6f377bb5735da1e1768c52e20a82",
+        "reason": "KeyboardStyle::minButtonWidth assigns iconWidth from generated style icons in the switch and from the loading icon before comparing it with zero. Those runtime dimensions are absent from the no-build export. The zero initializer is not the only possible value."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/boxes/share_box.cpp",
+    "source_sha256": [
+      "8a72c000d4d1334b343b902c399af40bf2ce7eca153ad1dce6835e5176a119b7"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "b83e454922053f8b:1",
+        "message_sha256": "5bb8561115c0e84ffb2f93c8a941f07c975ccd88696cf927cc24a0b15f500a22",
+        "reason": "ShareBox::prepare wires selection, query, scrolling and layout callbacks with widget lifetimes. The function body is unchanged by the E2E modification elsewhere in this file. This exact diagnostic measures comment percentage rather than an execution or security defect."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/api/api_polls.cpp",
+    "source_sha256": [
+      "e0207eafb180e8c848034c7c95a073e97af8892f9ab2bb751b4f6d6140955946"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "51e4bb2b97f47e59:1",
+        "message_sha256": "aeadd5ee695459791fe451b549be1a2418de8c5c8141bdf16b95121568f014ff",
+        "reason": "Polls::create maps poll content and send options into the native Telegram request and pairs cloud-draft bookkeeping in success and failure callbacks. The E2E guard returns before sendAction, draft mutation and request preparation. The exact finding concerns comment percentage, not a missing branch or security check."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/api/api_todo_lists.cpp",
+    "source_sha256": [
+      "78f75392edb71b2e183143c7039b6833aa19e89cc65d61886caafa4075488901"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "1c1c587fb92ac7f7:1",
+        "message_sha256": "9ab6157617619721bd30b830e2a8fb456976d722b71a2ac939568f345f805a77",
+        "reason": "TodoLists::create assembles native todo-list media flags and balances draft bookkeeping in both request callbacks. Its E2E guard reports failure and returns before sendAction, draft mutation or request construction. This is the exact comment-percentage finding, not an exemption for functional diagnostics."
+      }
+    ]
+  },
+  {
+    "path": "Telegram/SourceFiles/media/stories/media_stories_share.cpp",
+    "source_sha256": [
+      "97b9fd8644eb9f055ae8b40cf6424a62f9a155cffa9f451e8eb8316480a8ae7c"
+    ],
+    "findings": [
+      {
+        "rule": "cpp/poorly-documented-function",
+        "level": "warning",
+        "line_hash": "2af4eb15043dd593:1",
+        "message_sha256": "fdbc66381a2b7c27938b784b97eba779593a082eff3cb5a12f7fd708ad964570",
+        "reason": "PrepareShareBox re-resolves the story for asynchronous callbacks, uses ordinary text sending for links, and checks all recipients for E2E before the native story-media submission loop. Named callbacks separate filtering, payment and sending. This exact comment-percentage metric does not identify an execution defect."
+      }
+    ]
   }
 ]
