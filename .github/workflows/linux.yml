@@ -19,14 +19,29 @@ jobs:
   linux:
     runs-on: ubuntu-24.04
     timeout-minutes: 360
+    environment: network-review
     env:
       BUILD_IMAGE: ghcr.io/telegramdesktop/tdesktop/centos_env@sha256:e2fe8063c7cddf0c0bd039032d0be7b69e4f01fd75e3b637f00d9df8d7e8a0ea
+      GIT_LFS_SKIP_SMUDGE: '1'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-          submodules: recursive
+          submodules: false
           ref: ${{ inputs.source_ref || github.ref }}
+      - name: Initialize pinned Desktop dependencies
+        run: |
+          python3 - <<'PY'
+          import subprocess
+
+          rows = subprocess.check_output(["git", "ls-tree", "-r", "HEAD"], text=True)
+          paths = [row.split("\t", 1)[1] for row in rows.splitlines()
+                   if row.startswith("160000 ") and not row.split("\t", 1)[1].startswith("android/")]
+          if not paths:
+              raise SystemExit("Desktop dependencies are missing.")
+          subprocess.run(["git", "-c", "protocol.file.allow=never", "submodule", "update",
+                          "--init", "--recursive", "--depth", "1", "--jobs", "2", "--", *paths], check=True)
+          PY
       - name: Make space for the build image
         uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
@@ -40,29 +55,53 @@ jobs:
       - name: Build Release and native tests
         env:
           BUILD_TARGET: ${{ inputs.tests_only && 'test_vim_keymap' || 'Telegram' }}
+          TELEVIM_API_ID: ${{ secrets.TELEVIM_API_ID }}
+          TELEVIM_API_HASH: ${{ secrets.TELEVIM_API_HASH }}
         run: |
           mkdir -p .local/build-cache/ccache
           docker pull "$BUILD_IMAGE"
-          docker run --rm --user "$(id -u):$(id -g)" \
-            --volume "$PWD:/usr/src/tdesktop" \
-            --volume "$PWD/.local/build-cache/ccache:/var/cache/ccache" \
-            --env CCACHE_MAXSIZE=5G --env CCACHE_COMPILERCHECK=content \
-            --env CCACHE_SLOPPINESS=pch_defines,time_macros \
-            --env BUILD_TARGET \
-            --env CONFIG=Release --env CMAKE_BUILD_PARALLEL_LEVEL=3 \
-            "$BUILD_IMAGE" \
-            bash -euc '
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import re
+          import subprocess
+          import tempfile
+
+          api_id = os.environ["TELEVIM_API_ID"]
+          api_hash = os.environ["TELEVIM_API_HASH"]
+          if not re.fullmatch(r"[1-9][0-9]{0,8}", api_id) or not re.fullmatch(r"[a-fA-F0-9]{32}", api_hash):
+              raise SystemExit("Private Televim application credentials are missing or invalid.")
+          root = pathlib.Path.cwd()
+          environment = dict(os.environ)
+          environment.pop("TELEVIM_API_ID", None)
+          environment.pop("TELEVIM_API_HASH", None)
+          command = '''
               unset CCACHE_DISABLE
               cd /usr/src/tdesktop/Telegram
-              ./configure.sh \
-                -D CMAKE_CONFIGURATION_TYPES=Release \
-                -D TDESKTOP_API_TEST=ON \
-                -D DESKTOP_APP_TEST_APPS=ON \
-                -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON \
+              ./configure.sh -C /run/televim-api.cmake \\
+                -D CMAKE_CONFIGURATION_TYPES=Release \\
+                -D TDESKTOP_API_TEST=OFF \\
+                -D DESKTOP_APP_TEST_APPS=ON \\
+                -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON \\
                 -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
               cmake --build ../out --config Release --target "$BUILD_TARGET"
               ccache --show-stats
-            '
+          '''
+          with tempfile.TemporaryDirectory(prefix="televim-api-", dir=os.environ["RUNNER_TEMP"]) as private:
+              config = pathlib.Path(private) / "api.cmake"
+              config.write_text('set(TDESKTOP_API_ID "' + api_id + '" CACHE STRING "")\n'
+                                'set(TDESKTOP_API_HASH "' + api_hash + '" CACHE STRING "")\n')
+              config.chmod(0o600)
+              subprocess.run(["docker", "run", "--rm", "--user", f"{os.getuid()}:{os.getgid()}",
+                              "--volume", f"{root}:/usr/src/tdesktop",
+                              "--volume", f"{root}/.local/build-cache/ccache:/var/cache/ccache",
+                              "--volume", f"{config}:/run/televim-api.cmake:ro",
+                              "--env", "CCACHE_MAXSIZE=5G", "--env", "CCACHE_COMPILERCHECK=content",
+                              "--env", "CCACHE_SLOPPINESS=pch_defines,time_macros",
+                              "--env", "BUILD_TARGET", "--env", "CONFIG=Release",
+                              "--env", "CMAKE_BUILD_PARALLEL_LEVEL=3", os.environ["BUILD_IMAGE"],
+                              "bash", "-euc", command], env=environment, check=True)
+          PY
       - name: Save compiler cache
         if: ${{ !cancelled() }}
         uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4

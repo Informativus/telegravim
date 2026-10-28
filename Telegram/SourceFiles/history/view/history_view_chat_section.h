@@ -344,6 +344,10 @@ private:
 	void finishSending();
 
 	void setupComposeControls();
+	void setupVimKeymap();
+	bool vimKeymapHandleKey(not_null<QKeyEvent*> e);
+	void vimKeymapRefreshComposeCursor();
+
 	void setupSwipeReplyAndBack();
 
 	void setupRoot();
@@ -381,6 +385,8 @@ private:
 		TextWithEntities text,
 		Api::SendOptions options,
 		Fn<void()> done);
+	void processShortcut(QString shortcut);
+	void cancelLocalQuickReplyInsertion();
 	void send();
 	void send(Api::SendOptions options);
 	void sendVoice(const Controls::VoiceToSend &data);
@@ -569,6 +575,13 @@ private:
 	rpl::variable<bool> _botCommandStartExtraGuard = true;
 	rpl::variable<QString> _botKeyboardPlaceholder;
 	std::unique_ptr<ComposeControls> _composeControls;
+	int _vimComposeOperator = 0;
+	int _vimComposeVisualMode = 0;
+	int _vimComposeVisualAnchor = -1;
+	int _vimComposePending = 0;
+	base::Timer _vimComposeDeleteTimer;
+	rpl::lifetime _localQuickReplyInsertionLifetime;
+	uint64 _localQuickReplyInsertionGeneration = 0;
 	std::unique_ptr<SuggestOptionsBar> _suggestOptions;
 	std::unique_ptr<ComposeSearch> _composeSearch;
 	std::unique_ptr<HistoryView::BottomControls> _bottom;

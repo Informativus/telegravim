@@ -1,0 +1,5 @@
+--- a/TMessagesProj/src/main/res/xml/shortcuts.xml
++++ b/TMessagesProj/src/main/res/xml/shortcuts.xml
+@@ -3 +3 @@
+-    <share-target android:targetClass="org.telegram.ui.LaunchActivity">
++    <share-target android:targetClass="org.telegram.ui.OfflineSettingsRouterActivity">

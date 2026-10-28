@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="TelevimImportTitle">Импорт настроек с компьютера</string>
+    <string name="TelevimImportAbout">Перенесите настройки с компьютера через ссылку Televim, QR-код или локальный файл. Импорт не использует интернет и локальную сеть. Сам Telegram может подключаться как обычно.</string>
+    <string name="TelevimImportLink">Ссылка с настройками Televim</string>
+    <string name="TelevimImportPassword">Пароль экспорта (не пароль Telegram)</string>
+    <string name="TelevimImportScan">Сканировать QR с настройками</string>
+    <string name="TelevimImportPreview">Посмотреть изменения</string>
+    <string name="TelevimImportApply">Применить настройки и сохранить пакет</string>
+    <string name="TelevimImportFiles">Импорт принимает один файл за раз. «Поделиться» для обычного JSON открывает штатную отправку в чат Telegram с доступом к сети; для импорта JSON используйте «Открыть с помощью». Для файла откройте память устройства в системном приложении «Файлы». Для JSON выберите «Открыть с помощью» → Televim. Для зашифрованного файла .tgv выберите «Открыть с помощью» или «Поделиться» → Televim. Принимаются только локальные файлы системного хранилища. Облачные, виртуальные файлы и веб-ссылки отклоняются. Зашифрованный файл — до 8 МиБ, JSON — до 2 МиБ.</string>
+    <string name="TelevimImportLocalFile">Локальный файл настроек</string>
+    <string name="TelevimImportFileReady">Выбран локальный файл. Для зашифрованного файла введите пароль экспорта и откройте просмотр. Для JSON пароль не нужен.</string>
+    <string name="TelevimImportWorking">Проверяем пакет на устройстве…</string>
+    <string name="TelevimImportInvalid">Не удалось проверить пакет. Проверьте формат, размер, пароль экспорта и локальный источник файла. Настройки не применены.</string>
+    <string name="TelevimImportInvalidQr">Это не поддерживаемый QR с настройками Televim. Ничего не открыто и не импортировано.</string>
+    <string name="TelevimImportCancelled">Импорт отменён. Настройки не изменены.</string>
+    <string name="TelevimImportCleanupFailed">Не удалось удалить временные данные импорта. Импорт отключён до перезапуска Televim.</string>
+    <string name="TelevimImportQrRead">QR прочитан на устройстве. Введите отдельный пароль экспорта, затем посмотрите изменения.</string>
+    <string name="TelevimImportGlobal">Поддерживаемые настройки действуют для всего приложения и всех аккаунтов. При применении показанные ниже значения заменятся.</string>
+    <string name="TelevimImportLargeEmoji">Крупные эмодзи</string>
+    <string name="TelevimImportOn">Включено</string>
+    <string name="TelevimImportOff">Выключено</string>
+    <string name="TelevimImportRetained">Сохранится без активации: %1$d неподдерживаемых модулей, %2$d ресурсов, %3$d профилей аккаунтов. Размер пакета: %4$d байт.</string>
+    <string name="TelevimImportInactive">Профили аккаунтов и неподдерживаемые функции компьютера сохраняются внутри пакета, но не включаются и не объединяются с данными Android. Вход в аккаунты, автоматические действия и отправка сообщений не выполняются. Аккаунт определяется средой Telegram и ID пользователя.</string>
+    <string name="TelevimImportNoSupported">В пакете нет поддерживаемых настроек для применения.</string>
+    <string name="TelevimImportRetainOnly">Сохранить пакет без применения настроек</string>
+    <string name="TelevimImportRetainedOnly">Пакет сохранён в закрытом хранилище устройства. Настройки не применялись.</string>
+    <string name="TelevimImportPlaintext">Этот JSON-файл не зашифрован. Принимаются только показанные разрешённые настройки.</string>
+    <string name="TelevimImportDone">Настройки применены. Пакет сохранён в закрытом хранилище устройства; неподдерживаемые функции не включены.</string>
+    <string name="TelevimImportDuplicate">Этот пакет уже импортирован. Ничего не изменено.</string>
+    <string name="TelevimImportStale">Настройки изменились после просмотра. Перед применением откройте просмотр заново.</string>
+    <string name="TelevimImportRestart">Результат записи не подтверждён. Импорт отключён до перезапуска Televim. Успешный импорт не подтверждается.</string>
+    <string name="TelevimImportScanAbout">Наведите камеру на QR с настройками на компьютере. Распознавание выполняется на устройстве. Другие ссылки из QR не открываются.</string>
+    <string name="TelevimImportCameraUnavailable">Камера недоступна или доступ запрещён. Вернитесь и вставьте ссылку с настройками либо откройте локальный файл.</string>
+    <string name="TelevimImportSendByEnter">Отправлять сообщения клавишей Enter</string>
+    <string name="TelevimImportAppPasscode">Код или пароль блокировки Televim на этом устройстве</string>
+    <string name="TelevimImportUnlock">Разблокировать импорт настроек</string>
+    <string name="TelevimImportUnlockAbout">Сначала введите локальный код или пароль блокировки Televim. Это откроет только импорт настроек, а не чаты. Отдельный пароль, заданный при экспорте на компьютере, вводится на следующем экране.</string>
+    <string name="TelevimImportWrongPasscode">Неверный код или пароль блокировки Televim.</string>
+    <string name="TelevimImportRetry">Повторите попытку через %1$d сек.</string>
+    <string name="TelevimImportInterrupted">Предпросмотр отменён после выхода с экрана или блокировки приложения. Введите пароль экспорта и снова проверьте изменения перед применением.</string>
+    <string name="TelevimImportFinishing">Предыдущая локальная операция ещё завершается. Немного подождите и повторите предпросмотр.</string>
+</resources>

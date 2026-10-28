@@ -38,6 +38,7 @@ struct VoiceToSend {
 	crl::time duration = 0;
 	Api::SendOptions options;
 	bool video = false;
+	QString transcription;
 };
 struct SendActionUpdate {
 	Api::SendProgressType type = Api::SendProgressType();

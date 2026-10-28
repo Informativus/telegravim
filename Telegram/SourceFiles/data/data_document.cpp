@@ -1734,6 +1734,15 @@ bool DocumentData::hasWebLocation() const {
 	return !_urlLocation.url().isEmpty();
 }
 
+DownloadLocation DocumentData::downloadLocation() const {
+	if (hasWebLocation()) {
+		return { _urlLocation };
+	} else if (!_access && !_url.isEmpty()) {
+		return { PlainUrlLocation{ _url } };
+	}
+	return { videoPreloadLocation() };
+}
+
 bool DocumentData::isNull() const {
 	return !hasRemoteLocation()
 		&& !hasWebLocation()

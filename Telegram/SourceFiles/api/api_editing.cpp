@@ -301,6 +301,18 @@ mtpRequestId EditMessage(
 		DoneCallback &&done,
 		FailCallback &&fail,
 		std::optional<MTPInputMedia> inputMedia = std::nullopt) {
+	if (item->isLocalQuickReply() || IsLocalQuickReplyContext(options)) {
+		const auto error = u"LOCAL_QUICK_REPLY_REQUIRES_LOCAL_EDIT"_q;
+		if constexpr (ErrorWithId<FailCallback>) {
+			fail(error, 0);
+		} else if constexpr (ErrorWithoutId<FailCallback>) {
+			fail(error);
+		} else if constexpr (WithoutCallback<FailCallback>) {
+			fail();
+		}
+		return 0;
+	}
+
 	if (item->computeSuggestionActions()
 		== SuggestionActions::AcceptAndDecline) {
 		return SuggestMessageOrMedia(
@@ -407,6 +419,7 @@ void EditMessageWithUploadedMedia(
 		not_null<HistoryItem*> item,
 		SendOptions options,
 		MTPInputMedia media) {
+	if (item->isLocalQuickReply() || IsLocalQuickReplyContext(options)) return;
 	const auto done = [=](Fn<void()> applyUpdates) {
 		if (item) {
 			item->removeFromSharedMediaIndex();
@@ -535,6 +548,11 @@ mtpRequestId EditTextMessage(
 		Fn<void(const QString &error, mtpRequestId requestId)> fail,
 		bool spoilered,
 		VideoCoverEdit videoCover) {
+	if (item->isLocalQuickReply() || IsLocalQuickReplyContext(options)) {
+		if (fail) fail(u"LOCAL_QUICK_REPLY_REQUIRES_LOCAL_EDIT"_q, 0);
+		return 0;
+	}
+
 	if (item->isWelcomeTemplate()) {
 		const auto history = item->history();
 		auto &welcome = history->session().welcomeMessages();
@@ -706,6 +724,11 @@ mtpRequestId EditRichMessage(
 		SendOptions options,
 		Fn<void(mtpRequestId requestId)> done,
 		Fn<void(const QString &error, mtpRequestId requestId)> fail) {
+	if (item->isLocalQuickReply() || IsLocalQuickReplyContext(options)) {
+		if (fail) fail(u"LOCAL_QUICK_REPLY_REQUIRES_LOCAL_EDIT"_q, 0);
+		return 0;
+	}
+
 	if (item->isWelcomeTemplate()) {
 		const auto history = item->history();
 		auto &welcome = history->session().welcomeMessages();

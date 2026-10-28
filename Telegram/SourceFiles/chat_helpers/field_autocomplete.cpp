@@ -8,6 +8,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/field_autocomplete.h"
 
 #include "data/business/data_shortcut_messages.h"
+#include "data/local_quick_replies.h"
+#include "settings/business/settings_quick_replies.h"
 #include "data/components/recent_inline_bots.h"
 #include "data/components/top_peers.h"
 #include "data/data_document.h"
@@ -100,7 +102,7 @@ public:
 		not_null<StickerRows*> srows);
 
 	void clearSel(bool hidden = false);
-	bool moveSel(int key);
+	bool moveSel(int key, bool wrap = false);
 	bool chooseSelected(FieldAutocomplete::ChooseMethod method) const;
 	bool chooseAtIndex(
 		FieldAutocomplete::ChooseMethod method,
@@ -225,6 +227,7 @@ struct FieldAutocomplete::BotCommandRow {
 	Ui::PeerUserpicView userpic;
 	Ui::Text::String descriptionText;
 	bool ephemeral = false;
+	QString localId;
 };
 
 FieldAutocomplete::FieldAutocomplete(
@@ -769,6 +772,35 @@ void FieldAutocomplete::updateFiltered(bool resetScroll) {
 				brows.insert(begin(brows), BotCommandRow{ self }); // Edit.
 			}
 		}
+		if (!hasUsername) {
+			const auto self = _session->user();
+			for (const auto &reply : _session->data().localQuickReplies().list()) {
+				if (!listAllSuggestions
+					&& !reply.shortcut.startsWith(_filter, Qt::CaseInsensitive)
+					&& !reply.title.contains(_filter, Qt::CaseInsensitive)
+					&& !reply.category.contains(_filter, Qt::CaseInsensitive)) continue;
+				brows.push_back(BotCommandRow{
+					.user = self,
+					.command = reply.shortcut,
+					.description = reply.category.isEmpty() ? reply.title
+						: reply.category + u" · "_q + reply.title,
+					.userpic = self->activeUserpicView(),
+					.localId = reply.id,
+				});
+			}
+		}
+		if (!hasUsername) {
+			const auto &local = _session->data().localQuickReplies().list();
+			brows.erase(std::remove_if(brows.begin(), brows.end(), [&](const auto &row) {
+				return row.localId.isEmpty() && !row.command.isEmpty()
+					&& ranges::any_of(local, [&](const auto &reply) {
+						return reply.shortcut.compare(row.command, Qt::CaseInsensitive) == 0;
+					});
+			}), brows.end());
+			std::stable_partition(brows.begin(), brows.end(), [](const auto &row) {
+				return !row.localId.isEmpty();
+			});
+		}
 	}
 	rowsUpdated(
 		std::move(mrows),
@@ -989,6 +1021,10 @@ int32 FieldAutocomplete::innerTop() {
 
 int32 FieldAutocomplete::innerBottom() {
 	return _scroll->scrollTop() + _scroll->height();
+}
+
+bool FieldAutocomplete::moveSelection(Qt::Key key) {
+	return !isHidden() && !_hiding && _inner->moveSel(key, true);
 }
 
 bool FieldAutocomplete::chooseSelected(ChooseMethod method) const {
@@ -1419,7 +1455,7 @@ void FieldAutocomplete::Inner::clearSel(bool hidden) {
 	}
 }
 
-bool FieldAutocomplete::Inner::moveSel(int key) {
+bool FieldAutocomplete::Inner::moveSel(int key, bool wrap) {
 	_mouseSelection = false;
 	_lastMousePosition = std::nullopt;
 
@@ -1450,7 +1486,10 @@ bool FieldAutocomplete::Inner::moveSel(int key) {
 		}
 		return (_sel >= 0 && _sel < maxSel);
 	}
-	setSel((_sel + direction >= maxSel || _sel + direction < 0) ? -1 : (_sel + direction), true);
+	const auto next = _sel + direction;
+	setSel((next >= maxSel || next < 0)
+		? (wrap ? (next < 0 ? maxSel - 1 : 0) : -1)
+		: next, true);
 	return true;
 }
 
@@ -1512,12 +1551,14 @@ bool FieldAutocomplete::Inner::chooseAtIndex(
 					? _parent->channel()->mgInfo->botStatus
 					: Data::BotStatus::NoBots);
 
-			const auto insertUsername = (botStatus != Data::BotStatus::NoBots
-				|| _parent->filter().indexOf('@') > 0);
+			const auto &localId = _brows->at(index).localId;
+			const auto insertUsername = localId.isEmpty()
+				&& (botStatus != Data::BotStatus::NoBots
+					|| _parent->filter().indexOf('@') > 0);
 			const auto commandString = QString("/%1%2").arg(
 				command,
 				insertUsername ? ('@' + PrimaryUsername(user)) : QString());
-			_botCommandChosen.fire({ user, commandString, method });
+			_botCommandChosen.fire({ user, commandString, method, localId });
 			return true;
 		}
 	}
@@ -1921,12 +1962,22 @@ void InitFieldAutocomplete(
 	const auto peer = descriptor.peer;
 	const auto features = descriptor.features;
 	const auto processShortcut = descriptor.processShortcut;
+	const auto show = descriptor.show;
+	const auto localReplies = &peer->owner().localQuickReplies();
 	const auto shortcutMessages = (processShortcut != nullptr)
 		? &peer->owner().shortcutMessages()
 		: nullptr;
 	raw->botCommandChosen(
 	) | rpl::on_next([=](FieldAutocomplete::BotCommandChosen data) {
 		if (!features().autocompleteCommands) {
+			return;
+		}
+		if (!data.localId.isEmpty()) {
+			if (processShortcut) {
+				processShortcut(u"@local:"_q + data.localId);
+			} else {
+				show->showToast(tr::lng_local_replies_unavailable(tr::now));
+			}
 			return;
 		}
 		using Method = FieldAutocompleteChooseMethod;
@@ -1979,6 +2030,7 @@ void InitFieldAutocomplete(
 			&& peer->session().recentInlineBots().list().empty()) {
 			peer->session().local().readRecentHashtagsAndBots();
 		} else if (parsed.query[0] == '/'
+			&& localReplies->list().empty()
 			&& peer->isUser()
 			&& !peer->asUser()->isBot()
 			&& (!shortcutMessages
@@ -2008,6 +2060,11 @@ void InitFieldAutocomplete(
 		}
 		raw->showStickers(nullptr);
 	};
+
+	localReplies->changes() | rpl::on_next([=] {
+		raw->clearFilteredBotCommands();
+		check();
+	}, raw->lifetime());
 
 	raw->refreshRequests(
 	) | rpl::on_next(check, raw->lifetime());

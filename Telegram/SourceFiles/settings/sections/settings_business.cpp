@@ -98,6 +98,47 @@ using Order = std::vector<QString>;
 	};
 }
 
+[[nodiscard]] Order BusinessOrder(not_null<Main::Session*> session) {
+	const auto fallback = FallbackOrder();
+	const auto configured = session->appConfig().get<Order>(
+		"business_promo_order",
+		fallback);
+	auto result = Order();
+	for (const auto &key : configured) {
+		if (ranges::contains(fallback, key) && !ranges::contains(result, key)) {
+			result.push_back(key);
+		}
+	}
+	for (const auto &key : fallback) {
+		if (!ranges::contains(result, key)) result.push_back(key);
+	}
+	return result;
+}
+
+enum class BusinessGroup {
+	Local,
+	Connected,
+	Premium,
+};
+
+[[nodiscard]] BusinessGroup GroupFor(PremiumFeature feature) {
+	switch (feature) {
+	case PremiumFeature::QuickReplies:
+	case PremiumFeature::FilterTags: return BusinessGroup::Local;
+	case PremiumFeature::BusinessBots: return BusinessGroup::Connected;
+	default: return BusinessGroup::Premium;
+	}
+}
+
+[[nodiscard]] rpl::producer<QString> GroupTitle(BusinessGroup group) {
+	switch (group) {
+	case BusinessGroup::Local: return tr::lng_business_local_features();
+	case BusinessGroup::Connected: return tr::lng_business_connected_features();
+	case BusinessGroup::Premium: return tr::lng_business_premium_features();
+	}
+	Unexpected("Group in GroupTitle.");
+}
+
 [[nodiscard]] base::flat_map<QString, Entry> EntryMap() {
 	return base::flat_map<QString, Entry>{
 		{
@@ -123,7 +164,7 @@ using Order = std::vector<QString>;
 			Entry{
 				&st::settingsBusinessIconReplies,
 				tr::lng_business_subtitle_quick_replies(),
-				tr::lng_business_about_quick_replies(),
+				tr::lng_business_local_replies_about(),
 				PremiumFeature::QuickReplies,
 			},
 		},
@@ -150,7 +191,7 @@ using Order = std::vector<QString>;
 			Entry{
 				&st::settingsBusinessIconChatbots,
 				tr::lng_business_subtitle_chatbots(),
-				tr::lng_business_about_chatbots(),
+				tr::lng_business_connected_bots_about(),
 				PremiumFeature::BusinessBots,
 			},
 		},
@@ -177,7 +218,7 @@ using Order = std::vector<QString>;
 			Entry{
 				&st::settingsPremiumIconTags,
 				tr::lng_premium_summary_subtitle_filter_tags(),
-				tr::lng_premium_summary_about_filter_tags(),
+				tr::lng_business_local_tags_about(),
 				PremiumFeature::FilterTags,
 			},
 		},
@@ -286,22 +327,25 @@ void AddBusinessSummary(
 
 	auto icons = std::vector<const style::icon *>();
 	icons.reserve(int(entryMap.size()));
-	{
-		const auto session = &controller->session();
-		const auto mtpOrder = session->appConfig().get<Order>(
-			"business_promo_order",
-			FallbackOrder());
-		const auto processEntry = [&](Entry &entry) {
-			icons.push_back(entry.icon);
-			addRow(entry);
-		};
-
-		for (const auto &key : mtpOrder) {
-			auto it = entryMap.find(key);
-			if (it == end(entryMap)) {
+	const auto order = BusinessOrder(&controller->session());
+	for (const auto group : {
+			BusinessGroup::Local,
+			BusinessGroup::Connected,
+			BusinessGroup::Premium }) {
+		if (group != BusinessGroup::Local) {
+			Ui::AddSkip(content);
+			Ui::AddDivider(content);
+			Ui::AddSkip(content);
+		}
+		Ui::AddSubsectionTitle(content, GroupTitle(group));
+		for (const auto &key : order) {
+			const auto i = entryMap.find(key);
+			if (i == end(entryMap) || GroupFor(i->second.feature) != group) {
 				continue;
 			}
-			processEntry(it->second);
+			auto &entry = i->second;
+			icons.push_back(entry.icon);
+			addRow(entry);
 		}
 	}
 
@@ -381,13 +425,9 @@ void AddBusinessSummary(
 }
 
 void BuildBusinessFeatures(SectionBuilder &builder) {
-	const auto session = builder.session();
-	const auto mtpOrder = session->appConfig().get<Order>(
-		"business_promo_order",
-		FallbackOrder());
-
+	const auto order = BusinessOrder(builder.session());
 	const auto entryMap = EntryMap();
-	for (const auto &key : mtpOrder) {
+	for (const auto &key : order) {
 		const auto it = entryMap.find(key);
 		if (it == end(entryMap)) {
 			continue;
@@ -582,7 +622,7 @@ void BuildBusinessSectionContent(
 					return owner->businessInfo().greetingSettingsLoaded()
 						&& owner->shortcutMessages().shortcutsLoaded();
 				case PremiumFeature::QuickReplies:
-					return owner->shortcutMessages().shortcutsLoaded();
+					return true;
 				case PremiumFeature::BusinessBots:
 					return owner->chatbots().loaded();
 				case PremiumFeature::ChatIntro:
@@ -618,7 +658,8 @@ void BuildBusinessSectionContent(
 			AddBusinessSummary(content, controller, state, [=](PremiumFeature feature) {
 				const auto alwaysAvailable
 					= (feature == PremiumFeature::BusinessBots)
-					|| (feature == PremiumFeature::FilterTags);
+					|| (feature == PremiumFeature::FilterTags)
+					|| (feature == PremiumFeature::QuickReplies);
 				if (!alwaysAvailable && !session->premium()) {
 					ShowPremiumPreviewToBuy(controller, feature, nullptr);
 					return;
@@ -687,7 +728,7 @@ Business::Business(
 }
 
 rpl::producer<QString> Business::title() {
-	return tr::lng_premium_summary_title();
+	return tr::lng_business_title();
 }
 
 bool Business::hasFlexibleTopBar() const {
@@ -779,12 +820,7 @@ void Business::setupContent() {
 base::weak_qptr<Ui::RpWidget> Business::createPinnedToTop(
 		not_null<QWidget*> parent) {
 	auto title = tr::lng_business_title();
-	auto about = [&]() -> rpl::producer<TextWithEntities> {
-		return rpl::conditional(
-			Data::AmPremiumValue(&controller()->session()),
-			tr::lng_business_unlocked(tr::marked),
-			tr::lng_business_about(tr::marked));
-	}();
+	auto about = tr::lng_business_features_about(tr::marked);
 
 	const auto content = [&]() -> Ui::Premium::TopBarAbstract* {
 		const auto weak = base::make_weak(controller());
@@ -893,6 +929,7 @@ base::weak_qptr<Ui::RpWidget> Business::createPinnedToBottom(
 
 	const auto session = &controller()->session();
 
+	_buttonText = tr::lng_business_premium_subscribe(tr::now);
 	auto buttonText = _buttonText.value();
 
 	_subscribe = CreateSubscribeButton({
@@ -916,7 +953,7 @@ base::weak_qptr<Ui::RpWidget> Business::createPinnedToBottom(
 				return;
 			}
 			Assert(value < options.size() && value >= 0);
-			auto text = tr::lng_premium_subscribe_button(
+			auto text = tr::lng_business_premium_subscribe_button(
 				tr::now,
 				lt_cost,
 				options[value].costPerMonth);
@@ -995,10 +1032,6 @@ Type BusinessId() {
 }
 
 void ShowBusiness(not_null<Window::SessionController*> controller) {
-	if (!controller->session().premiumPossible()) {
-		controller->show(Box(PremiumUnavailableBox));
-		return;
-	}
 	controller->showSettings(Settings::BusinessId());
 }
 

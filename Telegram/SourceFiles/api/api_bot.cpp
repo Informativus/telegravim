@@ -67,6 +67,10 @@ void SendBotCallbackData(
 	const auto api = &session->api();
 	const auto bot = item->getMessageBot();
 	const auto fullId = item->fullId();
+	if (item->isLocalQuickReply()) {
+		controller->showToast(tr::lng_local_replies_button_unavailable(tr::now));
+		return;
+	}
 	const auto button = lookup();
 	if (!button || button->requestId) {
 		return;
@@ -326,6 +330,14 @@ void ActivateBotButton(ClickHandlerContext context, BotButtonLookup lookup) {
 	}
 
 	using ButtonType = HistoryMessageMarkupButton::Type;
+	if (item->isLocalQuickReply()
+		&& button->type != ButtonType::Url
+		&& button->type != ButtonType::UserProfile
+		&& button->type != ButtonType::CopyText
+		&& button->type != ButtonType::Disabled) {
+		controller->showToast(tr::lng_local_replies_button_unavailable(tr::now));
+		return;
+	}
 	switch (button->type) {
 	case ButtonType::Default: {
 		// Copy string before passing it to the sending method

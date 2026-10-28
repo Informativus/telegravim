@@ -7,6 +7,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 using "chat_helpers/chat_helpers.style";
 
+localDictationWidth: 460px;
+localDictationPreviewHeight: 64px;
+localDictationFieldMinHeight: 96px;
+localDictationFieldMaxHeight: 240px;
+
 historyRecordVoiceOnceBg: icon {{ "voice_lock/audio_once_bg", historySendIconFg }};
 historyRecordVoiceOnceFg: icon {{ "voice_lock/audio_once_number", windowFgActive }};
 historyRecordVoiceOnceInactive: icon {{ "chat/audio_once", windowSubTextFg }};

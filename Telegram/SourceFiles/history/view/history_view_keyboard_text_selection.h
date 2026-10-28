@@ -15,14 +15,27 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <optional>
 
 class HistoryItem;
+class QKeyEvent;
 
 namespace HistoryView {
 
 class Element;
 
+struct KeyboardTextCommand {
+	std::optional<MessageSelection> selection;
+	std::optional<MessageSelectionFlatEndpoint> cursor;
+	bool copy = false;
+};
+
 class KeyboardTextSelection final {
 public:
 	[[nodiscard]] static bool IsExtendKey(int key);
+	[[nodiscard]] std::optional<KeyboardTextCommand> handleCommandKey(
+		not_null<Element*> view,
+		MessageSelectionFlatEndpoint current,
+		const MessageSelection *visual,
+		not_null<QKeyEvent*> e);
+	void resetCommand();
 
 	[[nodiscard]] std::optional<MessageSelectionFlatEndpoint> beginCursor(
 		not_null<Element*> view);
@@ -54,6 +67,13 @@ private:
 	bool _has = false;
 	MessageSelectionFlatEndpoint _anchor;
 	MessageSelectionFlatEndpoint _focus;
+	HistoryItem *_commandItem = nullptr;
+	int _commandCount = 0;
+	int _operatorCount = 1;
+	bool _yankPending = false;
+	bool _gotoPending = false;
+	QChar _objectPending;
+	QChar _findPending;
 
 };
 
