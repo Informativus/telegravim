@@ -36,25 +36,25 @@ The portable settings schema is documented separately in
 
 ## Native presentation
 
-The entry screen follows the current `SessionsActivity.ScanQRCodeView`:
-a compact card with the bundled `qr_login` animation, one short paragraph and
-a solid blue scan button. Link and file actions use ordinary settings rows.
-Link, password, preview and result are separate steps in a bottom sheet.
-File instructions have their own sheet. The scanner follows the native
-QR-login camera sheet, including its overlaid header, single instruction,
-mask, corner marks and optional flashlight. Light and dark presentation use
-local resources, with scrollable content for smaller screens and the keyboard.
+The import entry screen follows Telegram's native link-device introduction:
+the bundled `qr_login` animation, a centered heading, three short steps and the
+same rounded blue scan button. Link/password entry and the preview appear on
+the next screen. File instructions remain available through the file action.
+The camera view follows the native QR-login scanner, including its mask,
+corner marks and optional flashlight. Both light and dark presentation use
+local resources. The bundled animation has a 1080 × 600 canvas; both its
+rasterization and view preserve that ratio. Its width is capped at 288dp and
+shrinks to the available space. Intro layout follows measured content instead
+of fixed screen-height percentages, while smaller screens remain scrollable.
 
 The standalone Activity remains the offline host. Its presentation reuses the
-local `BackDrawable`, `RLottieDrawable`, bundled artwork and sheet background.
-It does not construct `SessionsActivity`, `CameraScanActivity`, `BottomSheet`,
-`ActionBar` or `EditTextBoldCursor`, which can initialize theme, language,
-account or remote barcode services. Even reading `Theme.key_*` initializes
-native `Theme`; the offline presentation therefore uses explicit local colors.
-Each Activity and Dialog window sets `FLAG_SECURE`. Password fields retain
-password transformation after single-line configuration. Animation and camera
-resources stop when detached; backgrounding dismisses sheets and cancels work.
-The existing passcode, preview and storage contracts still apply.
+local `BackDrawable`, `RLottieDrawable` and bundled artwork, without constructing
+`ActionIntroActivity`, `CameraScanActivity`, `ActionBar` or `EditTextBoldCursor`.
+Those classes can initialize language, account or remote barcode services.
+Even reading `Theme.key_*` initializes native `Theme`; the offline presentation
+therefore uses explicit local colors instead. Importer animation and camera
+resources stop when the screen is detached. The existing password, passcode,
+preview, cancellation and storage contracts still apply.
 
 ## Offline boundary
 
