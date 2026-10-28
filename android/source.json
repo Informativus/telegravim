@@ -54,7 +54,7 @@
     "TMessagesProj_AppStandalone/src/main/res/mipmap-anydpi-v26/icon_6_launcher_sa.xml": "e5520dfa7a7243b282f454ac5fa80a11ac3b479d8060236e22b02e40a793b59b",
     "build.gradle": "747e596e04791bb32ee7cbc84cd797dcee4cc91f62d414d3139542ea84c04ba5",
     "buildSrc/build.gradle.kts": "3a4d2382d954b83b00478c3beb729dec41cd626a9e4b2108a20737beb3c1794d",
-    "gradle.properties": "ca0b79bcf55cdb9ad51111af86d90526e5c025267ea531268e68b64dabc10740",
+    "gradle.properties": "a1b486839af966bd7ba725630a562ca6b5e369b7f2d4902fd7a06fceba5d9498",
     "gradle/wrapper/gradle-wrapper.properties": "c9f009cf689a22b0c2a2f0c47d04b04fc610f4c9f64261d9d8be88311c7c20a9",
     "scripts/build.sh": "15cc190b597be18f3b4b073b76f3b9d6fc7b0967c8a87c07d358d4b98a789bf9",
     "scripts/ninja.sh": "7b89b0804e02402709919b70ad1e4feec83c06a6bedbbc9fbdcccc9b19fe07cc",

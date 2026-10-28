@@ -50,8 +50,8 @@ installer confirmation screens remain mandatory where the OS requires them.
 
 1. Increase `AppVersion` and its display strings in `Telegram/build/version` and
    `core/version.h`, and increase `APP_VERSION_CODE` in the Android overlay.
-   Android's standalone ABI suffix is `9`, so base `7238` produces APK code
-   `72389`. Date tags and the product display label are not update eligibility.
+   Android's standalone ABI suffix is `9`, so base `7239` produces APK code
+   `72399`. Date tags and the product display label are not update eligibility.
 2. Merge the task PR into `develop`, then merge the reviewed `develop` release PR
    into `main` using a merge commit. Create a new immutable stable tag there and
    a draft GitHub Release with the release notes. Do not reuse a failed tag.
