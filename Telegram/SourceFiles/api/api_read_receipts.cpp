@@ -87,7 +87,9 @@ ReadReceipts::Key ReadReceipts::key(not_null<HistoryItem*> item) {
 	const auto sublist = peer->monoforum() ? item->sublistPeerId() : PeerId();
 	const auto root = peer->forum()
 		? item->topicRootId()
-		: item->replyToTop();
+		: peer->isMegagroup()
+		? item->replyToTop()
+		: MsgId();
 	return Key(peer->id, sublist ? MsgId(0) : root, sublist);
 }
 
