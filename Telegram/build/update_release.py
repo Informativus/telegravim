@@ -200,6 +200,73 @@ def previous_catalog(directory, bootstrap):
     return json.loads(payload)
 
 
+def catalog_entries(catalog):
+    now = int(time.time())
+
+    def integer(value, maximum):
+        return type(value) is int and 0 < value <= maximum
+
+    if (not isinstance(catalog, dict)
+            or type(catalog.get('format')) is not int or catalog['format'] != 1
+            or not integer(catalog.get('issued'), now + 300)
+            or not integer(catalog.get('expires'), catalog['issued'] + 366 * 86400)
+            or catalog['expires'] <= now or catalog['expires'] <= catalog['issued']
+            or not isinstance(catalog.get('release'), str)
+            or not re.fullmatch(r'[0-9]{4}\.[0-9]{2}\.[0-9]{2}-[0-9]+', catalog['release'])
+            or not isinstance(catalog.get('source_sha'), str)
+            or not re.fullmatch(r'[0-9a-f]{40}', catalog['source_sha'])):
+        raise ValueError('Current catalog format, validity or release identity is invalid')
+    entries = []
+    versions = set()
+    prefix = f'https://github.com/{REPOSITORY}/releases/download/{catalog["release"]}/'
+    for name, platform in PLATFORMS.items():
+        entry = catalog['desktop'][platform[0]]['stable']
+        native_version = entry['released']
+        if not integer(native_version, 0xffffffff):
+            raise ValueError('Current catalog has an invalid Desktop version')
+        versions.add(native_version)
+        entries.append((name, f'td-update-{platform[1]}-{platform[2]}-{native_version}',
+                        entry, 'link', 256 * 1024 * 1024))
+    if len(versions) != 1:
+        raise ValueError('Current catalog has inconsistent Desktop versions')
+    entry = catalog['android']['stable']
+    if (entry['package'] != 'org.informativus.televim'
+            or not integer(entry['version_code'], 0x7fffffff)
+            or not integer(entry['min_sdk'], 0x7fffffff)
+            or not isinstance(entry['version'], str) or not 0 < len(entry['version']) <= 64
+            or not isinstance(entry['changelog'], str) or len(entry['changelog']) > 16384):
+        raise ValueError('Current catalog has invalid Android metadata')
+    entries.append(('android-universal', 'Televim-android-universal.apk', entry, 'url', 512 * 1024 * 1024))
+    for name, asset, entry, url_key, limit in entries:
+        if (entry[url_key] != prefix + asset or not integer(entry['size'], limit)
+                or not isinstance(entry['sha256'], str)
+                or not re.fullmatch(r'[0-9a-f]{64}', entry['sha256'])):
+            raise ValueError('Current catalog has invalid package metadata: ' + name)
+    return entries
+
+
+def verify(args):
+    with tempfile.TemporaryDirectory(prefix='televim-catalog-verify-') as temporary:
+        catalog = previous_catalog(Path(temporary), False)
+    entries = catalog_entries(catalog)
+    release_info = api('releases/tags/' + catalog['release'])
+    if (release_info['draft'] or release_info['prerelease']
+            or release_info['tag_name'] != catalog['release']
+            or api('commits/' + catalog['release'])['sha'] != catalog['source_sha']):
+        raise ValueError('Current catalog does not match a published stable release commit')
+    verified = []
+    for name, asset_name, entry, url_key, _ in entries:
+        matching = [asset for asset in release_info['assets'] if asset['name'] == asset_name]
+        if (len(matching) != 1 or matching[0].get('digest') != 'sha256:' + entry['sha256']
+                or matching[0]['size'] != entry['size']
+                or matching[0]['browser_download_url'] != entry[url_key]):
+            raise ValueError('Published package metadata differs from the signed catalog: ' + name)
+        verified.append({'platform': name, 'asset': asset_name, 'size': entry['size']})
+    print(json.dumps({'release': catalog['release'], 'source_sha': catalog['source_sha'],
+                      'expires': catalog['expires'], 'catalog_signature': 'verified',
+                      'release_asset_metadata': verified}, indent=2))
+
+
 def release(args):
     if not re.fullmatch(r'[0-9]{4}\.[0-9]{2}\.[0-9]{2}-[0-9]+', args.tag):
         raise ValueError('Only stable release tags are supported')
@@ -353,6 +420,7 @@ def refresh(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
+    commands.add_parser('verify', help='Read-only check of the signed catalog and published asset metadata')
     prepare = commands.add_parser('pack')
     prepare.add_argument('--packer', type=Path, required=True)
     prepare.add_argument('--stage', type=Path, required=True)
@@ -372,9 +440,10 @@ def main():
     renew.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     try:
-        {'pack': pack, 'release': release, 'refresh': refresh}[args.command](args)
-    except (ValueError, KeyError, OSError, subprocess.CalledProcessError) as error:
-        parser.exit(1, 'Update release refused: ' + str(error) + '\n')
+        {'pack': pack, 'verify': verify, 'release': release, 'refresh': refresh}[args.command](args)
+    except (ValueError, KeyError, TypeError, OSError, subprocess.CalledProcessError) as error:
+        action = 'verification failed' if args.command == 'verify' else 'release refused'
+        parser.exit(1, 'Update ' + action + ': ' + str(error) + '\n')
 
 
 if __name__ == '__main__':
