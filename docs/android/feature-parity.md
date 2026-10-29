@@ -723,7 +723,16 @@ audited queue hops. Secret actions retain their displayed native date and never
 become ordinary release grants. This does not establish safety of every upstream
 producer or the remaining native read/storage callbacks.
 
-Remaining early UI/storage paths, reaction/poll and explicit mark-all flows,
+Reaction and poll markers now use original-account checked transactions before
+local projection. Native navigation preserves protected badges and validates
+topic/subpeer membership. Reaction observations retain exact content IDs; polls
+do not acquire generic content authorization. Native whole-scope reads use a
+separate capability unavailable to protected manual or successful-send grants.
+Weak projection references and fixed reservations share the existing policy
+budget. Changed object identities or revisions leave reconciliation pending;
+unsupported poll subpeers and incomplete server scope responses remain pending.
+
+Remaining early UI/storage paths, mention-only explicit mark-all flows,
 TTL consent/replay, unsupported send variants and complete manual-action
 reconciliation remain separate outstanding work. Other queued native storage
 paths still need their own lifetime/revision fencing; the mention transaction
@@ -732,6 +741,8 @@ does not establish coverage for every content receipt.
 Android Java/resources compilation passed for the account-lifetime, guarded
 transport, queued history, checked scoped-storage and UI/mention integration.
 Successful-send integration and committed Android fork release numbering also
-passed hosted Java/resources compilation. The subsequent notification increment
-requires its own compilation. No new signed APK or authenticated-device acceptance
+passed hosted Java/resources compilation. The subsequent notification compilation
+exposed a manifest patch based on an obsolete prepared source; the receiver hunk
+now matches its existing declaration. The combined reaction/poll and notification
+increments require hosted compilation. No new signed APK or authenticated-device acceptance
 is implied by these source and patch-application checks.

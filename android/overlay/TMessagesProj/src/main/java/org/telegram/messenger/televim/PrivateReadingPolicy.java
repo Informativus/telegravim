@@ -39,6 +39,8 @@ public final class PrivateReadingPolicy {
     private int contentCount;
     private int requestContentCount;
     private int transportPayloadBytes;
+    private int markerProjectionBytes;
+    private static final int MARKER_PROJECTION_BYTES = 4096;
     private int committing;
     private final Map<Conversation, Pending> pending = new HashMap<Conversation, Pending>();
     private final Map<Conversation, Classification> keys = new HashMap<Conversation, Classification>();
@@ -444,6 +446,59 @@ public final class PrivateReadingPolicy {
         return result;
     }
 
+    public synchronized Result<RequestToken> reserveNativeMarker(Identity identity,
+            Conversation conversation, int mid, boolean reactions) {
+        if (reactions && conversation != null && validId(mid)
+                && this.decision(identity, conversation) != ReceiptDecision.NATIVE) {
+            this.observeContent(identity, conversation, mid);
+            return this.fail(Failure.INVALID);
+        }
+        if (conversation == null || !this.capacity(conversation, 1, 352 + MARKER_PROJECTION_BYTES)) {
+            return this.fail(Failure.CAPACITY);
+        }
+        int kind = reactions ? 1 : 2;
+        for (RequestToken token : this.requests.keySet()) {
+            if (token.nativeMarker == kind && token.nativeContentId == mid
+                    && token.conversation.equals(conversation)) {
+                return this.fail(Failure.INVALID);
+            }
+        }
+        Result<RequestToken> result = this.reserveNativeContent(identity, conversation, mid);
+        if (result.accepted()) {
+            result.value.nativeMarker = kind;
+            result.value.markerProjectionBytes = MARKER_PROJECTION_BYTES;
+            this.markerProjectionBytes += MARKER_PROJECTION_BYTES;
+        }
+        return result;
+    }
+
+    public synchronized Result<RequestToken> reserveNativeMarkerScope(Identity identity,
+            Conversation conversation, boolean reactions) {
+        if (conversation == null || conversation.rootId < 0 || conversation.rootId > Integer.MAX_VALUE
+                || conversation.category == Category.UNKNOWN_GROUP_OR_CHANNEL
+                || conversation.category == Category.UNKNOWN_PRIVATE_OR_BOT
+                || conversation.category == Category.SECRET
+                || !reactions && conversation.subpeerId != 0
+                || this.decision(identity, conversation) != ReceiptDecision.NATIVE) {
+            return this.fail(Failure.INVALID);
+        }
+        if (this.requests.size() >= MAX_REQUESTS || !this.capacity(conversation, 0, 256 + MARKER_PROJECTION_BYTES)) {
+            return this.fail(Failure.CAPACITY);
+        }
+        for (RequestToken token : this.requests.keySet()) {
+            if (token.nativeMarkerScope != 0 && token.conversation.equals(conversation)) {
+                return this.fail(Failure.INVALID);
+            }
+        }
+        this.retainKey(conversation);
+        RequestToken token = new RequestToken(this, null, conversation, 0, 0, 0);
+        token.nativeMarkerScope = reactions ? 1 : 2;
+        token.markerProjectionBytes = MARKER_PROJECTION_BYTES;
+        this.markerProjectionBytes += MARKER_PROJECTION_BYTES;
+        this.requests.put(token, true);
+        return ok(token);
+    }
+
     public synchronized boolean claimNativeMentionRefresh(Identity identity, RequestToken token) {
         if (!this.owns(identity) || token == null || !this.requests.containsKey(token)
                 || !token.localProjectionPending) {
@@ -469,7 +524,8 @@ public final class PrivateReadingPolicy {
 
     public synchronized boolean reserveNativeContentCommit(Identity identity, RequestToken token) {
         if (!this.owns(identity) || token == null || !this.requests.containsKey(token)
-                || token.scope != null || !token.nativeMention || token.nativeContentId <= 0 || token.localStarted
+                || token.scope != null || (!token.nativeMention && token.nativeMarker == 0 && token.nativeMarkerScope == 0)
+                || token.nativeMarkerScope == 0 && token.nativeContentId <= 0 || token.localStarted
                 || token.transportBytes != 0 || token.handedOff || token.invalid
                 || !this.valid(token.stamp, token.conversation)
                 || this.currentDecision(token.conversation) != ReceiptDecision.NATIVE) {
@@ -604,6 +660,7 @@ public final class PrivateReadingPolicy {
             return true;
         }
         this.requests.remove(requestToken);
+        this.markerProjectionBytes -= requestToken.markerProjectionBytes;
         this.requestContentCount -= requestToken.count;
         this.transportPayloadBytes -= requestToken.transportBytes;
         Release release = this.find(requestToken.scope);
@@ -611,7 +668,7 @@ public final class PrivateReadingPolicy {
             --release.requests;
             this.retireIfUnowned(release);
         } else if (requestToken.scope == null) {
-            if (this.active && requestToken.invalid && requestToken.nativeContentId > 0) {
+            if (this.active && requestToken.invalid && requestToken.nativeMarker != 2 && requestToken.nativeContentId > 0) {
                 Pending observed = this.pending.get(requestToken.conversation);
                 if (observed == null) {
                     observed = new Pending();
@@ -911,7 +968,7 @@ public final class PrivateReadingPolicy {
     }
 
     private int retainedBytes() {
-        return 4096 + this.transportPayloadBytes + this.keys.size() * 256 + (this.contentCount + this.requestContentCount) * 96 + this.sends.size() * 256 + this.releases.size() * RELEASE_RETAINED_BYTES + this.requests.size() * 256 + this.notifications.size() * NOTIFICATION_RETAINED_BYTES + (this.special == null ? 0 : 256);
+        return 4096 + this.transportPayloadBytes + this.markerProjectionBytes + this.keys.size() * 256 + (this.contentCount + this.requestContentCount) * 96 + this.sends.size() * 256 + this.releases.size() * RELEASE_RETAINED_BYTES + this.requests.size() * 256 + this.notifications.size() * NOTIFICATION_RETAINED_BYTES + (this.special == null ? 0 : 256);
     }
 
     private void retainKey(Conversation conversation) {
@@ -1321,6 +1378,9 @@ public final class PrivateReadingPolicy {
         private boolean localProjectionPending;
         private boolean transportFinished;
         private boolean nativeMention;
+        private int nativeMarker;
+        private int nativeMarkerScope;
+        private int markerProjectionBytes;
         private boolean refreshClaimed;
         private boolean refreshDirty;
 
@@ -1338,6 +1398,15 @@ public final class PrivateReadingPolicy {
             this.stamp = new Stamp(privateReadingPolicy, conversation);
             this.offset = n2;
             this.count = n3;
+        }
+
+        public boolean nativeMarkerScope(boolean reactions) {
+            return scope == null && nativeMarkerScope == (reactions ? 1 : 2)
+                    && historyCutoff == 0 && count == 0;
+        }
+
+        public boolean hasNativeMarkerScope() {
+            return nativeMarkerScope != 0;
         }
 
         public int contentCount() {

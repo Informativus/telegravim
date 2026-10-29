@@ -1,10 +1,12 @@
 --- a/TMessagesProj/src/main/AndroidManifest.xml
 +++ b/TMessagesProj/src/main/AndroidManifest.xml
-@@ -464,0 +465,4 @@
+@@ -459 +459,5 @@
+-            android:name=".AutoMessageHeardReceiver"
 +            android:name="org.telegram.messenger.televim.PrivateReadingNotificationReceiver"
 +            android:exported="false"/>
 +
 +        <receiver
++            android:name=".AutoMessageHeardReceiver"
 --- a/TMessagesProj/src/main/java/org/telegram/messenger/AutoMessageHeardReceiver.java
 +++ b/TMessagesProj/src/main/java/org/telegram/messenger/AutoMessageHeardReceiver.java
 @@ -15 +15 @@
