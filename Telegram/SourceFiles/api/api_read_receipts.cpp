@@ -90,6 +90,9 @@ bool ReadReceipts::scopeEnabled(Scope scope) const {
 			if (scopes & int(Scope::PrivateChats)) {
 				scopes |= int(Scope::Bots);
 			}
+			_session->local().writePref<QByteArray>(
+				kScopesPreference,
+				QByteArray::number(scopes));
 			_session->local().writePref<int>(
 				kScopesVersionPreference,
 				kScopesVersion);
