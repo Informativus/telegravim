@@ -62,4 +62,12 @@
     <string name="TelevimPrivateReadingGroups">Groups</string>
     <string name="TelevimPrivateReadingChannels">Channels</string>
     <string name="TelevimPrivateReadingHelp">Secret Chats keep their native protocol. Receipts already handed off for sending may still arrive after this setting changes.</string>
+    <string name="TelevimPrivateReadingLoading">Loading privacy settings…</string>
+    <string name="TelevimPrivateReadingLoadFailed">Privacy settings could not be loaded. Editing is unavailable. Restart Televim to try loading again.</string>
+    <string name="TelevimPrivateReadingSaving">Saving privacy settings…</string>
+    <string name="TelevimPrivateReadingSaved">Privacy settings are saved on this device.</string>
+    <string name="TelevimPrivateReadingEnableFailed">Could not save. Protection is active now, but may be off if Android stops or restarts Televim. Retry saving before relying on it later.</string>
+    <string name="TelevimPrivateReadingDisableFailed">Could not save the change. The previously saved protection settings remain in effect.</string>
+    <string name="TelevimPrivateReadingUnavailable">Some private reading operations are pending because a local limit was reached.</string>
+    <string name="TelevimPrivateReadingRetry">Retry saving</string>
 </resources>

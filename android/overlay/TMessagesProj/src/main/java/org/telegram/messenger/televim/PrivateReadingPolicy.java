@@ -27,6 +27,7 @@ public final class PrivateReadingPolicy {
     private long savedTransition = -1L;
     private int fenceMask;
     private Failure failure = Failure.NONE;
+    private boolean storageFailed;
     private long masterGeneration;
     private long privateGeneration;
     private long groupGeneration;
@@ -80,12 +81,14 @@ public final class PrivateReadingPolicy {
         this.published = this.desired;
         this.loaded = true;
         this.savedTransition = 0L;
+        this.storageFailed = false;
         this.failure = Failure.NONE;
         return true;
     }
 
     synchronized void loadFailed(Identity identity) {
         if (this.owns(identity) && !this.loaded) {
+            this.storageFailed = true;
             this.failure = Failure.STORAGE;
         }
     }
@@ -112,6 +115,7 @@ public final class PrivateReadingPolicy {
             ++this.channelGeneration;
         }
         this.invalidateStale();
+        this.storageFailed = false;
         this.failure = Failure.NONE;
         return this.transition;
     }
@@ -125,10 +129,12 @@ public final class PrivateReadingPolicy {
             this.loaded = true;
             if (l == this.transition) {
                 this.savedTransition = l;
+                this.storageFailed = false;
                 this.failure = Failure.NONE;
                 this.publishIfSettled();
             }
         } else if (l == this.transition) {
+            this.storageFailed = true;
             this.failure = Failure.STORAGE;
         }
     }
@@ -706,6 +712,7 @@ public final class PrivateReadingPolicy {
     }
 
     public static final class Status {
+        public final Identity identity;
         public final boolean active;
         public final boolean loaded;
         public final Selection published;
@@ -714,11 +721,13 @@ public final class PrivateReadingPolicy {
         public final long transition;
         public final boolean saved;
         public final boolean unsavedProtection;
+        public final boolean storageFailed;
         public final Failure failure;
         public final int retainedContentIds;
         public final int retainedBytes;
 
         private Status(PrivateReadingPolicy privateReadingPolicy) {
+            this.identity = privateReadingPolicy.identity;
             this.active = privateReadingPolicy.active;
             this.loaded = privateReadingPolicy.loaded;
             this.published = privateReadingPolicy.published;
@@ -727,6 +736,7 @@ public final class PrivateReadingPolicy {
             this.transition = privateReadingPolicy.transition;
             this.saved = this.loaded && privateReadingPolicy.savedTransition == this.transition && privateReadingPolicy.committing == 0;
             this.unsavedProtection = (privateReadingPolicy.fenceMask & ~this.durable.mask()) != 0;
+            this.storageFailed = privateReadingPolicy.storageFailed;
             this.failure = privateReadingPolicy.failure;
             this.retainedContentIds = privateReadingPolicy.contentCount;
             this.retainedBytes = privateReadingPolicy.retainedBytes();

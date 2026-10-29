@@ -58,10 +58,11 @@ public final class PrivateReadingController {
         return state == null ? null : state.policy.status();
     }
 
-    public static boolean saveSelection(int account, boolean master, boolean privateChats,
-                                        boolean groups, boolean channels) {
+    public static boolean saveSelection(int account, PrivateReadingPolicy.Identity expectedIdentity,
+                                        boolean master, boolean privateChats, boolean groups, boolean channels) {
         State state = state(account);
-        return state != null && state.settings.requestSave(new PrivateReadingPolicy.Selection(
+        return state != null && state.identity == expectedIdentity && state.policy.status().loaded
+                && state.settings.requestSave(new PrivateReadingPolicy.Selection(
                 master, privateChats, groups, channels));
     }
 

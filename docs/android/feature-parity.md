@@ -443,3 +443,121 @@ topic/subpeer separation and toggle races. Exclude E2E controls from release.
 Verify navigation with unread messages retained. A source audit or APK install
 alone does not prove these behaviors. Unavailable phone or peer activity remains
 an explicit unverified boundary, not a passing result.
+
+
+## Bot scope alignment with Desktop
+
+Design status: APPROVED by the sequential reviews and arbiter; implementation
+and runtime acceptance remain separate.
+
+The accepted cross-client parity requirement now includes the independent Bots
+scope introduced by Desktop PR129. Android must preserve the old personal-chat
+selection for bots when reading an existing policy. No new user preference or
+network service is required to choose the migration default.
+
+Decisions:
+
+- Add a fourth scope, Bots, using policy mask bit 8 and an independent generation.
+  Keep the existing private/group/channel masks and generation fences. The master
+  switch still governs all scopes. Avoid coupling bot changes to human-chat grants.
+- Add a five-argument Selection constructor; retain the four-argument constructor
+  with bots inheriting privateChats for existing callers and legacy policy reads.
+- Store version 2 of the same bounded 32-byte AtomicFile record. Preserve the
+  existing master bit 8 in storage; use storage bit 16 for Bots. Include the record
+  version in CRC validation. Read v1 with its original CRC/allowed flags and derive
+  bots from privateChats; write v2 on the next explicit save. Reject unknown versions
+  or bits conservatively. Downgrades fail closed rather than misread new flags.
+- Classify positive dialog IDs from the locally cached user: bot -> Bots,
+  known human -> Private, absent or minimal user -> UnknownPrivateOrBot. Unknown
+  identities withhold if either scope is selected and fence against both generations.
+  Never fetch peer data just to classify a receipt. Secret and self-chat paths stay
+  unchanged. Bot topics remain in their owning bot category.
+- Expose the Bots control beside existing private/group/channel controls and save
+  the full selection atomically. Existing schema/hash checks and compilation are
+  used; no tests, fixtures or harnesses are authored. Device behavior remains a
+  separate acceptance gate.
+
+Rejected alternatives: keeping bots inside Private fails the accepted Desktop
+contract; assigning a fresh default to existing users changes protection silently;
+network peer lookup violates the local decision boundary. Runtime cost is one
+cached user lookup, a fourth bit and generation, and unchanged bounded storage.
+
+
+### Bot scope skeptic decisions
+
+The skeptic returned REVISE. Both findings are accepted and are prerequisites,
+not reasons to weaken the migration or privacy behavior:
+
+- UI hydration: disable policy editing until the account policy has loaded.
+  Refresh controls from that account lifetime's desired selection after load,
+  and track asynchronous persistence completion/failure visibly. A full-selection
+  save must not originate from constructor defaults or a previous account lifetime.
+  While persistence is pending, keep the existing restrictive transition fence.
+  A storage load failure shows an error and does not enable editing over an
+  unknown stored policy. Navigation away stops UI observation, not the storage write.
+- Classification continuity: category is policy metadata, not conversation
+  identity. Equality and hashing use dialog/root/subpeer only. Track the current
+  classification alongside each retained conversation within the existing bounded
+  retention budget. Before a decision accepts changed metadata, invalidate all
+  outstanding send/release/request/notification/consent capabilities for the
+  affected conversation; no captured capability changes its meaning. Preserve
+  its observed content IDs so a fresh explicit action can authorize them under
+  the new category. Generation stamps remain category-specific as well as bound
+  to the classification revision. Unknown-to-known and known-to-unknown changes
+  both require this invalidation. Account/lifetime fences remain unchanged.
+  Forget classification metadata only when no retained state references that
+  conversation. On capacity failure, withhold and report the existing bounded-state
+  failure rather than evict pending content or silently allow receipts.
+
+Bot scope implementation remains held until the remaining sequential reviews
+and arbiter accept these decisions. The existing native adapter does not yet wire
+all explicit release actions; this increment cannot establish complete private
+reading parity without finishing that already documented integration contract.
+
+### Bot scope constraint decision
+
+Constraint Guardian: APPROVED for design only, with no additional unresolved
+objections. Classification state and detached native payloads count toward the
+existing account budgets until settled. Invalidation must preserve observed IDs
+that were transferred into release snapshots, not only IDs still in pending
+collections. Callback observation remains account-lifetime-bound. Native release
+integration, topic/subpeer identity and device acceptance are still outstanding.
+
+### Bot scope user experience decision
+
+User Advocate: APPROVED for design only, with no additional objection. Show
+loading, pending persistence and durable success distinctly. Failed enables show
+the process-loss warning; failed disables explain that protection remains active.
+Provide explicit retry and show outstanding state when reopening. Load errors
+keep editing disabled. English and Russian wording must mention selected enabled
+scopes, preserve Secret Chat and already-handed-off receipt limitations, and not
+claim the unfinished native release integration has been delivered.
+
+Implementation order: first close the accepted hydration/save-lifecycle defect
+with account-lifetime-bound controls and truthful failure feedback, then add the
+Bots schema/category/generation change with stable conversation continuity. Do not
+ship the separate Bots control before its backend and migration are complete.
+
+### Bot scope arbiter disposition
+
+APPROVED for design only. Both skeptic objections were accepted; no objections
+were rejected and none remain unresolved in the design. Constraint and user
+experience reviews accepted the amended decisions. Hydration/save feedback is
+the first implementation increment; bot schema, classification continuity and
+full native explicit-release integration still require implementation.
+
+The hydration increment uses Telegram BaseFragment and native settings cells
+inside Televim settings. It replaces the standalone Activity and removes its
+duplicate top-level settings entry. Loading and saving are observed only while
+the screen is resumed, without cancelling storage work on navigation. The save
+entry point requires the captured account lifetime and a successfully loaded
+policy. Each toggle starts from the latest desired selection, preserving other
+fields. Bot backend/control and schema migration are not part of this increment.
+
+
+Hydration implementation review found two feedback defects; both are addressed.
+Storage failure is now retained independently of transient capacity failures,
+so they cannot hide an outstanding save error or its retry action. Failure text
+without new unsaved protection refers to the previously saved protection
+settings, without claiming that protection is enabled when master was off.
+Compilation and real-device lifecycle behavior remain separate acceptance gates.

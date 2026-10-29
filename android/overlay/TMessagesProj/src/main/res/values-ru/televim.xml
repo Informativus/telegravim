@@ -59,4 +59,12 @@
     <string name="TelevimPrivateReadingGroups">Группы</string>
     <string name="TelevimPrivateReadingChannels">Каналы</string>
     <string name="TelevimPrivateReadingHelp">Секретные чаты сохраняют свой штатный протокол. Квитанции, уже переданные на отправку, могут прийти после изменения настройки.</string>
+    <string name="TelevimPrivateReadingLoading">Загрузка настроек приватности…</string>
+    <string name="TelevimPrivateReadingLoadFailed">Не удалось загрузить настройки приватности. Изменение недоступно. Перезапустите Televim, чтобы повторить загрузку.</string>
+    <string name="TelevimPrivateReadingSaving">Сохранение настроек приватности…</string>
+    <string name="TelevimPrivateReadingSaved">Настройки приватности сохранены на этом устройстве.</string>
+    <string name="TelevimPrivateReadingEnableFailed">Не удалось сохранить. Сейчас защита действует, но может отключиться после остановки или перезапуска Televim. Повторите сохранение, прежде чем полагаться на неё в дальнейшем.</string>
+    <string name="TelevimPrivateReadingDisableFailed">Не удалось сохранить изменение. Продолжают действовать ранее сохранённые настройки защиты.</string>
+    <string name="TelevimPrivateReadingUnavailable">Некоторые действия приватного чтения отложены из-за достижения локального ограничения.</string>
+    <string name="TelevimPrivateReadingRetry">Повторить сохранение</string>
 </resources>

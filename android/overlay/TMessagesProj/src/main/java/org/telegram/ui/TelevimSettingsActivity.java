@@ -54,8 +54,7 @@ public final class TelevimSettingsActivity extends BaseFragment {
             if (position == ROW_IMPORT) {
                 getParentActivity().startActivity(new Intent(getParentActivity(), OfflineSettingsActivity.class));
             } else if (position == ROW_PRIVATE_READING) {
-                getParentActivity().startActivity(new Intent(getParentActivity(), PrivateReadingSettingsActivity.class)
-                        .putExtra("account", currentAccount));
+                presentFragment(new PrivateReadingSettingsActivity(currentAccount));
             }
         });
         actionBar.setAdaptiveBackground(list);

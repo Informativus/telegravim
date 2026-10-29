@@ -1,117 +1,231 @@
 package org.telegram.ui;
 
-import android.app.Activity;
-import android.os.Bundle;
+import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.CompoundButton;
-import android.widget.LinearLayout;
-import android.widget.ScrollView;
-import android.widget.Switch;
-import android.widget.TextView;
-import android.widget.Toast;
+import android.widget.FrameLayout;
 
+import androidx.annotation.NonNull;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+
+import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
-import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.televim.PrivateReadingController;
 import org.telegram.messenger.televim.PrivateReadingPolicy;
+import org.telegram.ui.ActionBar.ActionBar;
+import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Cells.TextCheckCell;
+import org.telegram.ui.Cells.TextInfoPrivacyCell;
+import org.telegram.ui.Cells.TextSettingsCell;
+import org.telegram.ui.Components.LayoutHelper;
+import org.telegram.ui.Components.RecyclerListView;
 
 /** Native account setting for the local ordinary-chat receipt policy. */
-public final class PrivateReadingSettingsActivity extends Activity {
-    private Switch master;
-    private Switch privateChats;
-    private Switch groups;
-    private Switch channels;
-    private boolean updating;
+public final class PrivateReadingSettingsActivity extends BaseFragment {
+    private static final int ROW_ABOUT = 0;
+    private static final int ROW_MASTER = 1;
+    private static final int ROW_PRIVATE = 2;
+    private static final int ROW_GROUPS = 3;
+    private static final int ROW_CHANNELS = 4;
+    private static final int ROW_HELP = 5;
+    private static final int ROW_STATUS = 6;
+    private static final int ROW_RETRY = 7;
+    private static final long REFRESH_INTERVAL_MS = 500;
+
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private final Runnable refresh = this::refreshAndSchedule;
+    private PrivateReadingPolicy.Identity identity;
+    private PrivateReadingPolicy.Status status;
+    private ListAdapter adapter;
+    private boolean observing;
+
+    public PrivateReadingSettingsActivity(int account) {
+        setCurrentAccount(account);
+    }
 
     @Override
-    protected void onCreate(Bundle state) {
-        super.onCreate(state);
-        getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE);
-        int account = getIntent() == null ? UserConfig.selectedAccount
-                : getIntent().getIntExtra("account", UserConfig.selectedAccount);
-        PrivateReadingPolicy.Status status = PrivateReadingController.status(account);
+    public boolean onFragmentCreate() {
+        status = PrivateReadingController.status(currentAccount);
         if (status == null) {
-            finish();
+            return false;
+        }
+        identity = status.identity;
+        return super.onFragmentCreate();
+    }
+
+    @Override
+    public View createView(Context context) {
+        actionBar.setBackButtonImage(R.drawable.ic_ab_back);
+        actionBar.setAllowOverlayTitle(true);
+        actionBar.setTitle(LocaleController.getString(R.string.TelevimPrivateReading));
+        actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
+            @Override
+            public void onItemClick(int id) {
+                if (id == -1) {
+                    finishFragment();
+                }
+            }
+        });
+        FrameLayout frame = new FrameLayout(context);
+        frame.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
+        RecyclerListView list = new RecyclerListView(context);
+        list.setLayoutManager(new LinearLayoutManager(context, LinearLayoutManager.VERTICAL, false));
+        list.setVerticalScrollBarEnabled(false);
+        adapter = new ListAdapter(context);
+        list.setAdapter(adapter);
+        list.setOnItemClickListener((view, position) -> save(position));
+        actionBar.setAdaptiveBackground(list);
+        frame.addView(list, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.LEFT));
+        fragmentView = frame;
+        return fragmentView;
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        observing = true;
+        refreshAndSchedule();
+    }
+
+    @Override
+    public void onPause() {
+        observing = false;
+        handler.removeCallbacks(refresh);
+        super.onPause();
+    }
+
+    @Override
+    public void onFragmentDestroy() {
+        observing = false;
+        handler.removeCallbacks(refresh);
+        super.onFragmentDestroy();
+    }
+
+    private boolean refreshStatus() {
+        PrivateReadingPolicy.Status latest = PrivateReadingController.status(currentAccount);
+        if (latest == null || latest.identity != identity || !latest.active) {
+            observing = false;
+            handler.removeCallbacks(refresh);
+            finishFragment();
+            return false;
+        }
+        boolean changed = status.loaded != latest.loaded || status.saved != latest.saved
+                || status.failure != latest.failure || status.storageFailed != latest.storageFailed
+                || status.unsavedProtection != latest.unsavedProtection
+                || !status.desired.equals(latest.desired);
+        status = latest;
+        if (changed && adapter != null) {
+            adapter.notifyDataSetChanged();
+        }
+        return true;
+    }
+
+    private void refreshAndSchedule() {
+        handler.removeCallbacks(refresh);
+        if (observing && refreshStatus()) {
+            handler.postDelayed(refresh, REFRESH_INTERVAL_MS);
+        }
+    }
+
+    private void save(int position) {
+        if (!refreshStatus() || !status.loaded) {
             return;
         }
-
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(16), dp(12), dp(16), dp(12));
-        root.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
-
-        TextView title = new TextView(this);
-        title.setText(R.string.TelevimPrivateReading);
-        title.setTextSize(20);
-        title.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
-        root.addView(title, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)));
-
-        TextView about = new TextView(this);
-        about.setText(R.string.TelevimPrivateReadingAbout);
-        about.setTextSize(15);
-        about.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
-        root.addView(about, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(0), 0));
-        LinearLayout.LayoutParams aboutParams = (LinearLayout.LayoutParams) about.getLayoutParams();
-        aboutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT;
-        aboutParams.bottomMargin = dp(12);
-        about.setLayoutParams(aboutParams);
-
-        master = addSwitch(root, R.string.TelevimPrivateReadingMaster);
-        privateChats = addSwitch(root, R.string.TelevimPrivateReadingPrivate);
-        groups = addSwitch(root, R.string.TelevimPrivateReadingGroups);
-        channels = addSwitch(root, R.string.TelevimPrivateReadingChannels);
-
-        TextView help = new TextView(this);
-        help.setText(R.string.TelevimPrivateReadingHelp);
-        help.setTextSize(13);
-        help.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
-        help.setPadding(0, dp(16), 0, 0);
-        root.addView(help, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        PrivateReadingPolicy.Selection selection = status.desired;
-        updating = true;
-        master.setChecked(selection.master);
-        privateChats.setChecked(selection.privateChats);
-        groups.setChecked(selection.groups);
-        channels.setChecked(selection.channels);
-        updating = false;
-        CompoundButton.OnCheckedChangeListener listener = (button, checked) -> {
-            if (!updating) {
-                save(account);
-            }
-        };
-        master.setOnCheckedChangeListener(listener);
-        privateChats.setOnCheckedChangeListener(listener);
-        groups.setOnCheckedChangeListener(listener);
-        channels.setOnCheckedChangeListener(listener);
-
-        ScrollView scroll = new ScrollView(this);
-        scroll.addView(root);
-        setContentView(scroll);
-    }
-
-    private Switch addSwitch(LinearLayout root, int label) {
-        Switch result = new Switch(this);
-        result.setText(label);
-        result.setTextSize(16);
-        result.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
-        result.setGravity(Gravity.CENTER_VERTICAL);
-        result.setMinHeight(dp(52));
-        root.addView(result, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)));
-        return result;
-    }
-
-    private void save(int account) {
-        if (!PrivateReadingController.saveSelection(account, master.isChecked(), privateChats.isChecked(),
-                groups.isChecked(), channels.isChecked())) {
-            Toast.makeText(this, R.string.TelevimPrivateReadingHelp, Toast.LENGTH_SHORT).show();
+        if ((position < ROW_MASTER || position > ROW_CHANNELS)
+                && (position != ROW_RETRY || !canRetry())) {
+            return;
         }
+        PrivateReadingPolicy.Selection selection = status.desired;
+        PrivateReadingController.saveSelection(currentAccount, identity,
+                position == ROW_MASTER ? !selection.master : selection.master,
+                position == ROW_PRIVATE ? !selection.privateChats : selection.privateChats,
+                position == ROW_GROUPS ? !selection.groups : selection.groups,
+                position == ROW_CHANNELS ? !selection.channels : selection.channels);
+        refreshStatus();
     }
 
-    private int dp(int value) {
-        return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
+    private boolean canRetry() {
+        return status.loaded && !status.saved && status.storageFailed;
+    }
+
+    private int statusText() {
+        if (!status.loaded) {
+            return status.storageFailed
+                    ? R.string.TelevimPrivateReadingLoadFailed : R.string.TelevimPrivateReadingLoading;
+        }
+        if (status.storageFailed) {
+            return status.unsavedProtection ? R.string.TelevimPrivateReadingEnableFailed
+                    : R.string.TelevimPrivateReadingDisableFailed;
+        }
+        if (status.failure != PrivateReadingPolicy.Failure.NONE) {
+            return R.string.TelevimPrivateReadingUnavailable;
+        }
+        return status.saved ? R.string.TelevimPrivateReadingSaved : R.string.TelevimPrivateReadingSaving;
+    }
+
+    private final class ListAdapter extends RecyclerListView.SelectionAdapter {
+        private final Context context;
+
+        ListAdapter(Context context) {
+            this.context = context;
+        }
+
+        @Override
+        public int getItemCount() {
+            return canRetry() ? ROW_RETRY + 1 : ROW_STATUS + 1;
+        }
+
+        @Override
+        public int getItemViewType(int position) {
+            return position >= ROW_MASTER && position <= ROW_CHANNELS ? 0 : position == ROW_RETRY ? 1 : 2;
+        }
+
+        @Override
+        public boolean isEnabled(RecyclerView.ViewHolder holder) {
+            int position = holder.getAdapterPosition();
+            return status.loaded && ((position >= ROW_MASTER && position <= ROW_CHANNELS)
+                    || (position == ROW_RETRY && canRetry()));
+        }
+
+        @Override
+        public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+            View view = viewType == 0 ? new TextCheckCell(context)
+                    : viewType == 1 ? new TextSettingsCell(context) : new TextInfoPrivacyCell(context);
+            if (viewType != 2) {
+                view.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+            }
+            return new RecyclerListView.Holder(view);
+        }
+
+        @Override
+        public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
+            if (holder.itemView instanceof TextCheckCell) {
+                PrivateReadingPolicy.Selection selection = status.desired;
+                int label = position == ROW_MASTER ? R.string.TelevimPrivateReadingMaster
+                        : position == ROW_PRIVATE ? R.string.TelevimPrivateReadingPrivate
+                        : position == ROW_GROUPS ? R.string.TelevimPrivateReadingGroups : R.string.TelevimPrivateReadingChannels;
+                boolean checked = position == ROW_MASTER ? selection.master
+                        : position == ROW_PRIVATE ? selection.privateChats
+                        : position == ROW_GROUPS ? selection.groups : selection.channels;
+                TextCheckCell cell = (TextCheckCell) holder.itemView;
+                cell.setTextAndCheck(LocaleController.getString(label), checked, position != ROW_CHANNELS);
+                cell.setEnabled(status.loaded);
+            } else if (position == ROW_RETRY) {
+                ((TextSettingsCell) holder.itemView).setText(
+                        LocaleController.getString(R.string.TelevimPrivateReadingRetry), false);
+            } else {
+                TextInfoPrivacyCell cell = (TextInfoPrivacyCell) holder.itemView;
+                cell.setFixedSize(0);
+                int label = position == ROW_ABOUT ? R.string.TelevimPrivateReadingAbout
+                        : position == ROW_HELP ? R.string.TelevimPrivateReadingHelp : statusText();
+                cell.setText(LocaleController.getString(label));
+            }
+        }
     }
 }
