@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="TelevimReadScopePending">Some conversations could not be marked as read. Known messages may have been acknowledged; unread counts are still pending refresh.</string>
+    <string name="TelevimReadSentPending">Read receipts sent for the captured messages. Unread counts are pending refresh.</string>
+    <string name="TelevimReadFailed">Could not finish marking as read. Some receipts may already have been sent. Try the action again when ready.</string>
+    <string name="TelevimReadOpenAppAction">Open app to mark as read</string>
+    <string name="TelevimReadOpenAppGuidance">Open the app to mark this conversation as read.</string>
+</resources>

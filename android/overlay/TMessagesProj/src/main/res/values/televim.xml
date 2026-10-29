@@ -3,6 +3,8 @@
     <dimen name="televim_toolbar_height">56dp</dimen>
     <dimen name="televim_spacing">16dp</dimen>
     <dimen name="televim_text_size">16sp</dimen>
+    <string name="TelevimSettingsTitle">Televim settings</string>
+    <string name="TelevimSettingsAbout">Televim settings are processed locally on this device. Telegram chats, media and account data are not exported or imported here.</string>
     <string name="TelevimImportTitle">Import desktop settings</string>
     <string name="TelevimImportAbout">Paste the link from your computer and enter the password you chose when exporting. Your settings are processed on this device.</string>
     <string name="TelevimImportIntroTitle">Settings from your computer</string>
@@ -53,4 +55,20 @@
     <string name="TelevimImportInterrupted">The preview was cancelled when you left this screen or the app was locked. Enter the export password and preview again before applying.</string>
     <string name="TelevimImportFinishing">The previous local operation is still finishing. Wait a moment, then preview again.</string>
     <string name="televim_update_failed">Could not verify or download the update. Please try again later.</string>
+    <string name="TelevimPrivateReading">Private reading</string>
+    <string name="TelevimPrivateReadingAbout">Keep passive viewing and listening from sending read or content receipts. Explicit actions and successful ordinary messages can release the captured conversation cutoff.</string>
+    <string name="TelevimPrivateReadingMaster">Protect read receipts</string>
+    <string name="TelevimPrivateReadingPrivate">Private chats</string>
+    <string name="TelevimPrivateReadingBots">Bots</string>
+    <string name="TelevimPrivateReadingGroups">Groups</string>
+    <string name="TelevimPrivateReadingChannels">Channels</string>
+    <string name="TelevimPrivateReadingHelp">Secret Chats keep their native protocol. Receipts already handed off for sending may still arrive after this setting changes.</string>
+    <string name="TelevimPrivateReadingLoading">Loading privacy settings…</string>
+    <string name="TelevimPrivateReadingLoadFailed">Privacy settings could not be loaded. Editing is unavailable. Restart Televim to try loading again.</string>
+    <string name="TelevimPrivateReadingSaving">Saving privacy settings…</string>
+    <string name="TelevimPrivateReadingSaved">Privacy settings are saved on this device.</string>
+    <string name="TelevimPrivateReadingEnableFailed">Could not save. Protection is active now, but may be off if Android stops or restarts Televim. Retry saving before relying on it later.</string>
+    <string name="TelevimPrivateReadingDisableFailed">Could not save the change. The previously saved protection settings remain in effect.</string>
+    <string name="TelevimPrivateReadingUnavailable">Some private reading operations are pending because a local limit was reached.</string>
+    <string name="TelevimPrivateReadingRetry">Retry saving</string>
 </resources>

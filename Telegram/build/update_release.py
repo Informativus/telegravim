@@ -20,6 +20,9 @@ import urllib.request
 from sign_update import der_to_raw_rs
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / 'android'))
+from release_version import read_release_version
+
 KEYS = ROOT / 'Telegram/Resources/update'
 REPOSITORY = 'Informativus/telegravim'
 PLATFORMS = {
@@ -228,8 +231,8 @@ def release(args):
     assets = output / 'assets'
     assets.mkdir()
     native_version = version()
-    android_version = int(re.search(r'^APP_VERSION_CODE=(\d+)$',
-        (ROOT / 'android/overlay/gradle.properties').read_text(), re.M)[1]) * 10 + 9
+    android_release_version = read_release_version(ROOT / 'android')
+    android_version = android_release_version['apk_code']
     run('openssl', 'pkeyutl', '-verify', '-pubin', '-rawin', '-inkey', KEYS / 'root-public.pem',
         '-in', KEYS / 'manifest.min.json', '-sigfile', KEYS / 'manifest.sig')
     with tempfile.TemporaryDirectory(dir=output) as temporary:
@@ -269,6 +272,8 @@ def release(args):
         apk = folder / 'Televim-android-universal.apk'
         if (metadata['source_sha'] != source or metadata['application_id'] != 'org.informativus.televim'
                 or int(metadata['version_code']) != android_version or metadata['artifact'] != apk.name
+                or metadata['version_name'] != android_release_version['version_name']
+                or metadata.get('release_version') != android_release_version
                 or set(metadata['abis']) != {'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'}
                 or metadata['sha256'] != sha256(apk)):
             raise ValueError('Android package source, version, architectures or digest mismatch')

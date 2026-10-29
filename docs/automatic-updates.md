@@ -49,9 +49,14 @@ installer confirmation screens remain mandatory where the OS requires them.
 ## Release procedure
 
 1. Increase `AppVersion` and its display strings in `Telegram/build/version` and
-   `core/version.h`, and increase `APP_VERSION_CODE` in the Android overlay.
-   Android's standalone ABI suffix is `9`, so base `7239` produces APK code
-   `72399`. Date tags and the product display label are not update eligibility.
+   `core/version.h` for Desktop. Independently increase `TELEVIM_VERSION_CODE`
+   and update `TELEVIM_VERSION_NAME` in
+   `android/overlay/televim-version.properties`, then refresh that file's hash in
+   `android/source.json`. Leave upstream `APP_VERSION_*` unchanged.
+   Android's standalone ABI suffix is `9`, so base `7241` produces APK code
+   `72419`; both arm64-only and universal builds use this suffix. Every new
+   Android release needs a larger base, including a change of ABI coverage.
+   Date tags and the product display label are not update eligibility.
 2. Merge the task PR into `develop`, then merge the reviewed `develop` release PR
    into `main` using a merge commit. Create a new immutable stable tag there and
    a draft GitHub Release with the release notes. Do not reuse a failed tag.

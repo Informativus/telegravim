@@ -1,0 +1,33 @@
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
+@@ -16137,0 +16138 @@
++        org.telegram.messenger.televim.PrivateReadingController.invalidate(currentAccount);
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/UserConfig.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/UserConfig.java
+@@ -261,0 +262,4 @@
++        setCurrentUser(user, false);
++    }
++
++    public void setCurrentUser(TLRPC.User user, boolean accountActivation) {
+@@ -265,0 +270,5 @@
++            if (accountActivation) {
++                org.telegram.messenger.televim.PrivateReadingController.accountActivated(currentAccount, user.id);
++            } else {
++                org.telegram.messenger.televim.PrivateReadingController.currentUserChanged(currentAccount, user.id);
++            }
+@@ -377,0 +387 @@
++            org.telegram.messenger.televim.PrivateReadingController.accountLoaded(currentAccount, currentUser == null ? 0 : currentUser.id);
+@@ -461,0 +472 @@
++        org.telegram.messenger.televim.PrivateReadingController.invalidate(currentAccount);
+@@ -467,2 +478,4 @@
+-        currentUser = null;
+-        clientUserId = 0;
++        synchronized (sync) {
++            currentUser = null;
++            clientUserId = 0;
++        }
+--- a/TMessagesProj/src/main/java/org/telegram/ui/LoginActivity.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/LoginActivity.java
+@@ -1658 +1658 @@
+-        UserConfig.getInstance(currentAccount).setCurrentUser(res.user);
++        UserConfig.getInstance(currentAccount).setCurrentUser(res.user, true);

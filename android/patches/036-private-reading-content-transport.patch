@@ -1,0 +1,97 @@
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
+@@ -14403,0 +14404,4 @@
++        final PrivateReadingController.AccountHandle owner = PrivateReadingController.captureAccount(currentAccount);
++        if (owner == null || !owner.isCurrent()) {
++            return;
++        }
+@@ -14410,2 +14414,3 @@
+-        if (org.telegram.messenger.televim.PrivateReadingController.blocksContent(currentAccount, contentDialogId,
+-                contentRootId, monoForum ? contentTopicId : 0, messageObject.getId())) {
++        final long contentSubpeerId = monoForum ? contentTopicId : 0;
++        final int messageId = messageObject.getId();
++        if (owner.blocksContent(contentDialogId, contentRootId, contentSubpeerId, messageId)) {
+@@ -14414,11 +14419,2 @@
+-        ArrayList<Integer> arrayList = new ArrayList<>();
+-        if (messageObject.messageOwner.mentioned) {
+-            getMessagesStorage().markMentionMessageAsRead(-messageObject.messageOwner.peer_id.channel_id, messageObject.getId(), messageObject.getDialogId());
+-        }
+-        arrayList.add(messageObject.getId());
+-        long dialogId = messageObject.getDialogId();
+-        getMessagesStorage().markMessagesContentAsRead(dialogId, arrayList, 0, 0);
+-        getNotificationCenter().postNotificationName(NotificationCenter.messagesReadContent, dialogId, arrayList);
+-        if (messageObject.getId() < 0) {
+-            markMessageAsRead(messageObject.getDialogId(), messageObject.messageOwner.random_id, Integer.MIN_VALUE);
+-        } else {
++        TLObject request = null;
++        if (messageId >= 0) {
+@@ -14426,3 +14422,3 @@
+-                TLRPC.TL_channels_readMessageContents req = new TLRPC.TL_channels_readMessageContents();
+-                req.channel = getInputChannel(messageObject.messageOwner.peer_id.channel_id);
+-                if (req.channel == null) {
++                TLRPC.TL_channels_readMessageContents contents = new TLRPC.TL_channels_readMessageContents();
++                contents.channel = getInputChannel(messageObject.messageOwner.peer_id.channel_id);
++                if (contents.channel == null || contents.channel instanceof TLRPC.TL_inputChannelEmpty) {
+@@ -14431,4 +14427,2 @@
+-                req.id.add(messageObject.getId());
+-                getConnectionsManager().sendRequest(req, (response, error) -> {
+-
+-                });
++                contents.id.add(messageId);
++                request = contents;
+@@ -14436,8 +14430,47 @@
+-                TLRPC.TL_messages_readMessageContents req = new TLRPC.TL_messages_readMessageContents();
+-                req.id.add(messageObject.getId());
+-                getConnectionsManager().sendRequest(req, (response, error) -> {
+-                    if (error == null) {
+-                        TLRPC.TL_messages_affectedMessages res = (TLRPC.TL_messages_affectedMessages) response;
+-                        processNewDifferenceParams(-1, res.pts, -1, res.pts_count);
+-                    }
+-                });
++                TLRPC.TL_messages_readMessageContents contents = new TLRPC.TL_messages_readMessageContents();
++                contents.id.add(messageId);
++                request = contents;
++            }
++        }
++        PrivateReadingPolicy.RequestToken token = null;
++        if (!DialogObject.isEncryptedDialog(contentDialogId)) {
++            PrivateReadingPolicy.Conversation conversation = owner.conversation(
++                    contentDialogId, contentRootId, contentSubpeerId);
++            PrivateReadingPolicy.Result<PrivateReadingPolicy.RequestToken> reservation =
++                    owner.policy().reserveNativeContent(owner.identity(), conversation, messageId);
++            if (!reservation.accepted()) {
++                return;
++            }
++            token = reservation.value;
++        }
++        boolean submitted = false;
++        try {
++            if (!owner.isCurrent()) {
++                return;
++            }
++            ArrayList<Integer> arrayList = new ArrayList<>();
++            if (messageObject.messageOwner.mentioned) {
++                getMessagesStorage().markMentionMessageAsRead(-messageObject.messageOwner.peer_id.channel_id, messageId, contentDialogId);
++            }
++            arrayList.add(messageId);
++            getMessagesStorage().markMessagesContentAsRead(contentDialogId, arrayList, 0, 0);
++            getNotificationCenter().postNotificationName(NotificationCenter.messagesReadContent, contentDialogId, arrayList);
++            if (messageId < 0) {
++                markMessageAsRead(contentDialogId, messageObject.messageOwner.random_id, Integer.MIN_VALUE);
++            } else {
++                org.telegram.tgnet.RequestDelegate completion = (response, error) -> {
++                    if (error == null && response instanceof TLRPC.TL_messages_affectedMessages && owner.isCurrent()) {
++                        TLRPC.TL_messages_affectedMessages result = (TLRPC.TL_messages_affectedMessages) response;
++                        processNewDifferenceParams(-1, result.pts, -1, result.pts_count);
++                    }
++                };
++                if (token == null) {
++                    getConnectionsManager().sendRequest(request, completion);
++                } else {
++                    getConnectionsManager().sendPrivateReadingRequest(request, owner, token, completion);
++                }
++                submitted = true;
++            }
++        } finally {
++            if (token != null && !submitted) {
++                owner.policy().finishUnclaimedRequest(owner.identity(), token);

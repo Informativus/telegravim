@@ -1,0 +1,1121 @@
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/MessageObject.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/MessageObject.java
+@@ -724,0 +725,16 @@
++    private final org.telegram.messenger.televim.PrivateReadingController.AccountHandle privateReadingMarkerOwner;
++    private static final java.util.concurrent.atomic.AtomicLong privateReadingMarkerEpoch = new java.util.concurrent.atomic.AtomicLong();
++
++    private static void privateReadingMarkerCreated(TLRPC.Message message) {
++        if (message != null && (hasUnreadReactions(message)
++                || message.media instanceof TLRPC.TL_messageMediaPoll
++                && ((TLRPC.TL_messageMediaPoll) message.media).results != null
++                && ((TLRPC.TL_messageMediaPoll) message.media).results.has_unread_votes)) {
++            privateReadingMarkerEpoch.incrementAndGet();
++        }
++    }
++
++    public static long unreadMarkerRevision() {
++        return privateReadingMarkerEpoch.get();
++    }
++
+@@ -726 +742,71 @@
+-        if (messageOwner != null && messageOwner.media instanceof TLRPC.TL_messageMediaPoll) {
++        markUnreadMarker(false, null);
++    }
++
++    public void markReactionsAsRead() {
++        markUnreadMarker(true, null);
++    }
++
++    public void markUnreadMarker(boolean reactions, Runnable projection) {
++        markUnreadMarker(reactions, () -> true, projection);
++    }
++
++    public void markUnreadMarker(boolean reactions, java.util.function.BooleanSupplier current, Runnable projection) {
++        final org.telegram.messenger.televim.PrivateReadingController.AccountHandle owner = privateReadingMarkerOwner;
++        if (owner == null || !owner.isCurrent() || messageOwner == null || scheduled) {
++            return;
++        }
++        final java.util.function.BooleanSupplier apply = captureUnreadMarkerProjection(reactions);
++        if (apply == null || reactions && owner.blocksContent(this)) {
++            return;
++        }
++        org.telegram.messenger.televim.PrivateReadingMarkerOperation.start(owner, owner.conversation(this), getId(), reactions, () -> {
++            if (current.getAsBoolean() && apply.getAsBoolean() && projection != null) {
++                projection.run();
++            }
++        });
++    }
++
++    public java.util.function.BooleanSupplier captureUnreadMarkerProjection(boolean reactions) {
++        final org.telegram.messenger.televim.PrivateReadingController.AccountHandle owner = privateReadingMarkerOwner;
++        if (owner == null || !owner.isCurrent() || messageOwner == null || scheduled
++                || (reactions ? !hasUnreadReactions(messageOwner)
++                : !(messageOwner.media instanceof TLRPC.TL_messageMediaPoll)
++                || !((TLRPC.TL_messageMediaPoll) messageOwner.media).results.has_unread_votes)) {
++            return null;
++        }
++        final long revision = privateReadingMarkerEpoch.get();
++        final java.lang.ref.WeakReference<MessageObject> message = new java.lang.ref.WeakReference<>(this);
++        final java.lang.ref.WeakReference<TLRPC.Message> original = new java.lang.ref.WeakReference<>(messageOwner);
++        final java.lang.ref.WeakReference<TLRPC.TL_messageReactions> originalReactions = new java.lang.ref.WeakReference<>(messageOwner.reactions);
++        final java.lang.ref.WeakReference<TLRPC.MessageMedia> originalMedia = new java.lang.ref.WeakReference<>(messageOwner.media);
++        final java.lang.ref.WeakReference<TLRPC.PollResults> originalResults = new java.lang.ref.WeakReference<>(
++                messageOwner.media instanceof TLRPC.TL_messageMediaPoll
++                        ? ((TLRPC.TL_messageMediaPoll) messageOwner.media).results : null);
++        return () -> {
++            MessageObject current = message.get();
++            if (!owner.isCurrent() || owner.storage().getDatabase() != owner.database()
++                    || current == null || current.messageOwner != original.get()
++                    || privateReadingMarkerEpoch.get() != revision
++                    || (reactions ? current.messageOwner.reactions != originalReactions.get()
++                    : current.messageOwner.media != originalMedia.get()
++                    || ((TLRPC.TL_messageMediaPoll) current.messageOwner.media).results != originalResults.get())) {
++                return false;
++            }
++            return current.applyCommittedUnreadMarker(owner, reactions);
++        };
++    }
++
++    public boolean applyCommittedUnreadMarker(
++            org.telegram.messenger.televim.PrivateReadingController.AccountHandle owner, boolean reactions) {
++        if (owner == null || privateReadingMarkerOwner == null
++                || owner.identity() != privateReadingMarkerOwner.identity() || !owner.isCurrent()
++                || owner.storage().getDatabase() != owner.database() || messageOwner == null || scheduled) {
++            return false;
++        }
++        if (reactions) {
++            if (messageOwner.reactions != null && messageOwner.reactions.recent_reactions != null) {
++                for (TLRPC.MessagePeerReaction reaction : messageOwner.reactions.recent_reactions) {
++                    reaction.unread = false;
++                }
++            }
++        } else if (messageOwner.media instanceof TLRPC.TL_messageMediaPoll) {
+@@ -729,16 +815 @@
+-    }
+-
+-    public void markReactionsAsRead() {
+-        if (messageOwner.reactions == null || messageOwner.reactions.recent_reactions == null) {
+-            return;
+-        }
+-        boolean changed = false;
+-        for (int i = 0; i < messageOwner.reactions.recent_reactions.size(); i++) {
+-            if (messageOwner.reactions.recent_reactions.get(i).unread) {
+-                messageOwner.reactions.recent_reactions.get(i).unread = false;
+-                changed = true;
+-            }
+-        }
+-        if (changed) {
+-            MessagesStorage.getInstance(currentAccount).markMessageReactionsAsRead(messageOwner.dialog_id, getTopicId(currentAccount, messageOwner), messageOwner.id);
+-        }
++        return true;
+@@ -1847,0 +1919 @@
++        privateReadingMarkerOwner = org.telegram.messenger.televim.PrivateReadingController.captureAccount(accountNum);
+@@ -1866,0 +1939 @@
++        privateReadingMarkerOwner = org.telegram.messenger.televim.PrivateReadingController.captureAccount(accountNum);
+@@ -1870,0 +1944 @@
++        privateReadingMarkerCreated(message);
+@@ -1924,0 +1999 @@
++        privateReadingMarkerOwner = org.telegram.messenger.televim.PrivateReadingController.captureAccount(accountNum);
+@@ -1925,0 +2001 @@
++        privateReadingMarkerCreated(message);
+@@ -2213,0 +2290 @@
++        privateReadingMarkerOwner = org.telegram.messenger.televim.PrivateReadingController.captureAccount(accountNum);
+@@ -3960,0 +4038 @@
++        privateReadingMarkerEpoch.incrementAndGet();
+@@ -4014,0 +4093 @@
++        privateReadingMarkerEpoch.incrementAndGet();
+@@ -12427,0 +12507 @@
++        privateReadingMarkerEpoch.incrementAndGet();
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
+@@ -782 +782 @@
+-        getNextReactionMentionInternal(dialogId, topicId, count, true, callback);
++        getNextUnreadMarker(PrivateReadingController.captureAccount(currentAccount), dialogId, topicId, count, true, callback);
+@@ -786,11 +786,53 @@
+-        getNextReactionMentionInternal(dialogId, topicId, count, false, callback);
+-    }
+-
+-    private void getNextReactionMentionInternal(long dialogId, long topicId, int count, final boolean isReactions, Consumer<Integer> callback) {
+-        final String tableMentionsForDialogs = isReactions ? "reaction_mentions" : "poll_votes_mentions";
+-        final String tableMentionsForTopics = isReactions ? "reaction_mentions_topics" : "poll_votes_mentions_topics";
+-        final boolean isVotes = !isReactions;
+-
+-        final MessagesStorage messagesStorage = getMessagesStorage();
+-        messagesStorage.getStorageQueue().postRunnable(() -> {
+-            boolean needRequest = true;
++        getNextUnreadMarker(PrivateReadingController.captureAccount(currentAccount), dialogId, topicId, count, false, callback);
++    }
++
++    public void getNextUnreadMarker(PrivateReadingController.AccountHandle owner,
++            long dialogId, long topicId, int count, boolean reactions, Consumer<Integer> callback) {
++        if (owner == null || !owner.isCurrent() || owner.account() != currentAccount) {
++            return;
++        }
++        final MessagesStorage storage = owner.storage();
++        final org.telegram.SQLite.SQLiteDatabase database = owner.database();
++        final org.telegram.tgnet.ConnectionsManager connections = getConnectionsManager();
++        final boolean monoForum = storage.isMonoForum(dialogId) || isMonoForum(dialogId);
++        final PrivateReadingPolicy.Conversation conversation = owner.conversation(
++                dialogId, monoForum ? 0 : topicId, monoForum ? topicId : 0);
++        if (conversation == null || !monoForum && (topicId < 0 || topicId > Integer.MAX_VALUE)) {
++            callback.accept(-1);
++            return;
++        }
++        final TLMethod<TLRPC.messages_Messages> request;
++        if (reactions) {
++            TLRPC.TL_messages_getUnreadReactions read = new TLRPC.TL_messages_getUnreadReactions();
++            read.peer = getInputPeer(dialogId);
++            read.limit = 1;
++            read.add_offset = Math.max(0, count - 1);
++            if (topicId != 0) {
++                if (monoForum) {
++                    read.saved_peer_id = getInputPeer(topicId);
++                    read.flags |= 2;
++                } else {
++                    read.top_msg_id = (int) topicId;
++                    read.flags |= 1;
++                }
++            }
++            request = read;
++        } else if (monoForum && topicId != 0) {
++            request = null;
++        } else {
++            TLRPC.TL_messages_getUnreadPollVotes read = new TLRPC.TL_messages_getUnreadPollVotes();
++            read.peer = getInputPeer(dialogId);
++            read.limit = 1;
++            read.add_offset = Math.max(0, count - 1);
++            if (topicId != 0) {
++                read.top_msg_id = (int) topicId;
++                read.flags |= 1;
++            }
++            request = read;
++        }
++        storage.getStorageQueue().postRunnable(() -> {
++            if (!owner.isCurrent() || database == null || storage.getDatabase() != database) {
++                return;
++            }
++            int found = 0;
++            org.telegram.SQLite.SQLitePreparedStatement statement = null;
+@@ -798 +840,2 @@
+-                SQLiteCursor cursor;
++                String markers = reactions ? "reaction_mentions" : "poll_votes_mentions";
++                String membership = topicId == 0 ? "messages_v2" : "messages_topics";
+@@ -800 +843,28 @@
+-                    cursor = getMessagesStorage().getDatabase().queryFinalized(String.format(Locale.US, "SELECT message_id FROM %s WHERE state = 1 AND dialog_id = %d AND topic_id = %d LIMIT 1", tableMentionsForTopics ,dialogId, topicId));
++                    markers += "_topics";
++                }
++                statement = database.executeFast("SELECT r.message_id FROM " + markers
++                        + " r INNER JOIN " + membership + " m ON m.uid = r.dialog_id AND m.mid = r.message_id"
++                        + (topicId == 0 ? "" : " AND m.topic_id = r.topic_id")
++                        + " WHERE r.state = 1 AND r.dialog_id = " + dialogId
++                        + (topicId == 0 ? "" : " AND r.topic_id = " + topicId)
++                        + " ORDER BY r.message_id ASC LIMIT 1");
++                SQLiteCursor cursor = statement.query(new Object[0]);
++                if (cursor.nextChecked()) {
++                    found = cursor.intValue(0);
++                }
++            } catch (Exception error) {
++                FileLog.e(error);
++            } finally {
++                if (statement != null) {
++                    statement.dispose();
++                }
++            }
++            final int messageId = found;
++            AndroidUtilities.runOnUIThread(() -> {
++                if (!owner.isCurrent() || storage.getDatabase() != database) {
++                    return;
++                }
++                if (messageId > 0) {
++                    callback.accept(messageId);
++                } else if (request == null) {
++                    callback.accept(-1);
+@@ -802,50 +872,9 @@
+-                    cursor = getMessagesStorage().getDatabase().queryFinalized(String.format(Locale.US, "SELECT message_id FROM %s WHERE state = 1 AND dialog_id = %d LIMIT 1", tableMentionsForDialogs, dialogId));
+-                }
+-                int messageId = 0;
+-                if (cursor.next()) {
+-                    messageId = cursor.intValue(0);
+-                    needRequest = false;
+-                }
+-                cursor.dispose();
+-                if (messageId != 0) {
+-                    if (isReactions) {
+-                        getMessagesStorage().markMessageReactionsAsRead(dialogId, topicId, messageId);
+-                    }
+-                    if (isVotes) {
+-                        getMessagesStorage().markMessagePollVotesAsRead(dialogId, topicId, messageId);
+-                    }
+-                    int finalMessageId = messageId;
+-                    AndroidUtilities.runOnUIThread(() -> callback.accept(finalMessageId));
+-                }
+-
+-            } catch (SQLiteException e) {
+-                e.printStackTrace();
+-            }
+-            if (needRequest) {
+-                final TLMethod<TLRPC.messages_Messages> request;
+-                if (isReactions) {
+-                    TLRPC.TL_messages_getUnreadReactions req = new TLRPC.TL_messages_getUnreadReactions();
+-                    req.peer = getMessagesController().getInputPeer(dialogId);
+-                    req.limit = 1;
+-                    req.add_offset = count - 1;
+-                    if (isMonoForum(dialogId) && topicId != 0) {
+-                        req.saved_peer_id = getInputPeer(topicId);
+-                        req.flags |= 2;
+-                    }
+-                    request = req;
+-                } else  {
+-                    TLRPC.TL_messages_getUnreadPollVotes req = new TLRPC.TL_messages_getUnreadPollVotes();
+-                    req.peer = getMessagesController().getInputPeer(dialogId);
+-                    req.limit = 1;
+-                    req.add_offset = count - 1;
+-                    request = req;
+-                }
+-                getConnectionsManager().sendRequestTyped(request, AndroidUtilities::runOnUIThread, (res, error) -> {
+-                    int messageId = 0;
+-                    if (error == null && res != null && res.messages != null && !res.messages.isEmpty()) {
+-                        messageId = res.messages.get(0).id;
+-                    }
+-                    int finalMessageId = messageId;
+-                    AndroidUtilities.runOnUIThread(() -> callback.accept(finalMessageId));
+-                });
+-            }
++                    connections.sendRequestTyped(request, AndroidUtilities::runOnUIThread, (res, error) -> {
++                        if (!owner.isCurrent() || storage.getDatabase() != database) {
++                            return;
++                        }
++                        callback.accept(error != null || res == null ? -1
++                                : res.messages == null || res.messages.isEmpty() ? 0 : res.messages.get(0).id);
++                    });
++                }
++            });
+@@ -14025,0 +14055 @@
++                    privateReadingMentionChanged();
+@@ -14026,0 +14057 @@
++                    privateReadingMentionChanged();
+@@ -14228,0 +14260 @@
++                            privateReadingMentionChanged();
+@@ -14232,0 +14265 @@
++                            privateReadingMentionChanged();
+@@ -21611,0 +21645 @@
++                            privateReadingMentionChanged();
+@@ -21657,0 +21692 @@
++                    privateReadingMentionChanged();
+@@ -21659,0 +21695 @@
++                        privateReadingMentionChanged();
+@@ -21695,0 +21732 @@
++                            privateReadingMentionChanged();
+@@ -21741,0 +21779 @@
++                    privateReadingMentionChanged();
+@@ -21743,0 +21782 @@
++                        privateReadingMentionChanged();
+@@ -21798,13 +21837,47 @@
+-        final boolean monoForum = getMessagesStorage().isMonoForum(dialogId);
+-        if (org.telegram.messenger.televim.PrivateReadingController.blocksHistory(currentAccount, dialogId,
+-                monoForum ? 0 : topicId, monoForum ? topicId : 0)) {
+-            return;
+-        }
+-        if (topicId == 0) {
+-            TLRPC.Dialog dialog = dialogs_dict.get(dialogId);
+-            if (dialog != null) {
+-                dialog.unread_reactions_count = 0;
+-            }
+-            if (isForum(dialogId) || isMonoForumWithManageRights(dialogId)) {
+-                topicsController.markAllReactionsAsRead(-dialogId);
+-            }
++        markUnreadMarkerScope(PrivateReadingController.captureAccount(currentAccount), dialogId, topicId,
++                true, null, null);
++    }
++
++    public void markPollVotesAsRead(long dialogId, long topicId) {
++        markUnreadMarkerScope(PrivateReadingController.captureAccount(currentAccount), dialogId, topicId,
++                false, null, null);
++    }
++
++    public boolean markUnreadMarkerScope(PrivateReadingController.AccountHandle owner, long dialogId,
++            long topicId, boolean reactions, Runnable projection, Runnable pending) {
++        if (owner == null || !owner.isCurrent() || owner.account() != currentAccount
++                || DialogObject.isEncryptedDialog(dialogId) || dialogId < 0 && getChat(-dialogId) == null) {
++            return false;
++        }
++        final boolean monoForum = owner.storage().isMonoForum(dialogId) || isMonoForum(dialogId);
++        if (!reactions && monoForum || !monoForum && (topicId < 0 || topicId > Integer.MAX_VALUE)) {
++            return false;
++        }
++        final PrivateReadingPolicy.Conversation conversation = owner.conversation(
++                dialogId, monoForum ? 0 : topicId, monoForum ? topicId : 0);
++        final ConnectionsManager connections = getConnectionsManager();
++        final TopicsController topics = getTopicsController();
++        final NotificationCenter notifications = getNotificationCenter();
++        final java.lang.ref.WeakReference<MessagesController> messages = new java.lang.ref.WeakReference<>(this);
++        final java.lang.ref.WeakReference<TopicsController> weakTopics = new java.lang.ref.WeakReference<>(topics);
++        final java.lang.ref.WeakReference<NotificationCenter> weakNotifications = new java.lang.ref.WeakReference<>(notifications);
++        final java.lang.ref.WeakReference<TLRPC.Dialog> originalDialog = new java.lang.ref.WeakReference<>(dialogs_dict.get(dialogId));
++        final java.lang.ref.WeakReference<TLRPC.TL_forumTopic> originalTopic = new java.lang.ref.WeakReference<>(topicId == 0 ? null
++                : topics.privateReadingTopic(dialogId, topicId, monoForum));
++        final long revision = privateReadingMentionRevision();
++        final long markerRevision = MessageObject.unreadMarkerRevision();
++        final boolean channel = ChatObject.isChannel(getChat(-dialogId));
++        final TLObject request;
++        if (reactions) {
++            TLRPC.TL_messages_readReactions read = new TLRPC.TL_messages_readReactions();
++            read.peer = getInputPeer(dialogId);
++            if (topicId != 0) {
++                if (monoForum) {
++                    read.saved_peer_id = getInputPeer(topicId);
++                    read.flags = 2;
++                } else {
++                    read.top_msg_id = (int) topicId;
++                    read.flags = 1;
++                }
++            }
++            request = read;
+@@ -21812,53 +21885,74 @@
+-            topicsController.markAllReactionsAsRead(-dialogId, topicId);
+-        }
+-        getMessagesStorage().updateUnreadReactionsCount(dialogId, topicId, 0);
+-        TLRPC.TL_messages_readReactions req = new TLRPC.TL_messages_readReactions();
+-        req.peer = getInputPeer(dialogId);
+-
+-        if (topicId != 0) {
+-            if (isMonoForum(dialogId)) {
+-                req.saved_peer_id = getInputPeer(topicId);
+-                req.flags |= 2;
+-            } else {
+-                req.top_msg_id = (int) topicId;
+-                req.flags |= 1;
+-            }
+-        }
+-        getConnectionsManager().sendRequest(req, (response, error) -> {
+-
+-        });
+-        NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.updateInterfaces, UPDATE_MASK_REACTIONS_READ);
+-    }
+-
+-    public void markPollVotesAsRead(long dialogId, long topicId) {
+-        final boolean monoForum = getMessagesStorage().isMonoForum(dialogId);
+-        if (org.telegram.messenger.televim.PrivateReadingController.blocksHistory(currentAccount, dialogId,
+-                monoForum ? 0 : topicId, monoForum ? topicId : 0)) {
+-            return;
+-        }
+-        if (topicId == 0) {
+-            TLRPC.Dialog dialog = dialogs_dict.get(dialogId);
+-            if (dialog != null) {
+-                dialog.unread_poll_votes_count = 0;
+-            }
+-            if (isForum(dialogId) || isMonoForumWithManageRights(dialogId)) {
+-                topicsController.markAllPollVotesAsRead(-dialogId);
+-            }
+-        } else {
+-            topicsController.markAllPollVotesAsRead(-dialogId, topicId);
+-        }
+-        getMessagesStorage().updateUnreadPollVotesCount(dialogId, topicId, 0);
+-        TLRPC.TL_messages_readPollVotes req = new TLRPC.TL_messages_readPollVotes();
+-        req.peer = getInputPeer(dialogId);
+-
+-        if (topicId != 0) {
+-            if (isMonoForum(dialogId)) {
+-                //req.saved_peer_id = getInputPeer(topicId);
+-                //req.flags |= 2;
+-            } else {
+-                req.top_msg_id = (int) topicId;
+-                req.flags |= 1;
+-            }
+-        }
+-        getConnectionsManager().sendRequest(req, (response, error) -> {});
+-        NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.updateInterfaces, UPDATE_MASK_REACTIONS_READ);
++            TLRPC.TL_messages_readPollVotes read = new TLRPC.TL_messages_readPollVotes();
++            read.peer = getInputPeer(dialogId);
++            if (topicId != 0) {
++                read.top_msg_id = (int) topicId;
++                read.flags = 1;
++            }
++            request = read;
++        }
++        return org.telegram.messenger.televim.PrivateReadingMarkerScope.start(owner, conversation,
++                reactions, connections, request, () -> {
++                    MessagesController controller = messages.get();
++                    TopicsController currentTopics = weakTopics.get();
++                    NotificationCenter currentNotifications = weakNotifications.get();
++                    TLRPC.Dialog dialog = originalDialog.get();
++                    if (controller == null || currentTopics == null || currentNotifications == null
++                            || !owner.isCurrent() || owner.storage().getDatabase() != owner.database()) {
++                        return;
++                    }
++                    if (revision != controller.privateReadingMentionRevision() || markerRevision != MessageObject.unreadMarkerRevision()
++                            || controller.dialogs_dict.get(dialogId) != dialog
++                            || topicId != 0 && currentTopics.privateReadingTopic(dialogId, topicId, monoForum) != originalTopic.get()) {
++                        if (pending != null) {
++                            pending.run();
++                        }
++                        return;
++                    }
++                    if (topicId == 0) {
++                        if (dialog != null) {
++                            if (reactions) {
++                                controller.privateReadingMentionChanged();
++                                dialog.unread_reactions_count = 0;
++                            } else {
++                                controller.privateReadingMentionChanged();
++                                dialog.unread_poll_votes_count = 0;
++                            }
++                        }
++                        if (reactions) {
++                            currentTopics.markAllReactionsAsRead(-dialogId);
++                        } else {
++                            currentTopics.markAllPollVotesAsRead(-dialogId);
++                        }
++                    } else if (reactions) {
++                        currentTopics.markAllReactionsAsRead(-dialogId, topicId);
++                    } else {
++                        currentTopics.markAllPollVotesAsRead(-dialogId, topicId);
++                    }
++                    if (projection != null) {
++                        projection.run();
++                    }
++                    currentNotifications.postNotificationName(NotificationCenter.updateInterfaces, UPDATE_MASK_REACTIONS_READ);
++                }, pending, (response, error) -> {
++                    MessagesController controller = messages.get();
++                    if (controller == null || !owner.isCurrent() || owner.storage().getDatabase() != owner.database()) {
++                        return;
++                    }
++                    if (error == null && response instanceof TLRPC.TL_messages_affectedHistory) {
++                        TLRPC.TL_messages_affectedHistory affected = (TLRPC.TL_messages_affectedHistory) response;
++                        if (channel) {
++                            controller.processNewChannelDifferenceParams(affected.pts, affected.pts_count, -dialogId);
++                        } else {
++                            controller.processNewDifferenceParams(-1, affected.pts, -1, affected.pts_count);
++                        }
++                        if (affected.offset == 0) {
++                            return;
++                        }
++                    }
++                    if (pending != null) {
++                        AndroidUtilities.runOnUIThread(() -> {
++                            if (owner.isCurrent()) {
++                                pending.run();
++                            }
++                        });
++                    }
++                });
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/MessagesStorage.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/MessagesStorage.java
+@@ -18714,82 +18714,21 @@
+-    public void markMessageReactionsAsRead(long dialogId, long topicId, int messageId) {
+-        executeInStorageQueue(() -> markMessageReactionsAsReadInternal("reaction_mentions", "reaction_mentions_topics", dialogId, topicId, messageId, true));
+-    }
+-
+-    public void markMessagePollVotesAsRead(long dialogId, long topicId, int messageId) {
+-        executeInStorageQueue(() -> markMessageReactionsAsReadInternal("poll_votes_mentions", "poll_votes_mentions_topics", dialogId, topicId, messageId, false));
+-    }
+-
+-    private void markMessageReactionsAsReadInternal(String tableMentionsForDialogs, String tableMentionsForTopics, long dialogId, long topicId, int messageId, boolean updateReactions) {
+-        SQLitePreparedStatement state = null;
+-        SQLiteCursor cursor = null;
+-        try {
+-            for (int k = 0; k < 2; k++) {
+-                boolean isTopic = k == 1;
+-                if (isTopic && topicId == 0) {
+-                    continue;
+-                }
+-                if (!isTopic) {
+-                    state = getMessagesStorage().getDatabase().executeFast(String.format(Locale.ENGLISH, "UPDATE %s SET state = 0 WHERE message_id = ? AND dialog_id = ?", tableMentionsForDialogs));
+-                    state.bindInteger(1, messageId);
+-                    state.bindLong(2, dialogId);
+-                    state.step();
+-                    state.dispose();
+-                    state = null;
+-                    cursor = database.queryFinalized(String.format(Locale.US, "SELECT data FROM messages_v2 WHERE uid = %d AND mid = %d", dialogId, messageId));
+-                } else {
+-                    state = getMessagesStorage().getDatabase().executeFast(String.format(Locale.ENGLISH, "UPDATE %s SET state = 0 WHERE message_id = ? AND dialog_id = ? AND topic_id = ? ", tableMentionsForTopics));
+-                    state.bindInteger(1, messageId);
+-                    state.bindLong(2, dialogId);
+-                    state.bindLong(3, topicId);
+-                    state.step();
+-                    state.dispose();
+-                    state = null;
+-                    cursor = database.queryFinalized(String.format(Locale.US, "SELECT data FROM messages_topics WHERE uid = %d AND mid = %d", dialogId, messageId));
+-                }
+-                TLRPC.Message message = null;
+-                if (updateReactions && cursor.next()) {
+-                    NativeByteBuffer data = cursor.byteBufferValue(0);
+-                    if (data != null) {
+-                        message = TLRPC.Message.TLdeserialize(data, data.readInt32(false), false);
+-                        message.readAttachPath(data, getUserConfig().clientUserId);
+-                        data.reuse();
+-                        if (message.reactions != null && message.reactions.recent_reactions != null) {
+-                            for (int i = 0; i < message.reactions.recent_reactions.size(); i++) {
+-                                message.reactions.recent_reactions.get(i).unread = false;
+-                            }
+-                        }
+-                    }
+-                }
+-                cursor.dispose();
+-                cursor = null;
+-
+-                if (message != null) {
+-                    if (!isTopic) {
+-                        state = getMessagesStorage().getDatabase().executeFast(String.format(Locale.US, "UPDATE messages_v2 SET data = ? WHERE uid = %d AND mid = %d", dialogId, messageId));
+-                    } else {
+-                        state = getMessagesStorage().getDatabase().executeFast(String.format(Locale.US, "UPDATE messages_topics SET data = ? WHERE uid = %d AND mid = %d", dialogId, messageId));
+-                    }
+-                    try {
+-                        MessageObject.normalizeFlags(message);
+-                        NativeByteBuffer data = new NativeByteBuffer(message.getObjectSize());
+-                        message.serializeToStream(data);
+-                        state.bindByteBuffer(1, data);
+-                        state.step();
+-                        state.dispose();
+-                        data.reuse();
+-                    } catch (Exception e) {
+-                        FileLog.e(e);
+-                    }
+-                }
+-            }
+-        } catch (SQLiteException e) {
+-            checkSQLException(e);
+-        } finally {
+-            if (state != null) {
+-                state.dispose();
+-            }
+-            if (cursor != null) {
+-                cursor.dispose();
+-            }
+-        }
+-
++    public void markMessageReactionsAsRead(
++            org.telegram.messenger.televim.PrivateReadingController.AccountHandle owner,
++            long dialogId, long topicId, int messageId) {
++        markUnreadMarker(owner, dialogId, topicId, messageId, true);
++    }
++
++    public void markMessagePollVotesAsRead(
++            org.telegram.messenger.televim.PrivateReadingController.AccountHandle owner,
++            long dialogId, long topicId, int messageId) {
++        markUnreadMarker(owner, dialogId, topicId, messageId, false);
++    }
++
++    private void markUnreadMarker(org.telegram.messenger.televim.PrivateReadingController.AccountHandle owner,
++            long dialogId, long topicId, int messageId, boolean reactions) {
++        if (owner == null || owner.storage() != this || owner.database() != database) {
++            return;
++        }
++        final boolean monoForum = isMonoForum(dialogId);
++        org.telegram.messenger.televim.PrivateReadingMarkerOperation.start(owner,
++                owner.conversation(dialogId, monoForum ? 0 : topicId, monoForum ? topicId : 0),
++                messageId, reactions, null);
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/TopicsController.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/TopicsController.java
+@@ -947,0 +948 @@
++                getMessagesController().privateReadingMentionChanged();
+@@ -949,0 +951 @@
++                    getMessagesController().privateReadingMentionChanged();
+@@ -952,0 +955 @@
++                getMessagesController().privateReadingMentionChanged();
+@@ -965,0 +969 @@
++                getMessagesController().privateReadingMentionChanged();
+@@ -967,0 +972 @@
++                    getMessagesController().privateReadingMentionChanged();
+@@ -970,0 +976 @@
++                getMessagesController().privateReadingMentionChanged();
+@@ -981,0 +988 @@
++            getMessagesController().privateReadingMentionChanged();
+@@ -989,0 +997 @@
++            getMessagesController().privateReadingMentionChanged();
+@@ -1002,0 +1011 @@
++                getMessagesController().privateReadingMentionChanged();
+@@ -1016,0 +1026 @@
++                getMessagesController().privateReadingMentionChanged();
+--- a/TMessagesProj/src/main/java/org/telegram/tgnet/ConnectionsManager.java
++++ b/TMessagesProj/src/main/java/org/telegram/tgnet/ConnectionsManager.java
+@@ -398,0 +399,19 @@
++    public TLObject prepareNativeMarkerScopeRequest(TLObject object,
++            org.telegram.messenger.televim.PrivateReadingController.AccountHandle owner,
++            org.telegram.messenger.televim.PrivateReadingPolicy.RequestToken token) {
++        if (object == null || owner == null || token == null || !token.hasNativeMarkerScope()
++                || owner.account() != currentAccount || !owner.isCurrent()
++                || token.identity != owner.identity() || owner.storage().getDatabase() != owner.database()) {
++            return null;
++        }
++        try {
++            if (!privateReadingPayloadMatches(owner, token, object)) {
++                return null;
++            }
++            TLObject snapshot = snapshotPrivateReadingRequest(object, token);
++            return privateReadingPayloadMatches(owner, token, snapshot) ? snapshot : null;
++        } catch (Exception error) {
++            return null;
++        }
++    }
++
+@@ -447 +466,3 @@
+-            request = new PrivateReadingRequest(requestToken, affectedMessages, payload,
++            boolean affectedHistory = snapshot.getClass() == TLRPC.TL_messages_readReactions.class
++                    || snapshot.getClass() == TLRPC.TL_messages_readPollVotes.class;
++            request = new PrivateReadingRequest(requestToken, affectedMessages, affectedHistory, payload,
+@@ -636,0 +658 @@
++        final boolean affectedHistory;
+@@ -645 +667 @@
+-        PrivateReadingRequest(int nativeToken, boolean affectedMessages, NativeByteBuffer payload,
++        PrivateReadingRequest(int nativeToken, boolean affectedMessages, boolean affectedHistory, NativeByteBuffer payload,
+@@ -650,0 +673 @@
++            this.affectedHistory = affectedHistory;
+@@ -758,0 +782,16 @@
++        if (object.getClass() == TLRPC.TL_messages_readReactions.class) {
++            TLRPC.TL_messages_readReactions source = (TLRPC.TL_messages_readReactions) object;
++            TLRPC.TL_messages_readReactions result = new TLRPC.TL_messages_readReactions();
++            result.flags = source.flags;
++            result.peer = snapshotPrivateReadingPeer(source.peer);
++            result.top_msg_id = source.top_msg_id;
++            result.saved_peer_id = source.saved_peer_id == null ? null : snapshotPrivateReadingPeer(source.saved_peer_id);
++            return result;
++        } else if (object.getClass() == TLRPC.TL_messages_readPollVotes.class) {
++            TLRPC.TL_messages_readPollVotes source = (TLRPC.TL_messages_readPollVotes) object;
++            TLRPC.TL_messages_readPollVotes result = new TLRPC.TL_messages_readPollVotes();
++            result.flags = source.flags;
++            result.peer = snapshotPrivateReadingPeer(source.peer);
++            result.top_msg_id = source.top_msg_id;
++            return result;
++        }
+@@ -797,0 +837,20 @@
++            return false;
++        }
++        if (object.getClass() == TLRPC.TL_messages_readReactions.class) {
++            TLRPC.TL_messages_readReactions request = (TLRPC.TL_messages_readReactions) object;
++            int flags = conversation.rootId != 0 ? 1 : conversation.subpeerId != 0 ? 2 : 0;
++            return token.nativeMarkerScope(true) && request.flags == flags
++                    && conversation.rootId >= 0 && conversation.rootId <= Integer.MAX_VALUE
++                    && (conversation.rootId == 0 || conversation.subpeerId == 0)
++                    && request.top_msg_id == conversation.rootId
++                    && privateReadingPeerMatches(request.peer, conversation.dialogId, owner.identity().userId)
++                    && (conversation.subpeerId == 0 ? request.saved_peer_id == null
++                    : privateReadingPeerMatches(request.saved_peer_id, conversation.subpeerId, owner.identity().userId));
++        } else if (object.getClass() == TLRPC.TL_messages_readPollVotes.class) {
++            TLRPC.TL_messages_readPollVotes request = (TLRPC.TL_messages_readPollVotes) object;
++            return token.nativeMarkerScope(false) && conversation.subpeerId == 0
++                    && conversation.rootId >= 0 && conversation.rootId <= Integer.MAX_VALUE
++                    && request.flags == (conversation.rootId == 0 ? 0 : 1)
++                    && request.top_msg_id == conversation.rootId
++                    && privateReadingPeerMatches(request.peer, conversation.dialogId, owner.identity().userId);
++        } else if (token.hasNativeMarkerScope()) {
+@@ -878,0 +938,6 @@
++        if (request.policyToken.hasNativeMarkerScope()
++                && request.owner.storage().getDatabase() != request.owner.database()) {
++            completePrivateReadingRequest(request, null, privateReadingError(409,
++                    "PRIVATE_READING_DATABASE_REPLACED"));
++            return;
++        }
+@@ -897,0 +963 @@
++                            : request.affectedHistory ? TLRPC.TL_messages_affectedHistory.TLdeserialize(buffer, magic, true)
+--- a/TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatActionCell.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatActionCell.java
+@@ -4449,0 +4450,6 @@
++    public void refreshUnreadReactions() {
++        reactionsLayoutInBubble.hasUnreadReactions = currentMessageObject != null
++                && MessageObject.hasUnreadReactions(currentMessageObject.messageOwner);
++        invalidate();
++    }
++
+@@ -4451 +4456,0 @@
+-        reactionsLayoutInBubble.hasUnreadReactions = false;
+@@ -4455 +4460,9 @@
+-        currentMessageObject.markReactionsAsRead();
++        final java.lang.ref.WeakReference<ChatActionCell> cell = new java.lang.ref.WeakReference<>(this);
++        final java.lang.ref.WeakReference<MessageObject> message = new java.lang.ref.WeakReference<>(currentMessageObject);
++        currentMessageObject.markUnreadMarker(true, () -> {
++            ChatActionCell current = cell.get();
++            MessageObject observed = message.get();
++            if (current != null && observed != null && current.currentMessageObject == observed) {
++                current.refreshUnreadReactions();
++            }
++        });
+--- a/TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java
+@@ -493,0 +494,6 @@
++    public void refreshUnreadReactions() {
++        reactionsLayoutInBubble.hasUnreadReactions = currentMessageObject != null
++                && MessageObject.hasUnreadReactions(currentMessageObject.messageOwner);
++        invalidate();
++    }
++
+@@ -495 +500,0 @@
+-        reactionsLayoutInBubble.hasUnreadReactions = false;
+@@ -499 +504,9 @@
+-        currentMessageObject.markReactionsAsRead();
++        final java.lang.ref.WeakReference<ChatMessageCell> cell = new java.lang.ref.WeakReference<>(this);
++        final java.lang.ref.WeakReference<MessageObject> message = new java.lang.ref.WeakReference<>(currentMessageObject);
++        currentMessageObject.markUnreadMarker(true, () -> {
++            ChatMessageCell current = cell.get();
++            MessageObject observed = message.get();
++            if (current != null && observed != null && current.currentMessageObject == observed) {
++                current.refreshUnreadReactions();
++            }
++        });
+--- a/TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java
+@@ -8901,0 +8902 @@
++            privateReadingMarkerRevision++;
+@@ -8902,0 +8904 @@
++            privateReadingMarkerRevision++;
+@@ -8908,0 +8911 @@
++                privateReadingMarkerRevision++;
+@@ -8909,0 +8913 @@
++                privateReadingMarkerRevision++;
+@@ -10155,0 +10160,2 @@
++            privateReadingMarkerRevision++;
++
+@@ -10156,0 +10163 @@
++            privateReadingMarkerRevision++;
+@@ -10256,0 +10264,2 @@
++            privateReadingMarkerRevision++;
++
+@@ -10257,0 +10267 @@
++            privateReadingMarkerRevision++;
+@@ -16294,12 +16304 @@
+-                    pollVotesMentionCount--;
+-                    getMessagesStorage().markMessagePollVotesAsRead(getDialogId(), getTopicId(), messageObject.getId());
+-                    if (pollVotesMentionCount <= 0) {
+-                        getMessagesController().markPollVotesAsRead(dialog_id, getTopicId());
+-                    }
+-                    if (pollVotesMentionCount >= 0) {
+-                        messageCell.markPollVotesAsRead();
+-                    } else {
+-                        messageCell.markPollVotesAsRead();
+-                        pollVotesMentionCount = 0;
+-                    }
+-                    updatePollVotesMentionButton(true);
++                    televimReadMarker(messageObject, false);
+@@ -16308,18 +16307 @@
+-                    reactionsMentionCount--;
+-                    getMessagesStorage().markMessageReactionsAsRead(getDialogId(), getTopicId(), messageObject.getId());
+-                    if (reactionsMentionCount <= 0) {
+-                        getMessagesController().markReactionsAsRead(dialog_id, getTopicId());
+-                    }
+-                    if (reactionsMentionCount >= 0) {
+-                        TLRPC.MessagePeerReaction reaction = messageCell.getMessageObject().getRandomUnreadReaction();
+-                        if (reaction != null) {
+-                            ReactionsLayoutInBubble.VisibleReaction visibleReaction =  ReactionsLayoutInBubble.VisibleReaction.fromTL(reaction.reaction);
+-                            ReactionsEffectOverlay.show(ChatActivity.this, null, messageCell, null, 0, 0, visibleReaction, currentAccount, reaction.big ? ReactionsEffectOverlay.LONG_ANIMATION : ReactionsEffectOverlay.SHORT_ANIMATION);
+-                            ReactionsEffectOverlay.startAnimation();
+-                        }
+-                        messageCell.markReactionsAsRead();
+-                    } else {
+-                        messageCell.markReactionsAsRead();
+-                        reactionsMentionCount = 0;
+-                    }
+-                    updateReactionsMentionButton(true);
++                    televimReadMarker(messageObject, true);
+@@ -16342,17 +16324 @@
+-                    reactionsMentionCount--;
+-                    getMessagesStorage().markMessageReactionsAsRead(getDialogId(), getTopicId(), messageObject.getId());
+-                    if (reactionsMentionCount <= 0) {
+-                        getMessagesController().markReactionsAsRead(dialog_id, getTopicId());
+-                    }
+-                    if (reactionsMentionCount >= 0) {
+-                        TLRPC.MessagePeerReaction reaction = cell.getMessageObject().getRandomUnreadReaction();
+-                        if (reaction != null) {
+-                            ReactionsLayoutInBubble.VisibleReaction visibleReaction =  ReactionsLayoutInBubble.VisibleReaction.fromTL(reaction.reaction);
+-                            ReactionsEffectOverlay.show(ChatActivity.this, null, cell, null, 0, 0, visibleReaction, currentAccount, reaction.big ? ReactionsEffectOverlay.LONG_ANIMATION : ReactionsEffectOverlay.SHORT_ANIMATION);
+-                            ReactionsEffectOverlay.startAnimation();
+-                        }
+-                        cell.markReactionsAsRead();
+-                    } else {
+-                        reactionsMentionCount = 0;
+-                    }
+-                    updateReactionsMentionButton(true);
++                    televimReadMarker(messageObject, true);
+@@ -24483,0 +24450 @@
++                privateReadingMarkerRevision++;
+@@ -24494,9 +24461,9 @@
+-                            pollVotesMentionCount--;
+-                            getMessagesStorage().markMessagePollVotesAsRead(getDialogId(), getTopicId(), messageId);
+-                            //AndroidUtilities.runOnUIThread(() -> {
+-                            //    playReactionAnimation(messageId);
+-                            //}, 200);
+-                        }
+-                    }
+-                }
+-                if (pollVotesMentionCount <= 0) {
++                            MessageObject message = messagesDict[0].get(messageId);
++                            if (message != null) {
++                                televimReadMarker(message, false);
++                            }
++                        }
++                    }
++                }
++                if (pollVotesMentionCount <= 0 && !televimBlocksHistory(getTopicId())) {
++                    privateReadingMarkerRevision++;
+@@ -24504 +24471 @@
+-                    getMessagesController().markPollVotesAsRead(dialogId, getTopicId());
++                    getMessagesController().markUnreadMarkerScope(privateReadingOwner, dialogId, getTopicId(), false, null, null);
+@@ -24511,0 +24479 @@
++                privateReadingMarkerRevision++;
+@@ -24522,9 +24490,9 @@
+-                            reactionsMentionCount--;
+-                            getMessagesStorage().markMessageReactionsAsRead(getDialogId(), getTopicId(), messageId);
+-                            AndroidUtilities.runOnUIThread(() -> {
+-                                playReactionAnimation(messageId);
+-                            }, 200);
+-                        }
+-                    }
+-                }
+-                if (reactionsMentionCount <= 0) {
++                            MessageObject message = messagesDict[0].get(messageId);
++                            if (message != null) {
++                                televimReadMarker(message, true);
++                            }
++                        }
++                    }
++                }
++                if (reactionsMentionCount <= 0 && !televimBlocksHistory(getTopicId())) {
++                    privateReadingMarkerRevision++;
+@@ -24532 +24500 @@
+-                    getMessagesController().markReactionsAsRead(dialogId, getTopicId());
++                    getMessagesController().markUnreadMarkerScope(privateReadingOwner, dialogId, getTopicId(), true, null, null);
+@@ -47175 +47143,2 @@
+-        } else if (buttonId == ChatActivitySideControlsButtonsLayout.BUTTON_REACTIONS) {
++        } else if (buttonId == ChatActivitySideControlsButtonsLayout.BUTTON_REACTIONS
++                || buttonId == ChatActivitySideControlsButtonsLayout.BUTTON_POLL_VOTES) {
+@@ -47177,24 +47146,11 @@
+-            getMessagesController().getNextReactionMention(dialog_id, getTopicId(), reactionsMentionCount, (messageId) -> {
+-                if (messageId == 0) {
+-                    reactionsMentionCount = 0;
+-                    updateReactionsMentionButton(true);
+-                    getMessagesController().markReactionsAsRead(dialog_id, getTopicId());
+-                } else {
+-                    updateReactionsMentionButton(true);
+-                    scrollToMessageId(messageId, 0, false, 0, true, 0);
+-                }
+-            });
+-        } else if (buttonId == ChatActivitySideControlsButtonsLayout.BUTTON_POLL_VOTES) {
+-            wasManualScroll = true;
+-            getMessagesController().getNextPollVotesMention(dialog_id, getTopicId(), pollVotesMentionCount, (messageId) -> {
+-                if (messageId == 0) {
+-                    pollVotesMentionCount = 0;
+-                    updatePollVotesMentionButton(true);
+-                    getMessagesController().markPollVotesAsRead(dialog_id, getTopicId());
+-                } else {
+-                    pollVotesMentionCount--;
+-                    if (pollVotesMentionCount <= 0) {
+-                        getMessagesController().markPollVotesAsRead(dialog_id, getTopicId());
+-                    }
+-                    updatePollVotesMentionButton(true);
+-                    scrollToMessageId(messageId, 0, false, 0, true, 0);
++            final org.telegram.messenger.televim.PrivateReadingController.AccountHandle owner = privateReadingOwner;
++            final long originalDialog = dialog_id;
++            final long originalTopic = getTopicId();
++            final long revision = privateReadingMarkerRevision;
++            final boolean reactions = buttonId == ChatActivitySideControlsButtonsLayout.BUTTON_REACTIONS;
++            final java.lang.ref.WeakReference<ChatActivity> fragment = new java.lang.ref.WeakReference<>(this);
++            getMessagesController().getNextUnreadMarker(owner, originalDialog, originalTopic,
++                    reactions ? reactionsMentionCount : pollVotesMentionCount, reactions, messageId -> {
++                ChatActivity current = fragment.get();
++                if (current != null) {
++                    current.televimMarkerNavigated(owner, originalDialog, originalTopic, revision, reactions, messageId);
+@@ -47211,0 +47168,16 @@
++        }
++    }
++
++    private void televimMarkerNavigated(
++            org.telegram.messenger.televim.PrivateReadingController.AccountHandle owner,
++            long originalDialog, long originalTopic, long revision, boolean reactions, int messageId) {
++        if (!televimMarkerContext(owner, originalDialog, originalTopic)) {
++            return;
++        }
++        if (messageId > 0) {
++            scrollToMessageId(messageId, 0, false, 0, true, 0);
++        } else if (messageId == 0 && revision == privateReadingMarkerRevision
++                && !televimBlocksHistory(originalTopic)) {
++            televimReadMarkerScope(owner, originalDialog, originalTopic, reactions);
++        } else {
++            televimMarkerPending();
+@@ -47283,0 +47256,156 @@
++    private long privateReadingMarkerRevision;
++
++    private void televimMarkerPending() {
++        if (getParentActivity() != null) {
++            android.widget.Toast.makeText(getParentActivity(),
++                    LocaleController.getString(R.string.TelevimReadScopePending), android.widget.Toast.LENGTH_SHORT).show();
++        }
++    }
++
++    private boolean televimMarkerContext(
++            org.telegram.messenger.televim.PrivateReadingController.AccountHandle owner,
++            long selectedDialog, long selectedTopic) {
++        return owner != null && owner == privateReadingOwner && owner.isCurrent()
++                && owner.storage().getDatabase() == owner.database()
++                && selectedDialog == dialog_id && selectedTopic == getTopicId();
++    }
++
++    private void televimReadMarkerScope(
++            org.telegram.messenger.televim.PrivateReadingController.AccountHandle owner,
++            long selectedDialog, long selectedTopic, boolean reactions) {
++        if (!televimMarkerContext(owner, selectedDialog, selectedTopic)
++                || televimBlocksHistory(selectedTopic) || messages.size() > 1024
++                || !reactions && ChatObject.isMonoForum(currentChat)) {
++            televimMarkerPending();
++            return;
++        }
++        final long revision = privateReadingMarkerRevision;
++        final long markerRevision = MessageObject.unreadMarkerRevision();
++        final java.lang.ref.WeakReference<ChatActivity> fragment = new java.lang.ref.WeakReference<>(this);
++        Runnable pending = () -> {
++            ChatActivity current = fragment.get();
++            if (current != null && current.televimMarkerContext(owner, selectedDialog, selectedTopic)) {
++                current.televimMarkerPending();
++            }
++        };
++        boolean accepted = getMessagesController().markUnreadMarkerScope(owner, selectedDialog, selectedTopic,
++                reactions, () -> {
++                    ChatActivity current = fragment.get();
++                    if (current != null) {
++                        current.televimMarkerScopeCommitted(owner, selectedDialog, selectedTopic, reactions,
++                                revision, markerRevision);
++                    }
++                }, pending);
++        if (!accepted) {
++            pending.run();
++        }
++    }
++
++    private void televimMarkerScopeCommitted(
++            org.telegram.messenger.televim.PrivateReadingController.AccountHandle owner,
++            long selectedDialog, long selectedTopic, boolean reactions, long revision, long markerRevision) {
++        if (!televimMarkerContext(owner, selectedDialog, selectedTopic)) {
++            return;
++        }
++        if (revision != privateReadingMarkerRevision || markerRevision != MessageObject.unreadMarkerRevision()
++                || messages.size() > 1024) {
++            televimMarkerPending();
++            return;
++        }
++        for (MessageObject message : messages) {
++            if (message.getDialogId() != selectedDialog || message.scheduled) {
++                continue;
++            }
++            org.telegram.messenger.televim.PrivateReadingPolicy.Conversation key = owner.conversation(message);
++            if (key == null) {
++                televimMarkerPending();
++                return;
++            }
++            if (selectedTopic != 0 && selectedTopic != (key.subpeerId != 0 ? key.subpeerId : key.rootId)) {
++                continue;
++            }
++            if (!message.applyCommittedUnreadMarker(owner, reactions)) {
++                televimMarkerPending();
++                return;
++            }
++        }
++        privateReadingMarkerRevision++;
++        if (reactions) {
++            reactionsMentionCount = 0;
++            updateReactionsMentionButton(true);
++        } else {
++            pollVotesMentionCount = 0;
++            updatePollVotesMentionButton(true);
++        }
++        if (chatListView != null) {
++            for (int i = 0; i < chatListView.getChildCount(); i++) {
++                View cell = chatListView.getChildAt(i);
++                if (cell instanceof ChatMessageCell) {
++                    ((ChatMessageCell) cell).refreshUnreadReactions();
++                } else if (cell instanceof ChatActionCell) {
++                    ((ChatActionCell) cell).refreshUnreadReactions();
++                }
++            }
++        }
++    }
++
++    private void televimReadMarker(MessageObject message, boolean reactions) {
++        final org.telegram.messenger.televim.PrivateReadingController.AccountHandle owner = privateReadingOwner;
++        if (owner == null || !owner.isCurrent() || message == null || message.getDialogId() != dialog_id
++                || reactions && !MessageObject.hasUnreadReactions(message.messageOwner)
++                || (reactions ? owner.blocksContent(message) : televimBlocksHistory(getTopicId()))) {
++            return;
++        }
++        final java.lang.ref.WeakReference<MessagesController> markerController = new java.lang.ref.WeakReference<>(getMessagesController());
++        final long originalDialog = dialog_id;
++        final long originalTopic = getTopicId();
++        final long revision = privateReadingMarkerRevision;
++        final java.lang.ref.WeakReference<ChatActivity> fragment = new java.lang.ref.WeakReference<>(this);
++        final java.lang.ref.WeakReference<MessageObject> observed = new java.lang.ref.WeakReference<>(message);
++        message.markUnreadMarker(reactions, () -> {
++            ChatActivity current = fragment.get();
++            MessageObject item = observed.get();
++            return current != null && item != null && current.televimMarkerContext(owner, originalDialog, originalTopic)
++                    && current.privateReadingMarkerRevision == revision && current.messagesDict[0].get(item.getId()) == item;
++        }, () -> {
++            ChatActivity current = fragment.get();
++            MessageObject item = observed.get();
++            MessagesController controller = markerController.get();
++            if (current != null && item != null && controller != null
++                    && current.televimMarkerContext(owner, originalDialog, originalTopic)) {
++                current.televimMarkerCommitted(item, reactions, owner, controller, originalDialog, originalTopic);
++            }
++        });
++    }
++
++    private void televimMarkerCommitted(MessageObject message, boolean reactions,
++            org.telegram.messenger.televim.PrivateReadingController.AccountHandle owner,
++            MessagesController markerController, long originalDialog, long originalTopic) {
++        BaseCell cell = findMessageCell(message.getId(), true);
++        if (cell instanceof ChatMessageCell && ((ChatMessageCell) cell).getMessageObject() == message) {
++            ((ChatMessageCell) cell).refreshUnreadReactions();
++        } else if (cell instanceof ChatActionCell && ((ChatActionCell) cell).getMessageObject() == message) {
++            ((ChatActionCell) cell).refreshUnreadReactions();
++        }
++        if (reactions) {
++            reactionsMentionCount = Math.max(0, reactionsMentionCount - 1);
++            TLRPC.MessagePeerReaction reaction = message.getRandomUnreadReaction();
++            if (reaction != null && cell != null) {
++                ReactionsLayoutInBubble.VisibleReaction visible = ReactionsLayoutInBubble.VisibleReaction.fromTL(reaction.reaction);
++                ReactionsEffectOverlay.show(ChatActivity.this, null, cell, null, 0, 0, visible, currentAccount,
++                        reaction.big ? ReactionsEffectOverlay.LONG_ANIMATION : ReactionsEffectOverlay.SHORT_ANIMATION);
++                ReactionsEffectOverlay.startAnimation();
++            }
++            updateReactionsMentionButton(true);
++            if (reactionsMentionCount == 0 && !televimBlocksHistory(originalTopic)) {
++                markerController.markUnreadMarkerScope(owner, originalDialog, originalTopic, true, null, null);
++            }
++        } else {
++            pollVotesMentionCount = Math.max(0, pollVotesMentionCount - 1);
++            updatePollVotesMentionButton(true);
++            if (pollVotesMentionCount == 0 && !televimBlocksHistory(originalTopic)) {
++                markerController.markUnreadMarkerScope(owner, originalDialog, originalTopic, false, null, null);
++            }
++        }
++    }
++
+@@ -47347,0 +47476,3 @@
++        final org.telegram.messenger.televim.PrivateReadingController.AccountHandle owner = privateReadingOwner;
++        final long selectedDialog = dialog_id;
++        final long selectedTopic = getTopicId();
+@@ -47352,0 +47484,8 @@
++                if (owner == null || owner != privateReadingOwner || !owner.isCurrent()
++                        || selectedDialog != dialog_id || selectedTopic != getTopicId()
++                        || televimBlocksHistory(selectedTopic)
++                        || buttonId == ChatActivitySideControlsButtonsLayout.BUTTON_POLL_VOTES
++                        && selectedTopic != 0 && ChatObject.isMonoForum(currentChat)) {
++                    televimMarkerPending();
++                    return;
++                }
+@@ -47360 +47499 @@
+-                getMessagesController().markMentionsAsRead(dialog_id, getTopicId());
++                getMessagesController().markMentionsAsRead(selectedDialog, selectedTopic);
+@@ -47370,6 +47509 @@
+-                for (int i = 0; i < messages.size(); i++) {
+-                    messages.get(i).markReactionsAsRead();
+-                }
+-                reactionsMentionCount = 0;
+-                updateReactionsMentionButton(true);
+-                getMessagesController().markReactionsAsRead(dialog_id, getTopicId());
++                televimReadMarkerScope(owner, selectedDialog, selectedTopic, true);
+@@ -47383,6 +47517 @@
+-                for (int i = 0; i < messages.size(); i++) {
+-                    messages.get(i).markPollVotesAsRead();
+-                }
+-                pollVotesMentionCount = 0;
+-                updatePollVotesMentionButton(true);
+-                getMessagesController().markPollVotesAsRead(dialog_id, getTopicId());
++                televimReadMarkerScope(owner, selectedDialog, selectedTopic, false);

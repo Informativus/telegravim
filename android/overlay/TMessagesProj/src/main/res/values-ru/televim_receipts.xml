@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="TelevimReadScopePending">Не все беседы удалось отметить прочитанными. Для известных сообщений могли быть отправлены подтверждения; счётчики непрочитанных ожидают обновления.</string>
+    <string name="TelevimReadSentPending">Подтверждения прочтения отправлены для выбранных сообщений. Счётчики непрочитанных ожидают обновления.</string>
+    <string name="TelevimReadFailed">Не удалось завершить отметку прочтения. Часть подтверждений уже могла быть отправлена. Повторите действие, когда будете готовы.</string>
+    <string name="TelevimReadOpenAppAction">Открыть приложение для отметки прочтения</string>
+    <string name="TelevimReadOpenAppGuidance">Откройте приложение, чтобы отметить эту беседу прочитанной.</string>
+</resources>

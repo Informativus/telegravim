@@ -1,0 +1,19 @@
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
+@@ -14562 +14562,2 @@
+-        if (org.telegram.messenger.televim.PrivateReadingController.blocksHistory(currentAccount, task.dialogId)) {
++        if (org.telegram.messenger.televim.PrivateReadingController.blocksHistory(currentAccount, task.dialogId,
++                task.monoForumPeerId == 0 ? task.replyId : 0, task.monoForumPeerId)) {
+@@ -14681 +14682,3 @@
+-        if (org.telegram.messenger.televim.PrivateReadingController.blocksHistory(currentAccount, dialogId)) {
++        final long monoForumPeerId = getMessagesStorage().isMonoForum(dialogId) ? threadId : 0;
++        if (org.telegram.messenger.televim.PrivateReadingController.blocksHistory(currentAccount, dialogId,
++                monoForumPeerId == 0 ? threadId : 0, monoForumPeerId)) {
+@@ -14797,7 +14799,0 @@
+-        }
+-
+-        final long monoForumPeerId;
+-        if (getMessagesStorage().isMonoForum(dialogId)) {
+-            monoForumPeerId = threadId;
+-        } else {
+-            monoForumPeerId = 0;

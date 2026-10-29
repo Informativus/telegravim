@@ -1,0 +1,42 @@
+--- a/TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java
+@@ -9532,0 +9533,5 @@
++        markAsRead(did, org.telegram.messenger.televim.PrivateReadingRelease.capture(
++                this, getMessagesController(), getConnectionsManager()));
++    }
++
++    private void markAsRead(long did, org.telegram.messenger.televim.PrivateReadingRelease.Batch privateReading) {
+@@ -9538 +9543 @@
+-                    markAsRead(d.id);
++                    markAsRead(d.id, privateReading);
+@@ -9544,0 +9550,3 @@
++        if (privateReading.markDialog(dialog)) {
++            return;
++        }
+@@ -9587,0 +9596,3 @@
++        final org.telegram.messenger.televim.PrivateReadingRelease.Batch privateReading =
++                org.telegram.messenger.televim.PrivateReadingRelease.capture(
++                        this, getMessagesController(), getConnectionsManager());
+@@ -9591,2 +9602 @@
+-        setDialogsListFrozen(true);
+-        checkAnimationFinished();
++        boolean nativeListFrozen = false;
+@@ -9595,0 +9606,8 @@
++            if (privateReading.markDialog(dialog)) {
++                continue;
++            }
++            if (!nativeListFrozen) {
++                setDialogsListFrozen(true);
++                checkAnimationFinished();
++                nativeListFrozen = true;
++            }
+--- a/TMessagesProj/src/main/java/org/telegram/ui/TopicsFragment.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/TopicsFragment.java
+@@ -801,0 +802,3 @@
++                        final org.telegram.messenger.televim.PrivateReadingRelease.Batch privateReading =
++                                org.telegram.messenger.televim.PrivateReadingRelease.capture(
++                                        TopicsFragment.this, getMessagesController(), getConnectionsManager());
+@@ -804,0 +808,3 @@
++                            if (privateReading.markTopic(-chatId, topic)) {
++                                continue;
++                            }

@@ -1,8 +1,8 @@
 --- a/TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java
 +++ b/TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java
 @@ -727,0 +728 @@
-+        items.add(SettingCell.Factory.of(27, IconBackgroundColors.BLUE.top, IconBackgroundColors.BLUE.bottom, R.drawable.settings_data, getString(R.string.TelevimImportTitle)));
++        items.add(SettingCell.Factory.of(27, IconBackgroundColors.BLUE.top, IconBackgroundColors.BLUE.bottom, R.drawable.settings_data, getString(R.string.TelevimSettingsTitle)));
 @@ -839,0 +841,3 @@
 +            case 27:
-+                getParentActivity().startActivity(new android.content.Intent(getParentActivity(), OfflineSettingsActivity.class));
++                presentSettingFragment(new TelevimSettingsActivity());
 +                break;

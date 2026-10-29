@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="TelevimSettingsTitle">Настройки Televim</string>
+    <string name="TelevimSettingsAbout">Настройки Televim обрабатываются локально на этом устройстве. Чаты, медиафайлы и данные аккаунта Telegram сюда не экспортируются и отсюда не импортируются.</string>
     <string name="TelevimImportTitle">Импорт настроек с компьютера</string>
     <string name="TelevimImportAbout">Вставьте ссылку с компьютера и введите пароль, который задали при экспорте. Настройки обрабатываются на этом устройстве.</string>
     <string name="TelevimImportIntroTitle">Настройки с компьютера</string>
@@ -50,4 +52,20 @@
     <string name="TelevimImportInterrupted">Предпросмотр отменён после выхода с экрана или блокировки приложения. Введите пароль экспорта и снова проверьте изменения перед применением.</string>
     <string name="TelevimImportFinishing">Предыдущая локальная операция ещё завершается. Немного подождите и повторите предпросмотр.</string>
     <string name="televim_update_failed">Не удалось проверить или загрузить обновление. Повторите попытку позже.</string>
+    <string name="TelevimPrivateReading">Приватное чтение</string>
+    <string name="TelevimPrivateReadingAbout">Пассивный просмотр и прослушивание не отправляют уведомления о прочтении и контентные квитанции. Явные действия и успешные обычные сообщения могут разрешить квитанцию до зафиксированного момента диалога.</string>
+    <string name="TelevimPrivateReadingMaster">Защищать квитанции о прочтении</string>
+    <string name="TelevimPrivateReadingPrivate">Личные чаты</string>
+    <string name="TelevimPrivateReadingBots">Боты</string>
+    <string name="TelevimPrivateReadingGroups">Группы</string>
+    <string name="TelevimPrivateReadingChannels">Каналы</string>
+    <string name="TelevimPrivateReadingHelp">Секретные чаты сохраняют свой штатный протокол. Квитанции, уже переданные на отправку, могут прийти после изменения настройки.</string>
+    <string name="TelevimPrivateReadingLoading">Загрузка настроек приватности…</string>
+    <string name="TelevimPrivateReadingLoadFailed">Не удалось загрузить настройки приватности. Изменение недоступно. Перезапустите Televim, чтобы повторить загрузку.</string>
+    <string name="TelevimPrivateReadingSaving">Сохранение настроек приватности…</string>
+    <string name="TelevimPrivateReadingSaved">Настройки приватности сохранены на этом устройстве.</string>
+    <string name="TelevimPrivateReadingEnableFailed">Не удалось сохранить. Сейчас защита действует, но может отключиться после остановки или перезапуска Televim. Повторите сохранение, прежде чем полагаться на неё в дальнейшем.</string>
+    <string name="TelevimPrivateReadingDisableFailed">Не удалось сохранить изменение. Продолжают действовать ранее сохранённые настройки защиты.</string>
+    <string name="TelevimPrivateReadingUnavailable">Некоторые действия приватного чтения отложены из-за достижения локального ограничения.</string>
+    <string name="TelevimPrivateReadingRetry">Повторить сохранение</string>
 </resources>
