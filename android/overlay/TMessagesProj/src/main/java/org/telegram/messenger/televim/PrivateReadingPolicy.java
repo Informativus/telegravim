@@ -430,9 +430,108 @@ public final class PrivateReadingPolicy {
         return ok(token);
     }
 
+    public synchronized Result<RequestToken> reserveNativeMention(Identity identity, Conversation conversation, int mid) {
+        for (RequestToken token : this.requests.keySet()) {
+            if (token.nativeMention && token.nativeContentId == mid && token.conversation.equals(conversation)) {
+                return this.fail(Failure.INVALID);
+            }
+        }
+        Result<RequestToken> result = this.reserveNativeContent(identity, conversation, mid);
+        if (result.accepted()) {
+            result.value.nativeMention = true;
+        }
+        return result;
+    }
+
+    public synchronized boolean claimNativeMentionRefresh(Identity identity, RequestToken token) {
+        if (!this.owns(identity) || token == null || !this.requests.containsKey(token)
+                || !token.localProjectionPending) {
+            return false;
+        }
+        for (RequestToken other : this.requests.keySet()) {
+            if (other != token && other.refreshClaimed && other.conversation.equals(token.conversation)) {
+                other.refreshDirty = true;
+                return false;
+            }
+        }
+        token.refreshClaimed = true;
+        return true;
+    }
+
+    public synchronized boolean takeNativeMentionRefreshDirty(Identity identity, RequestToken token) {
+        if (!this.owns(identity) || token == null || !this.requests.containsKey(token) || !token.refreshDirty) {
+            return false;
+        }
+        token.refreshDirty = false;
+        return true;
+    }
+
+    public synchronized boolean reserveNativeContentCommit(Identity identity, RequestToken token) {
+        if (!this.owns(identity) || token == null || !this.requests.containsKey(token)
+                || token.scope != null || !token.nativeMention || token.nativeContentId <= 0 || token.localStarted
+                || token.transportBytes != 0 || token.handedOff || token.invalid
+                || !this.valid(token.stamp, token.conversation)
+                || this.currentDecision(token.conversation) != ReceiptDecision.NATIVE) {
+            return false;
+        }
+        token.localStarted = true;
+        token.localCommitting = true;
+        token.localProjectionPending = true;
+        ++this.committing;
+        return true;
+    }
+
+    public synchronized boolean completeNativeContentCommit(Identity identity, RequestToken token,
+                                                             boolean committed) {
+        if (identity != this.identity || token == null || !this.requests.containsKey(token)
+                || !token.localCommitting) {
+            return false;
+        }
+        token.localCommitting = false;
+        token.localCommitted = committed;
+        if (!committed) {
+            token.localProjectionPending = false;
+        }
+        --this.committing;
+        this.publishIfSettled();
+        return committed && this.active;
+    }
+
+    public synchronized boolean finishNativeContentProjection(Identity identity, RequestToken token) {
+        if (identity != this.identity || token == null || !this.requests.containsKey(token)
+                || token.localCommitting || !token.localProjectionPending) {
+            return false;
+        }
+        token.localProjectionPending = false;
+        if (token.transportFinished) {
+            this.finishRequest(identity, token);
+        }
+        return true;
+    }
+
+    public synchronized boolean reserveNativeContentReconciliation(Identity identity, RequestToken token) {
+        if (!this.owns(identity) || token == null || !this.requests.containsKey(token)
+                || !token.localCommitted || !token.localProjectionPending || token.localCommitting) {
+            return false;
+        }
+        token.localCommitting = true;
+        ++this.committing;
+        return true;
+    }
+
+    public synchronized void completeNativeContentReconciliation(Identity identity, RequestToken token) {
+        if (identity == this.identity && token != null && this.requests.containsKey(token)
+                && token.localCommitting) {
+            token.localCommitting = false;
+            --this.committing;
+            this.publishIfSettled();
+        }
+    }
+
     public synchronized boolean claimTransport(Identity identity, RequestToken requestToken, int payloadBytes) {
         if (!this.owns(identity) || !this.requests.containsKey(requestToken)
-                || requestToken.transportBytes != 0 || requestToken.invalid
+                || requestToken.transportBytes != 0 || requestToken.invalid || requestToken.transportFinished
+                || requestToken.localCommitting || requestToken.localStarted && !requestToken.localCommitted
                 || !this.valid(requestToken.stamp, requestToken.conversation)
                 || payloadBytes <= 0 || payloadBytes > MAX_RETAINED_BYTES) {
             return false;
@@ -452,7 +551,10 @@ public final class PrivateReadingPolicy {
     }
 
     public synchronized boolean handOff(Identity identity, RequestToken requestToken) {
-        if (!this.owns(identity) || !this.requests.containsKey(requestToken) || requestToken.handedOff || requestToken.invalid || !this.valid(requestToken.stamp, requestToken.conversation)) {
+        if (!this.owns(identity) || !this.requests.containsKey(requestToken) || requestToken.handedOff
+                || requestToken.invalid || requestToken.transportFinished || requestToken.localCommitting
+                || requestToken.localStarted && !requestToken.localCommitted
+                || !this.valid(requestToken.stamp, requestToken.conversation)) {
             return false;
         }
         if (requestToken.scope == null && this.currentDecision(requestToken.conversation) != ReceiptDecision.NATIVE) {
@@ -487,9 +589,20 @@ public final class PrivateReadingPolicy {
     }
 
     public synchronized boolean finishRequest(Identity identity, RequestToken requestToken) {
-        if (identity != this.identity || this.requests.remove(requestToken) == null) {
+        if (identity != this.identity || requestToken == null || requestToken.localCommitting
+                || !this.requests.containsKey(requestToken)) {
             return false;
         }
+        if (requestToken.localProjectionPending) {
+            if (requestToken.transportFinished) {
+                return false;
+            }
+            requestToken.transportFinished = true;
+            this.transportPayloadBytes -= requestToken.transportBytes;
+            requestToken.transportBytes = 0;
+            return true;
+        }
+        this.requests.remove(requestToken);
         this.requestContentCount -= requestToken.count;
         this.transportPayloadBytes -= requestToken.transportBytes;
         Release release = this.find(requestToken.scope);
@@ -1190,6 +1303,14 @@ public final class PrivateReadingPolicy {
         private int transportBytes;
         private boolean handedOff;
         private boolean invalid;
+        private boolean localStarted;
+        private boolean localCommitting;
+        private boolean localCommitted;
+        private boolean localProjectionPending;
+        private boolean transportFinished;
+        private boolean nativeMention;
+        private boolean refreshClaimed;
+        private boolean refreshDirty;
 
         private RequestToken(PrivateReadingPolicy privateReadingPolicy, ReleaseScope releaseScope, Conversation conversation, int n, int n2, int n3) {
             this(privateReadingPolicy, releaseScope, conversation, n, n2, n3, 0);

@@ -1,0 +1,349 @@
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
+@@ -2289,0 +2290 @@
++                            privateReadingMentionChanged();
+@@ -2316,0 +2318 @@
++                                    privateReadingMentionChanged();
+@@ -2354,0 +2357 @@
++                                privateReadingMentionChanged();
+@@ -6536,0 +6540 @@
++        privateReadingMentionChanged();
+@@ -9905,0 +9910 @@
++            privateReadingMentionChanged();
+@@ -9914,0 +9920 @@
++            privateReadingMentionChanged();
+@@ -9948,0 +9955 @@
++        privateReadingMentionChanged();
+@@ -11076,0 +11084 @@
++                                        privateReadingMentionChanged();
+@@ -12312,0 +12321,2 @@
++        privateReadingMentionChanged();
++
+@@ -12323,0 +12334 @@
++        privateReadingMentionChanged();
+@@ -13029,0 +13041 @@
++                        privateReadingMentionChanged();
+@@ -13054,0 +13067 @@
++                    privateReadingMentionChanged();
+@@ -13623,0 +13637 @@
++                        privateReadingMentionChanged();
+@@ -13656,0 +13671 @@
++                                privateReadingMentionChanged();
+@@ -13696,0 +13712 @@
++                            privateReadingMentionChanged();
+@@ -13867,0 +13884 @@
++                                privateReadingMentionChanged();
+@@ -13918,0 +13936 @@
++                        privateReadingMentionChanged();
+@@ -14005,0 +14024 @@
++                    privateReadingMentionChanged();
+@@ -14168,0 +14188 @@
++                        privateReadingMentionChanged();
+@@ -14201,0 +14222 @@
++                            privateReadingMentionChanged();
+@@ -14228,0 +14250 @@
++                                privateReadingMentionChanged();
+@@ -14270,0 +14293 @@
++                                privateReadingMentionChanged();
+@@ -14481,2 +14504,13 @@
+-    public boolean markMentionMessageAsRead(MessageObject message,
+-            PrivateReadingController.AccountHandle owner) {
++    private final java.util.concurrent.atomic.AtomicLong privateReadingMentionRevision = new java.util.concurrent.atomic.AtomicLong();
++
++    public long privateReadingMentionRevision() {
++        return privateReadingMentionRevision.get();
++    }
++
++    public void privateReadingMentionChanged() {
++        privateReadingMentionRevision.incrementAndGet();
++    }
++
++    public void markMentionMessageAsRead(MessageObject message,
++            PrivateReadingController.AccountHandle owner,
++            org.telegram.messenger.televim.PrivateReadingMentionOperation.Projection projection) {
+@@ -14484 +14518 @@
+-            return false;
++            return;
+@@ -14491 +14525,2 @@
+-            return true;
++            projection.secret();
++            return;
+@@ -14499 +14534 @@
+-                return false;
++                return;
+@@ -14508,24 +14543,9 @@
+-        PrivateReadingPolicy.Result<PrivateReadingPolicy.RequestToken> reservation =
+-                owner.policy().reserveNativeContent(owner.identity(), conversation, mid);
+-        if (!reservation.accepted()) {
+-            return false;
+-        }
+-        boolean submitted = false;
+-        try {
+-            if (!owner.isCurrent()) {
+-                return false;
+-            }
+-            owner.storage().markMentionMessageAsRead(-channelId, mid, did);
+-            getConnectionsManager().sendPrivateReadingRequest(request, owner, reservation.value, (response, error) -> {
+-                if (error == null && response instanceof TLRPC.TL_messages_affectedMessages && owner.isCurrent()) {
+-                    TLRPC.TL_messages_affectedMessages affected = (TLRPC.TL_messages_affectedMessages) response;
+-                    processNewDifferenceParams(-1, affected.pts, -1, affected.pts_count);
+-                }
+-            });
+-            submitted = true;
+-            return true;
+-        } finally {
+-            if (!submitted) {
+-                owner.policy().finishUnclaimedRequest(owner.identity(), reservation.value);
+-            }
+-        }
++        org.telegram.messenger.televim.PrivateReadingMentionOperation.start(
++                owner, conversation, mid, this, getTopicsController(), getConnectionsManager(),
++                getNotificationsController(), getNotificationCenter(), getInputPeer(did), request, projection,
++                (response, error) -> {
++                    if (error == null && response instanceof TLRPC.TL_messages_affectedMessages && owner.isCurrent()) {
++                        TLRPC.TL_messages_affectedMessages affected = (TLRPC.TL_messages_affectedMessages) response;
++                        processNewDifferenceParams(-1, affected.pts, -1, affected.pts_count);
++                    }
++                });
+@@ -17670,0 +17691 @@
++                                privateReadingMentionChanged();
+@@ -22178,0 +22200 @@
++                privateReadingMentionChanged();
+@@ -22245,0 +22268 @@
++            privateReadingMentionChanged();
+@@ -22532,0 +22556 @@
++            privateReadingMentionChanged();
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/MessagesStorage.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/MessagesStorage.java
+@@ -6067 +6067,31 @@
+-    private void updateFiltersReadCounter(LongSparseIntArray dialogsToUpdate, LongSparseIntArray dialogsToUpdateMentions, boolean read) throws Exception {
++    public void applyPrivateReadingMentionFilters(
++            org.telegram.messenger.televim.PrivateReadingController.AccountHandle owner,
++            org.telegram.messenger.televim.PrivateReadingPolicy.RequestToken token,
++            MessagesController messages, NotificationsController notifications, int before, int after) {
++        if (before < 0 || after < 0 || (before == 0) == (after == 0)
++                || !owner.isCurrent() || owner.storage() != this || owner.database() != database
++                || storageQueue.getHandler().getLooper() != android.os.Looper.myLooper()
++                || !owner.policy().reserveNativeContentReconciliation(owner.identity(), token)) {
++            return;
++        }
++        try {
++            LongSparseIntArray counts = new LongSparseIntArray(1);
++            counts.put(token.conversation.dialogId, after);
++            updateFiltersReadCounter(null, counts, after == 0, owner, messages, notifications);
++        } catch (Exception error) {
++            checkSQLException(error);
++        } finally {
++            owner.policy().completeNativeContentReconciliation(owner.identity(), token);
++        }
++    }
++
++    private void updateFiltersReadCounter(LongSparseIntArray dialogsToUpdate,
++            LongSparseIntArray dialogsToUpdateMentions, boolean read) throws Exception {
++        updateFiltersReadCounter(dialogsToUpdate, dialogsToUpdateMentions, read, null,
++                getMessagesController(), getNotificationsController());
++    }
++
++    private void updateFiltersReadCounter(LongSparseIntArray dialogsToUpdate,
++            LongSparseIntArray dialogsToUpdateMentions, boolean read,
++            org.telegram.messenger.televim.PrivateReadingController.AccountHandle owner,
++            MessagesController messages, NotificationsController notifications) throws Exception {
+@@ -6161 +6191 @@
+-                boolean muted = getMessagesController().isDialogMuted(user.id, 0);
++                boolean muted = messages.isDialogMuted(user.id, 0);
+@@ -6200 +6230 @@
+-                    boolean muted = getMessagesController().isDialogMuted(did, 0);
++                    boolean muted = messages.isDialogMuted(did, 0);
+@@ -6231 +6261 @@
+-                boolean muted = getMessagesController().isDialogMuted(-chat.id, 0, chat);
++                boolean muted = messages.isDialogMuted(-chat.id, 0, chat);
+@@ -6298 +6328 @@
+-                    if (!getNotificationsController().showBadgeMuted) {
++                    if (!notifications.showBadgeMuted) {
+@@ -6713 +6743,4 @@
+-            ArrayList<MessagesController.DialogFilter> filters = getMessagesController().dialogFilters;
++            if (owner != null && (!owner.isCurrent() || owner.database() != database)) {
++                return;
++            }
++            ArrayList<MessagesController.DialogFilter> filters = messages.dialogFilters;
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/TopicsController.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/TopicsController.java
+@@ -244,0 +245 @@
++            getMessagesController().privateReadingMentionChanged();
+@@ -263,0 +265 @@
++            getMessagesController().privateReadingMentionChanged();
+@@ -297,0 +300 @@
++                    getMessagesController().privateReadingMentionChanged();
+@@ -358,0 +362 @@
++                getMessagesController().privateReadingMentionChanged();
+@@ -591,0 +596 @@
++                getMessagesController().privateReadingMentionChanged();
+@@ -676,0 +682 @@
++            getMessagesController().privateReadingMentionChanged();
+@@ -710,0 +717 @@
++                getMessagesController().privateReadingMentionChanged();
+@@ -911,0 +919,13 @@
++    public TLRPC.TL_forumTopic privateReadingTopic(long dialogId, long topicId, boolean monoForum) {
++        LongSparseArray<TLRPC.TL_forumTopic> topics = topicsMapByChatId.get(-dialogId);
++        if (topics == null) {
++            return null;
++        }
++        TLRPC.TL_forumTopic topic = topics.get(topicId);
++        return topic != null || !monoForum ? topic : topics.get(ForumUtilities.monoForumTopicIdToTopicId(topicId));
++    }
++
++    public void privateReadingMentionApplied(long dialogId) {
++        sortTopics(-dialogId, true);
++    }
++
+@@ -915,0 +936 @@
++                getMessagesController().privateReadingMentionChanged();
+@@ -1074,0 +1096 @@
++                                getMessagesController().privateReadingMentionChanged();
+@@ -1082,0 +1105 @@
++                            getMessagesController().privateReadingMentionChanged();
+@@ -1129,0 +1153 @@
++                    getMessagesController().privateReadingMentionChanged();
+@@ -1158,0 +1183 @@
++            getMessagesController().privateReadingMentionChanged();
+@@ -1173,0 +1199 @@
++            getMessagesController().privateReadingMentionChanged();
+--- a/TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java
+@@ -21831 +21831 @@
+-                                newMentionsCount = loaded_mentions_count, true);
++                                televimSetMentionsCount(loaded_mentions_count), true);
+@@ -23903 +23903 @@
+-                        newMentionsCount--;
++                        televimSetMentionsCount(newMentionsCount - 1);
+@@ -23905 +23905 @@
+-                            newMentionsCount = 0;
++                            televimSetMentionsCount(0);
+@@ -24383,2 +24383,7 @@
+-                if (newMentionsCount > count) {
+-                    newMentionsCount = count;
++                if (args.length > 3 && args[3] instanceof org.telegram.messenger.televim.PrivateReadingController.AccountHandle) {
++                    org.telegram.messenger.televim.PrivateReadingController.AccountHandle owner = (org.telegram.messenger.televim.PrivateReadingController.AccountHandle) args[3];
++                    if (privateReadingOwner != null && privateReadingOwner.identity() == owner.identity() && owner.isCurrent()) {
++                        televimShowMentionsCount(count);
++                    }
++                } else if (newMentionsCount > count) {
++                    televimSetMentionsCount(count);
+@@ -24386 +24391 @@
+-                        newMentionsCount = 0;
++                        televimSetMentionsCount(0);
+@@ -25410 +25415 @@
+-            newMentionsCount = differenceTooLong.dialog.unread_mentions_count;
++            televimSetMentionsCount(differenceTooLong.dialog.unread_mentions_count);
+@@ -25419 +25424 @@
+-                newMentionsCount = differenceTooLong.dialog.unread_mentions_count;
++                televimSetMentionsCount(differenceTooLong.dialog.unread_mentions_count);
+@@ -25421 +25426 @@
+-                    newMentionsCount = 0;
++                    televimSetMentionsCount(0);
+@@ -25955 +25960 @@
+-                        newMentionsCount++;
++                        televimSetMentionsCount(newMentionsCount + 1);
+@@ -26330 +26335 @@
+-                        newMentionsCount++;
++                        televimSetMentionsCount(newMentionsCount + 1);
+@@ -30045,10 +30050,2 @@
+-                    if (!message.isVoice() && !message.isRoundVideo() && televimReadMention(message)) {
+-                        newMentionsCount--;
+-                        if (newMentionsCount <= 0) {
+-                            newMentionsCount = 0;
+-                            hasAllMentionsLocal = true;
+-                            showMentionDownButton(false, true);
+-                        } else {
+-                            sideControlsButtonsLayout.setButtonCount(ChatActivitySideControlsButtonsLayout.BUTTON_MENTION, newMentionsCount, true);
+-                        }
+-                        message.setContentIsRead();
++                    if (!message.isVoice() && !message.isRoundVideo()) {
++                        televimReadMention(message);
+@@ -38526,10 +38523,2 @@
+-                        if (!message.isVoice() && !message.isRoundVideo() && televimReadMention(message)) {
+-                            newMentionsCount--;
+-                            if (newMentionsCount <= 0) {
+-                                newMentionsCount = 0;
+-                                hasAllMentionsLocal = true;
+-                                showMentionDownButton(false, true);
+-                            } else {
+-                                sideControlsButtonsLayout.setButtonCount(ChatActivitySideControlsButtonsLayout.BUTTON_MENTION, newMentionsCount, true);
+-                            }
+-                            message.setContentIsRead();
++                        if (!message.isVoice() && !message.isRoundVideo()) {
++                            televimReadMention(message);
+@@ -47260 +47249 @@
+-                        newMentionsCount = res.count;
++                        televimSetMentionsCount(res.count);
+@@ -47262 +47251 @@
+-                        newMentionsCount = 0;
++                        televimSetMentionsCount(0);
+@@ -47295,3 +47284,61 @@
+-    private boolean televimReadMention(MessageObject message) {
+-        return privateReadingOwner != null
+-                && getMessagesController().markMentionMessageAsRead(message, privateReadingOwner);
++    private int televimSetMentionsCount(int count) {
++        getMessagesController().privateReadingMentionChanged();
++        newMentionsCount = count;
++        return count;
++    }
++
++    private void televimShowMentionsCount(int count) {
++        televimSetMentionsCount(Math.max(0, count));
++        if (newMentionsCount == 0) {
++            hasAllMentionsLocal = true;
++            showMentionDownButton(false, true);
++        } else if (sideControlsButtonsLayout != null) {
++            sideControlsButtonsLayout.setButtonCount(ChatActivitySideControlsButtonsLayout.BUTTON_MENTION, newMentionsCount, true);
++        }
++    }
++
++    private void televimReadMention(MessageObject message) {
++        final org.telegram.messenger.televim.PrivateReadingController.AccountHandle owner = privateReadingOwner;
++        if (owner == null) {
++            return;
++        }
++        final long originalDialog = dialog_id;
++        final long originalThread = threadMessageId;
++        getMessagesController().markMentionMessageAsRead(message, owner,
++                new org.telegram.messenger.televim.PrivateReadingMentionOperation.Projection() {
++            private boolean current() {
++                return owner == privateReadingOwner && owner.isCurrent()
++                        && dialog_id == originalDialog && threadMessageId == originalThread;
++            }
++
++            @Override
++            public void secret() {
++                if (current()) {
++                    televimShowMentionsCount(newMentionsCount - 1);
++                    message.setContentIsRead();
++                }
++            }
++
++            @Override
++            public boolean committed(org.telegram.messenger.televim.PrivateReadingMentionStorage.Result result,
++                                     boolean baselineUnchanged) {
++                if (!current()) {
++                    return false;
++                }
++                message.setContentIsRead();
++                int before = originalThread == 0 ? result.dialogBefore : result.topicBefore;
++                int after = originalThread == 0 ? result.dialogAfter : result.topicAfter;
++                if (baselineUnchanged && before >= 0 && after >= 0 && newMentionsCount == before) {
++                    televimShowMentionsCount(after);
++                    return false;
++                }
++                return true;
++            }
++
++            @Override
++            public void refreshed(long topicId, int count) {
++                if (current() && originalThread == topicId) {
++                    televimShowMentionsCount(count);
++                }
++            }
++        });
+@@ -47312 +47359 @@
+-                newMentionsCount = 0;
++                televimSetMentionsCount(0);

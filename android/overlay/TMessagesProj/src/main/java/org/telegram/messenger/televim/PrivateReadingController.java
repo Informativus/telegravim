@@ -6,6 +6,7 @@ import org.telegram.SQLite.SQLiteDatabase;
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.DialogObject;
+import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.UserConfig;
@@ -230,6 +231,32 @@ public final class PrivateReadingController {
         public boolean blocksContent(long dialogId, long rootId, long subpeerId, int messageId) {
             PrivateReadingPolicy.Conversation conversation = conversation(dialogId, rootId, subpeerId);
             return !isCurrent() || owner.blocksContent(conversation, messageId);
+        }
+
+        public PrivateReadingPolicy.Conversation conversation(MessageObject message) {
+            if (message == null || message.messageOwner == null || message.scheduled
+                    || message.currentAccount != owner.account || !isCurrent()) {
+                return null;
+            }
+            long dialogId = message.getDialogId();
+            if (dialogId == owner.userId || DialogObject.isEncryptedDialog(dialogId)) {
+                return conversation(dialogId, 0, 0);
+            }
+            int forumFlags = owner.storage.getForumTypeFlags(dialogId);
+            boolean monoForum = (forumFlags & MessagesStorage.FORUM_TYPE_DIRECT) != 0;
+            long topicId = MessageObject.getTopicId(owner.account, message.messageOwner, forumFlags);
+            long rootId = topicId == 0 && (monoForum || message.messageOwner.isThreadMessage)
+                    ? -1 : monoForum ? 0 : topicId;
+            return conversation(dialogId, rootId, monoForum ? topicId : 0);
+        }
+
+        public boolean blocksContent(MessageObject message) {
+            if (message == null || message.messageOwner == null || message.scheduled
+                    || message.currentAccount != owner.account || !isCurrent()) {
+                return true;
+            }
+            PrivateReadingPolicy.Conversation conversation = conversation(message);
+            return !isCurrent() || owner.blocksContent(conversation, message.getId());
         }
 
         public boolean isCurrent() {

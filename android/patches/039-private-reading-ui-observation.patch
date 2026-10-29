@@ -1,0 +1,64 @@
+--- a/TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java
+@@ -857,0 +858 @@
++    private org.telegram.messenger.televim.PrivateReadingController.AccountHandle privateReadingOwner;
+@@ -2718,0 +2720 @@
++        privateReadingOwner = org.telegram.messenger.televim.PrivateReadingController.captureAccount(currentAccount);
+@@ -3405,0 +3408 @@
++        privateReadingOwner = null;
+@@ -16759 +16762,2 @@
+-        if (!firstLoading && !paused && !inPreviewMode && (chatMode == 0 || chatMode == MODE_SUGGESTIONS) && !getMessagesController().ignoreSetOnline) {
++        if (!firstLoading && !paused && !inPreviewMode && (chatMode == 0 || chatMode == MODE_SUGGESTIONS)
++                && !getMessagesController().ignoreSetOnline && !televimBlocksHistory(threadId)) {
+@@ -17295 +17299,3 @@
+-            newUnreadMessageCount = 0;
++            if (!televimBlocksHistory(threadMessageId)) {
++                newUnreadMessageCount = 0;
++            }
+@@ -21341 +21347 @@
+-                if (obj.isUnread()) {
++                if (obj.isUnread() && !televimBlocksHistory(threadMessageId)) {
+@@ -26382 +26388,3 @@
+-                        newUnreadMessageCount = 0;
++                        if (!televimBlocksHistory(threadMessageId)) {
++                            newUnreadMessageCount = 0;
++                        }
+@@ -30037 +30045 @@
+-                    if (!message.isVoice() && !message.isRoundVideo()) {
++                    if (!message.isVoice() && !message.isRoundVideo() && televimReadMention(message)) {
+@@ -30046 +30053,0 @@
+-                        getMessagesController().markMentionMessageAsRead(message.getId(), ChatObject.isChannel(currentChat) ? currentChat.id : 0, dialog_id);
+@@ -38519 +38526 @@
+-                        if (!message.isVoice() && !message.isRoundVideo()) {
++                        if (!message.isVoice() && !message.isRoundVideo() && televimReadMention(message)) {
+@@ -38528 +38534,0 @@
+-                            getMessagesController().markMentionMessageAsRead(message.getId(), ChatObject.isChannel(currentChat) ? currentChat.id : 0, dialog_id);
+@@ -47279,0 +47286,14 @@
++    private boolean televimBlocksHistory(long threadId) {
++        if (privateReadingOwner != null && dialog_id == privateReadingOwner.identity().userId) {
++            return privateReadingOwner.blocksHistory(dialog_id, 0, 0);
++        }
++        boolean monoForum = ChatObject.isMonoForum(currentChat);
++        return privateReadingOwner == null || privateReadingOwner.blocksHistory(
++                dialog_id, monoForum ? 0 : threadId, monoForum ? threadId : 0);
++    }
++
++    private boolean televimReadMention(MessageObject message) {
++        return privateReadingOwner != null
++                && getMessagesController().markMentionMessageAsRead(message, privateReadingOwner);
++    }
++
+--- a/TMessagesProj/src/main/java/org/telegram/ui/Components/PopupAudioView.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/Components/PopupAudioView.java
+@@ -57,0 +58 @@
++    private org.telegram.messenger.televim.PrivateReadingController.AccountHandle privateReadingOwner;
+@@ -73,0 +75 @@
++            privateReadingOwner = org.telegram.messenger.televim.PrivateReadingController.captureAccount(currentAccount);
+@@ -217,0 +220,3 @@
++        if (privateReadingOwner == null || !privateReadingOwner.isCurrent()) {
++            return;
++        }
+@@ -220 +225,2 @@
+-            if (!currentMessageObject.isOut() && (currentMessageObject.isContentUnread())) {
++            if (!currentMessageObject.isOut() && currentMessageObject.isContentUnread()
++                    && !privateReadingOwner.blocksContent(currentMessageObject)) {

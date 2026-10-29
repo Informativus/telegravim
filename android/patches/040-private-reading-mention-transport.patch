@@ -1,0 +1,58 @@
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
+@@ -14481 +14481,54 @@
+-    public void markMentionMessageAsRead(int mid, long channelId, long did) {
++    public boolean markMentionMessageAsRead(MessageObject message,
++            PrivateReadingController.AccountHandle owner) {
++        if (owner == null || owner.account() != currentAccount || owner.blocksContent(message)) {
++            return false;
++        }
++        long did = message.getDialogId();
++        long channelId = message.messageOwner.peer_id == null ? 0 : message.messageOwner.peer_id.channel_id;
++        int mid = message.getId();
++        if (DialogObject.isEncryptedDialog(did)) {
++            markSecretMentionAsRead(mid, channelId, did);
++            return true;
++        }
++        PrivateReadingPolicy.Conversation conversation = owner.conversation(message);
++        TLObject request;
++        if (channelId != 0) {
++            TLRPC.TL_channels_readMessageContents contents = new TLRPC.TL_channels_readMessageContents();
++            contents.channel = getInputChannel(channelId);
++            if (contents.channel == null || contents.channel instanceof TLRPC.TL_inputChannelEmpty) {
++                return false;
++            }
++            contents.id.add(mid);
++            request = contents;
++        } else {
++            TLRPC.TL_messages_readMessageContents contents = new TLRPC.TL_messages_readMessageContents();
++            contents.id.add(mid);
++            request = contents;
++        }
++        PrivateReadingPolicy.Result<PrivateReadingPolicy.RequestToken> reservation =
++                owner.policy().reserveNativeContent(owner.identity(), conversation, mid);
++        if (!reservation.accepted()) {
++            return false;
++        }
++        boolean submitted = false;
++        try {
++            if (!owner.isCurrent()) {
++                return false;
++            }
++            owner.storage().markMentionMessageAsRead(-channelId, mid, did);
++            getConnectionsManager().sendPrivateReadingRequest(request, owner, reservation.value, (response, error) -> {
++                if (error == null && response instanceof TLRPC.TL_messages_affectedMessages && owner.isCurrent()) {
++                    TLRPC.TL_messages_affectedMessages affected = (TLRPC.TL_messages_affectedMessages) response;
++                    processNewDifferenceParams(-1, affected.pts, -1, affected.pts_count);
++                }
++            });
++            submitted = true;
++            return true;
++        } finally {
++            if (!submitted) {
++                owner.policy().finishUnclaimedRequest(owner.identity(), reservation.value);
++            }
++        }
++    }
++
++    private void markSecretMentionAsRead(int mid, long channelId, long did) {

@@ -668,12 +668,38 @@ explicit release. Self and secret scopes retain their privacy exemption while
 account teardown still invalidates ownership. Queue rejection settles unsent
 requests once; submitted native requests keep custody until terminal evidence.
 Normal response/PTS processing stays on the stage queue; unavailable queues
-deliver only failure. Other early UI/storage mutations, standalone mention
-paths, TTL consent/replay, successful-send release and complete manual-action
-reconciliation remain separate outstanding work.
+deliver only failure.
+
+ChatActivity captures its account owner at fragment creation and gates automatic
+visible-history mutation, local topic-create reads, scroll/arrival resets and
+page-down hiding before changing unread state. Both automatic mention paths now
+pass the complete message and original owner to a typed controller operation;
+its bounded content token reserves an exact-ID storage transaction before UI
+projection or transport. The storage operation pins its original database and
+serializes policy transitions without holding the policy lock over database work.
+Popup audio captures its owner on message binding, rejects stale actions and
+preserves the content-unread marker under protection. Self and Secret scopes are
+recognized before ordinary topic parsing; authoritative server read events and
+read-max reconciliation retain their native behavior.
+
+Mention projections compare captured dialog/topic objects, counter baselines and
+native revision markers. Relevant native counter writes and object replacements
+advance the revision. A stale supported scope refreshes its actual unread-mention
+count with account, object, revision and database-change guards; refresh work is
+coalesced per conversation and bounded. Known native filter zero crossings use
+the captured controllers and database owner. Unknown monoforum mention totals
+remain unsupported because the pinned unread-mentions API has no subpeer field;
+they do not become zero or fall back to another conversation. Token custody lasts
+through both transport settlement and counter reconciliation.
+
+Remaining early UI/storage paths, reaction/poll and explicit mark-all flows,
+TTL consent/replay, successful-send release and complete manual-action
+reconciliation remain separate outstanding work. Other queued native storage
+paths still need their own lifetime/revision fencing; the mention transaction
+does not establish coverage for every content receipt.
 
 Android Java/resources compilation passed for the account-lifetime, guarded
 transport, queued history and checked scoped-storage foundation. Subsequent
-content-transport and manual-action integration requires
+UI observation and typed-mention integration requires
 its own exact-source compilation; no new signed APK or authenticated-device
 acceptance is implied by the source and patch-application checks above.
