@@ -31,6 +31,7 @@ public:
 		PrivateChats = 1,
 		Groups = 2,
 		Channels = 4,
+		Bots = 8,
 	};
 
 	explicit ReadReceipts(not_null<Main::Session*> session);

@@ -24,7 +24,10 @@ namespace {
 
 constexpr auto kPreference = "telegravim-read-after-send";
 constexpr auto kScopesPreference = "telegravim-read-after-send-scopes";
-constexpr auto kAllScopes = 7;
+constexpr auto kScopesVersionPreference =
+	"telegravim-read-after-send-scopes-version";
+constexpr auto kScopesVersion = 1;
+constexpr auto kAllScopes = 15;
 
 } // namespace
 
@@ -40,7 +43,9 @@ bool ReadReceipts::enabled() const {
 }
 
 ReadReceipts::Scope ReadReceipts::scopeFor(not_null<PeerData*> peer) {
-	return peer->isUser()
+	return peer->isBot()
+		? Scope::Bots
+		: peer->isUser()
 		? Scope::PrivateChats
 		: peer->isBroadcast()
 		? Scope::Channels
@@ -75,10 +80,24 @@ bool ReadReceipts::scopeEnabled(Scope scope) const {
 			kScopesPreference,
 			QByteArray::number(kAllScopes));
 		auto valid = false;
-		const auto scopes = stored.toInt(&valid);
-		_scopes = (valid && scopes >= 0 && scopes <= kAllScopes)
-			? scopes
-			: kAllScopes;
+		auto scopes = stored.toInt(&valid);
+		if (!valid || scopes < 0 || scopes > kAllScopes) {
+			scopes = kAllScopes;
+		}
+		if (_session->local().readPref<int>(
+				kScopesVersionPreference,
+				0) < kScopesVersion) {
+			if (scopes & int(Scope::PrivateChats)) {
+				scopes |= int(Scope::Bots);
+			}
+			_session->local().writePref<QByteArray>(
+				kScopesPreference,
+				QByteArray::number(scopes));
+			_session->local().writePref<int>(
+				kScopesVersionPreference,
+				kScopesVersion);
+		}
+		_scopes = scopes;
 	}
 	return (*_scopes & int(scope)) != 0;
 }

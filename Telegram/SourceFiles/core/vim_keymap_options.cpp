@@ -31,6 +31,7 @@ const char kOptionVimKeymapKeyHelp[] = "vim-keymap-key-help";
 const char kOptionVimKeymapKeyScrollDown[] = "vim-keymap-key-scroll-down";
 const char kOptionVimKeymapKeyScrollUp[] = "vim-keymap-key-scroll-up";
 const char kOptionVimKeymapKeyJumpBottom[] = "vim-keymap-key-jump-bottom";
+const char kOptionVimKeymapKeyMarkRead[] = "vim-keymap-key-mark-read";
 const char kOptionVimKeymapKeyCopyMessage[] = "vim-keymap-key-copy-message";
 const char kOptionVimKeymapKeySelectMessageText[] =
 	"vim-keymap-key-select-message-text";
@@ -187,6 +188,13 @@ base::options::option<QString> VimKeymapKeyJumpBottomOption({
 	.defaultValue = u"Ctrl+G, Ctrl+\u043F"_q,
 });
 
+base::options::option<QString> VimKeymapKeyMarkReadOption({
+	.id = kOptionVimKeymapKeyMarkRead,
+	.name = "Vim key: mark chat as read",
+	.description = kBindingDescription,
+	.defaultValue = u"Ctrl+M, Ctrl+ь"_q,
+});
+
 base::options::option<QString> VimKeymapKeyCopyMessageOption({
 	.id = kOptionVimKeymapKeyCopyMessage,
 	.name = "Vim key: copy message hints",
@@ -240,7 +248,7 @@ base::options::option<QString> VimKeymapKeyChatPreviewOption({
 	.id = kOptionVimKeymapKeyChatPreview,
 	.name = "Vim key: chat preview hints",
 	.description = kBindingDescription,
-	.defaultValue = u"Ctrl+V, Ctrl+\u043C"_q,
+	.defaultValue = u"Ctrl+V"_q,
 });
 
 base::options::option<QString> VimKeymapKeySearchOption({

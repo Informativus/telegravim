@@ -75,8 +75,10 @@ include the relevant accepted interactions in that review:
 - Private reading must preserve explicit navigation destinations: Ctrl+G and
   the down button reach the latest messages without returning to the unread
   boundary on layout updates. Preserve reply-return navigation. Keep private-chat,
-  group and channel receipt policies independent, retaining saved master state
-  and the all-categories default for existing accounts.
+  bot, group and channel receipt policies independent, retaining saved master state
+  and the all-categories default for existing accounts. `Ctrl+M` remains the
+  explicit current-chat Mark as read command and is visible in Telegravim Vim
+  keymap settings.
 - Verify shared controls in ordinary chats and applicable topics/sublists;
   keep preview, scheduled, and other unrelated views outside manual-read scope.
 
