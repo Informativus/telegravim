@@ -36,6 +36,12 @@ The portable settings schema is documented separately in
 
 ## Native presentation
 
+On Desktop, open **Settings → Telegravim Settings → Export settings to Android**.
+Choose the supported preferences, then create an encrypted QR code/link or save
+a local settings file. This entry stays within settings export, including after
+cancellation or an export error. Telegram data export and the local-data archive
+remain separate actions in Advanced settings.
+
 The import entry screen follows Telegram's native link-device introduction:
 the bundled `qr_login` animation, a centered heading, three short steps and the
 same rounded blue scan button. Link/password entry and the preview appear on

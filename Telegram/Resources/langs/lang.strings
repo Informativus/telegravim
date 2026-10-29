@@ -8853,7 +8853,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_local_transfer_scope_store" = "Local data settings";
 "lng_local_transfer_scope_resource" = "Local resource metadata";
 
-"lng_local_transfer_settings_title" = "Transfer settings to Android";
+"lng_local_transfer_settings_title" = "Export settings to Android";
 "lng_local_transfer_settings_back" = "Back";
 "lng_local_transfer_settings_about" = "Choose the settings to include. This version transfers Send by Enter and Large Emoji. They apply to all accounts on Android. Other Desktop features are not activated by this transfer. Create an export password below; Android will ask for it after scanning the QR or opening the link. Settings are processed on your devices without network requests.";
 "lng_local_transfer_settings_enter" = "Include Send by Enter (currently {state})";

@@ -73,6 +73,7 @@ struct State {
 	int archiveOffset = 0;
 	int conflictIndex = 0;
 	bool busy = false;
+	bool settingsOnly = false;
 };
 
 using SharedState = std::shared_ptr<State>;
@@ -544,16 +545,23 @@ void PortableSettings(const SharedState &state) {
 			QJsonDocument(PortableModule(values)).toJson(QJsonDocument::Compact),
 			true);
 	});
-	state->box->addButton(tr::lng_local_transfer_settings_back(), [=] {
-		if (!state->busy) {
-			Initial(state);
-		}
-	});
+	if (!state->settingsOnly) {
+		state->box->addButton(tr::lng_local_transfer_settings_back(), [=] {
+			if (!state->busy) {
+				Initial(state);
+			}
+		});
+	}
 	CloseButton(state);
 	password->setFocus();
 }
 
 void Initial(const SharedState &state, QString message) {
+	if (state->settingsOnly) {
+		PortableSettings(state);
+		state->progress->setText(message);
+		return;
+	}
 	state->busy = false;
 	state->inspection = {};
 	state->incomingDeletions.clear();
@@ -947,15 +955,17 @@ void Preview(const SharedState &state) {
 	});
 }
 
-} // namespace
-
-void LocalTransferBox(
+void PrepareTransferBox(
 		not_null<Ui::GenericBox*> box,
-		not_null<Main::Session*> session) {
-	box->setTitle(tr::lng_local_transfer_title());
+		not_null<Main::Session*> session,
+		bool settingsOnly) {
+	box->setTitle(settingsOnly
+		? tr::lng_local_transfer_settings_title()
+		: tr::lng_local_transfer_title());
 	box->setWidth(st::localTransferWidth);
 	box->setMaxHeight(st::localTransferMaxHeight);
 	const auto state = std::make_shared<State>();
+	state->settingsOnly = settingsOnly;
 	state->box = box;
 	state->store = session->domainLocal().localData();
 	state->account = {
@@ -972,4 +982,18 @@ void LocalTransferBox(
 	}
 	box->lifetime().add([state] { state->cancel.store(true); });
 	Initial(state);
+}
+
+} // namespace
+
+void LocalTransferBox(
+		not_null<Ui::GenericBox*> box,
+		not_null<Main::Session*> session) {
+	PrepareTransferBox(box, session, false);
+}
+
+void LocalSettingsExportBox(
+		not_null<Ui::GenericBox*> box,
+		not_null<Main::Session*> session) {
+	PrepareTransferBox(box, session, true);
 }

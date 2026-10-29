@@ -1501,6 +1501,14 @@ void ChatWidget::setupVimKeymap() {
 	});
 	Core::VimKeymap::RegisterPreLayerKeyHandler(this, [=](
 			not_null<QKeyEvent*> e) {
+		if (e->type() == QEvent::ShortcutOverride
+			&& Core::VimKeymap::MarkReadKey(e)
+			&& isVisible()
+			&& window()->isActiveWindow()
+			&& !controller()->isLayerShown()
+			&& !_composeSearch) {
+			return true;
+		}
 		if (!isVisible() || !window()->isActiveWindow()
 			|| !_composeSearch
 			|| !Core::VimKeymap::SelectMessageTextKey(e)) {
