@@ -1506,6 +1506,9 @@ void ChatWidget::setupVimKeymap() {
 			&& isVisible()
 			&& window()->isActiveWindow()
 			&& !controller()->isLayerShown()
+			&& !controller()->window().locked()
+			&& !QApplication::activeModalWidget()
+			&& !QApplication::activePopupWidget()
 			&& !_composeSearch) {
 			return true;
 		}

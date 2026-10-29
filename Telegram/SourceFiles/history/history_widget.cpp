@@ -553,6 +553,9 @@ HistoryWidget::HistoryWidget(
 			&& isVisible()
 			&& window()->isActiveWindow()
 			&& !this->controller()->isLayerShown()
+			&& !this->controller()->window().locked()
+			&& !QApplication::activeModalWidget()
+			&& !QApplication::activePopupWidget()
 			&& !_composeSearch) {
 			return true;
 		}
@@ -704,7 +707,13 @@ HistoryWidget::HistoryWidget(
 				Core::VimKeymap::TraceKey(e, u"call"_q);
 			}
 			return result;
-		} else if (_history && Core::VimKeymap::MarkReadKey(e)) {
+		} else if (_history && Core::VimKeymap::MarkReadKey(e)
+			&& isVisible()
+			&& !controller->isLayerShown()
+			&& !controller->window().locked()
+			&& !QApplication::activeModalWidget()
+			&& !QApplication::activePopupWidget()
+			&& !_composeSearch) {
 			session().api().readReceipts().markRead(_history);
 			Core::VimKeymap::TraceKey(e, u"mark chat as read"_q);
 			return true;
