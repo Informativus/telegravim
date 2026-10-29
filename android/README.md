@@ -87,6 +87,55 @@ release keys, official-app passkeys, Google Play billing, or Telegram's APK upda
 channel. Ordinary Telegram connectivity is separate from the local settings
 import, whose contract is documented in `../docs/android/offline-import.md`.
 
+### Android fork release numbering
+
+`overlay/televim-version.properties` is the committed fork version source:
+`TELEVIM_VERSION_CODE` is the base code and `TELEVIM_VERSION_NAME` is the display
+name. Increment the base for every successive signed release and refresh this
+file's SHA-256 in `source.json`. Keep the file as the two ASCII lines shown,
+with LF endings and a final newline. Upstream `APP_VERSION_*` and Desktop's
+`Telegram/build/version` remain independent; changing a tag or display name
+alone does not make an APK eligible for an update.
+
+The base must be an integer from `1` through `209999999`. The existing `afat`
+flavor computes `base * 10 + 9`, at most `2099999999`, below Android's
+`2100000000` limit and signed 32-bit maximum. All supported ABI selections use
+suffix `9`, including arm64-only and universal: they have equal codes at the
+same base. Increase the base before offering one as an update to the other,
+and keep the device's ABI in the replacement APK. Do not renumber flavor
+suffixes to manufacture an upgrade. Incrementing the base orders a new release
+above every decimal ABI suffix of the preceding base.
+
+The first fork base `7241` produces `72419`, above the preceding `72409` from
+base `7240`. Before publication compare with the highest code already shipped
+under the persistent `org.informativus.televim` package and signing certificate;
+a privately overridden higher code needs a still higher release base. Preserve
+that package and certificate so Android can update in place. A debug-signed
+installation is not interchangeable with the release-signed application.
+
+Both `android/build.sh release` and the signed workflow consume the committed
+file through the prepared overlay. Missing or invalid fork versions fail;
+there is no upstream fallback. Explicit Gradle `-PtelevimVersionCode` and
+`-PtelevimVersionName` overrides retain priority, including Gradle's standard
+`ORG_GRADLE_PROJECT_televimVersionCode` and
+`ORG_GRADLE_PROJECT_televimVersionName` environment mechanism. Empty or invalid
+overrides fail. These overrides are for explicit local builds; their actual
+versions remain in Gradle's APK `output-metadata.json`. Official signed workflow
+artifacts must match the committed code and name and cannot publish an override.
+
+Preparation records `release_version` with the committed base, display name,
+expected `afat` APK code and version-file SHA-256. The signed workflow checks
+actual APK badging against this record and emits it beside the actual APK
+version, source identity and artifact hash. The catalog publisher reads the same
+fork source, requires matching artifact metadata, and retains its monotonic
+version and identical-source checks. A local preparation record describes the
+committed input; it is not a signed APK verification receipt.
+
+Android numbering does not establish feature parity. Final cross-client delivery
+still needs the matching reviewed Desktop and Android artifacts and the runtime
+acceptance described in `../docs/android/feature-parity.md` and
+`../docs/automatic-updates.md`.
+
 ### Localization
 
 We moved all translations to https://translations.telegram.org/en/android/. Please use it.

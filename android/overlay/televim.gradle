@@ -32,8 +32,19 @@ ext.televimSigning = [
 ext.televimSigningReady = televimSigning.values().every { !it.isEmpty() }
 ext.televimBuildRoot = file(System.getenv('TELEVIM_BUILD_ROOT') ?: '../.local/android-build')
 ext.televimAbis = (findProperty('televimAbis') ?: 'arm64-v8a').split(',').toList()
-ext.televimVersionName = findProperty('televimVersionName') ?: APP_VERSION_NAME + '-televim'
-ext.televimVersionCode = (findProperty('televimVersionCode') ?: APP_VERSION_CODE).toString()
+def versionFile = file('televim-version.properties')
+if (!versionFile.isFile() || versionFile.length() > 1024) {
+    throw new GradleException('The committed Android fork version file is required.')
+}
+def versionText = versionFile.getText('US-ASCII')
+def versionMatch = versionText =~ /TELEVIM_VERSION_CODE=([1-9][0-9]{0,8})\nTELEVIM_VERSION_NAME=([A-Za-z0-9][A-Za-z0-9.+_-]{0,63})\n/
+if (!versionMatch.matches() || versionMatch.group(1).toLong() > 209999999L) {
+    throw new GradleException('Invalid committed Android fork version.')
+}
+ext.televimVersionName = (findProperty('televimVersionName') != null
+        ? findProperty('televimVersionName') : versionMatch.group(2)).toString()
+ext.televimVersionCode = (findProperty('televimVersionCode') != null
+        ? findProperty('televimVersionCode') : versionMatch.group(1)).toString()
 if (!(televimVersionCode ==~ '[1-9][0-9]{0,8}')
         || televimVersionCode.toInteger() > 209999999
         || !(televimVersionName ==~ '[A-Za-z0-9][A-Za-z0-9.+_-]{0,63}')) {

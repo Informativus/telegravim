@@ -217,7 +217,12 @@ jobs:
           import re
           import shutil
           import subprocess
+          import sys
 
+          sys.path.insert(0, str(pathlib.Path("android").resolve()))
+          from release_version import read_release_version
+
+          release_version = read_release_version(pathlib.Path("android"))
           apk = (pathlib.Path(os.environ["TELEVIM_BUILD_ROOT"])
                  / "TMessagesProj_AppStandalone/outputs/apk/afat/standalone/app.apk")
           tools = pathlib.Path(os.environ["ANDROID_SDK_ROOT"]) / "build-tools/36.0.0"
@@ -254,7 +259,8 @@ jobs:
                   or preparation.get("monorepo_commit") != source_sha
                   or preparation.get("monorepo_dirty") is not False
                   or preparation.get("upstream_commit") != dependencies["android/upstream"]
-                  or preparation.get("dependencies") != nested_dependencies):
+                  or preparation.get("dependencies") != nested_dependencies
+                  or preparation.get("release_version") != release_version):
               raise SystemExit("Prepared sources are dirty or do not match the release checkout.")
           preparation_digests = {}
           for name in ("input_digest", "overlay_digest", "source_inventory_sha256"):
@@ -269,9 +275,11 @@ jobs:
           expected = ({"arm64-v8a"} if os.environ["APK_ABI"] == "arm64-v8a"
                       else {"armeabi-v7a", "arm64-v8a", "x86", "x86_64"})
           if (not package or package[1] != "org.informativus.televim"
+                  or package[2] != str(release_version["apk_code"])
+                  or package[3] != release_version["version_name"]
                   or not sdk or int(sdk[1]) < 26
                   or not native or set(re.findall(r"'([^']+)'", native[1])) != expected):
-              raise SystemExit("APK identity, minimum SDK or architectures do not match the requested build.")
+              raise SystemExit("APK identity, fork version, minimum SDK or architectures do not match the requested build.")
           destination = pathlib.Path(".local/android-artifact")
           destination.mkdir(parents=True, exist_ok=True)
           output = destination / ("Televim-android-" + os.environ["APK_ABI"] + ".apk")
@@ -293,6 +301,7 @@ jobs:
               "application_id": package[1],
               "version_code": package[2],
               "version_name": package[3],
+              "release_version": release_version,
               "abis": sorted(expected),
               "sha256": digest,
               "artifact": output.name,

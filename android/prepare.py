@@ -17,6 +17,8 @@ import sys
 import tarfile
 import tempfile
 
+from release_version import read_release_version
+
 
 SCHEMA = 1
 METADATA = ".televim-source.json"
@@ -315,7 +317,7 @@ def source_state(repository, android, manifest):
     expected = ("160000 commit " + manifest["upstream_commit"] + "\tandroid/upstream\0").encode("ascii")
     if gitlink != expected:
         dirty = True
-    paths = ["source.json", "prepare.py", "build.sh"]
+    paths = ["source.json", "prepare.py", "build.sh", "release_version.py"]
     paths += [kind + "/" + name for kind in ("overlay", "patches") for name in manifest[kind]]
     for name in paths:
         path = android / name
@@ -342,6 +344,9 @@ def verify_cache(path, expected):
 
 def prepare(repository, android, primary, release):
     manifest, inputs, modes = load_inputs(android)
+    release_version = read_release_version(android)
+    if "televim-version.properties" not in manifest["overlay"]:
+        raise PreparationError("Android fork version is not pinned in the source manifest")
     repositories, dependencies = verify_repositories(android / "upstream", manifest["upstream_commit"])
     commit, dirty = source_state(repository, android, manifest)
     if release and dirty:
@@ -349,7 +354,7 @@ def prepare(repository, android, primary, release):
     overlay_identity = {"overlay": manifest["overlay"], "patches": manifest["patches"], "omit": manifest["omit"], "modes": modes}
     identity = {"schema_version": SCHEMA, "monorepo_commit": commit, "upstream_commit": manifest["upstream_commit"],
                 "dependencies": dependencies, "manifest": manifest, "modes": modes,
-                "helpers": {name: file_digest(android / name) for name in ("prepare.py", "build.sh")}}
+                "helpers": {name: file_digest(android / name) for name in ("prepare.py", "build.sh", "release_version.py")}}
     input_digest = digest(canonical(identity))
     cache = primary / ".local" / "android-source"
     cache.mkdir(parents=True, exist_ok=True)
@@ -373,7 +378,8 @@ def prepare(repository, android, primary, release):
     summary = {"schema_version": SCHEMA, "monorepo_commit": commit, "monorepo_dirty": dirty,
                "upstream_commit": manifest["upstream_commit"], "dependencies": dependencies,
                "input_digest": input_digest, "overlay_digest": digest(canonical(overlay_identity)),
-               "source_inventory_sha256": metadata["inventory_sha256"]}
+               "source_inventory_sha256": metadata["inventory_sha256"],
+               "release_version": release_version}
     return destination, identity, summary
 
 
