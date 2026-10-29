@@ -84,18 +84,18 @@ bool ReadReceipts::scopeEnabled(Scope scope) const {
 		if (!valid || scopes < 0 || scopes > kAllScopes) {
 			scopes = kAllScopes;
 		}
-		if (_session->local().readPref<int>(
+		if (_session->local().readPref<QByteArray>(
 				kScopesVersionPreference,
-				0) < kScopesVersion) {
+				QByteArray()).toInt() < kScopesVersion) {
 			if (scopes & int(Scope::PrivateChats)) {
 				scopes |= int(Scope::Bots);
 			}
 			_session->local().writePref<QByteArray>(
 				kScopesPreference,
 				QByteArray::number(scopes));
-			_session->local().writePref<int>(
+			_session->local().writePref<QByteArray>(
 				kScopesVersionPreference,
-				kScopesVersion);
+				QByteArray::number(kScopesVersion));
 		}
 		_scopes = scopes;
 	}
