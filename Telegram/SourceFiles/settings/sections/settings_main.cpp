@@ -20,6 +20,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/call_delayed.h"
 #include "base/platform/base_platform_info.h"
 #include "boxes/language_box.h"
+#include "boxes/local_transfer_box.h"
 #include "boxes/star_gift_box.h"
 #include "boxes/username_box.h"
 #include "core/application.h"
@@ -452,7 +453,18 @@ const auto kTelegravimMeta = BuildHelper({
 	.title = &tr::lng_telegravim_settings,
 	.icon = &st::menuIconManage,
 }, [](SectionBuilder &builder) {
+	const auto controller = builder.controller();
+	const auto session = builder.session();
 	builder.addSkip();
+	builder.addButton({
+		.id = u"telegravim/export-settings"_q,
+		.title = tr::lng_local_transfer_settings_title(),
+		.icon = { &st::menuIconExport },
+		.onClick = [=] {
+			controller->show(Box(LocalSettingsExportBox, session));
+		},
+		.keywords = { u"export"_q, u"settings"_q, u"android"_q, u"qr"_q },
+	});
 	builder.addSectionButton({
 		.title = tr::lng_telegravim_vim(),
 		.targetSection = VimKeymap::Id(),

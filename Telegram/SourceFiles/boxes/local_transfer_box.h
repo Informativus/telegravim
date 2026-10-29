@@ -18,3 +18,7 @@ class GenericBox;
 void LocalTransferBox(
 	not_null<Ui::GenericBox*> box,
 	not_null<Main::Session*> session);
+
+void LocalSettingsExportBox(
+	not_null<Ui::GenericBox*> box,
+	not_null<Main::Session*> session);

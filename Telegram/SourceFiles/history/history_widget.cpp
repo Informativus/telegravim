@@ -547,6 +547,18 @@ HistoryWidget::HistoryWidget(
 	Core::VimKeymap::RegisterModeIndicatorWidget(this);
 	Core::VimKeymap::RegisterPreLayerKeyHandler(this, [=](
 			not_null<QKeyEvent*> e) {
+		if (e->type() == QEvent::ShortcutOverride
+			&& Core::VimKeymap::MarkReadKey(e)
+			&& _history
+			&& isVisible()
+			&& window()->isActiveWindow()
+			&& !this->controller()->isLayerShown()
+			&& !this->controller()->window().locked()
+			&& !QApplication::activeModalWidget()
+			&& !QApplication::activePopupWidget()
+			&& !_composeSearch) {
+			return true;
+		}
 		if (!_composeSearch
 			|| !isVisible()
 			|| !window()->isActiveWindow()
@@ -695,6 +707,16 @@ HistoryWidget::HistoryWidget(
 				Core::VimKeymap::TraceKey(e, u"call"_q);
 			}
 			return result;
+		} else if (_history && Core::VimKeymap::MarkReadKey(e)
+			&& isVisible()
+			&& !controller->isLayerShown()
+			&& !controller->window().locked()
+			&& !QApplication::activeModalWidget()
+			&& !QApplication::activePopupWidget()
+			&& !_composeSearch) {
+			session().api().readReceipts().markRead(_history);
+			Core::VimKeymap::TraceKey(e, u"mark chat as read"_q);
+			return true;
 		} else if (!Core::VimKeymap::CancelReplyKey(e)) {
 			return false;
 		} else if (_replyTo || _suggestOptions) {
