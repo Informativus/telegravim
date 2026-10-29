@@ -119,7 +119,7 @@ jobs:
           if-no-files-found: ignore
 
   owner-review:
-    name: REQUIRED — Informativus must review network or custom code
+    name: REQUIRED — Informativus must review network changes
     needs: inspect
     if: needs.inspect.outputs.requires_review == 'true' && needs.inspect.outputs.scan_ok == 'true'
     runs-on: ubuntu-24.04

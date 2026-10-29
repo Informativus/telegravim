@@ -34,11 +34,11 @@ class ClassificationTests(unittest.TestCase):
     def test_official_content_at_another_path_is_not_exempt(self):
         self.assertTrue(self.classify(after=b"QNetworkRequest request;"))
 
-    def test_same_blob_with_different_mode_is_not_exempt(self):
-        self.assertTrue(self.classify(new_mode="100755", upstream=("100644", "2" * 40)))
+    def test_mode_change_alone_does_not_require_network_review(self):
+        self.assertFalse(self.classify(new_mode="100755", upstream=("100644", "2" * 40)))
 
-    def test_official_control_files_still_require_owner(self):
-        self.assertTrue(
+    def test_control_file_alone_does_not_require_owner(self):
+        self.assertFalse(
             self.classify(
                 path=".github/workflows/test.yml", upstream=("100644", "2" * 40)
             )
@@ -51,8 +51,7 @@ class ClassificationTests(unittest.TestCase):
 
     def test_unchanged_copyright_url_does_not_claim_network_code(self):
         header = b"// https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL\n"
-        self.assertIn(
-            "cannot be excluded",
+        self.assertFalse(
             self.classify(
                 before=header + b"int value = 1;", after=header + b"int value = 2;"
             ),
@@ -67,29 +66,29 @@ class ClassificationTests(unittest.TestCase):
             ),
         )
 
-    def test_custom_code_without_detectable_network_fails_closed(self):
-        self.assertIn("cannot be excluded", self.classify(after=b"opaqueHelper();"))
+    def test_local_code_does_not_require_network_review(self):
+        self.assertFalse(self.classify(after=b"opaqueHelper();"))
 
     def test_removing_custom_network_code_is_reviewed(self):
         self.assertTrue(
             self.classify(new_mode="000000", before=b"fetch(endpoint);", after=b"")
         )
 
-    def test_markdown_in_code_directory_is_not_automatically_exempt(self):
-        self.assertTrue(self.classify(path="Telegram/generated.md"))
+    def test_plain_text_in_code_directory_needs_no_network_review(self):
+        self.assertFalse(self.classify(path="Telegram/generated.md"))
 
     def test_plain_documentation_is_exempt(self):
         self.assertFalse(
             self.classify(path="docs/usage.md", after=b"Use https://example.com")
         )
 
-    def test_executable_docs_symlinks_and_submodules_are_not_exempt(self):
+    def test_object_mode_alone_is_not_network_evidence(self):
         for mode in ["100755", "120000", "160000"]:
             with self.subTest(mode=mode):
-                self.assertTrue(self.classify(path="docs/usage.md", new_mode=mode))
+                self.assertFalse(self.classify(path="docs/usage.md", new_mode=mode))
 
-    def test_control_file_deletion_is_not_exempt(self):
-        self.assertTrue(
+    def test_control_file_deletion_alone_needs_no_network_review(self):
+        self.assertFalse(
             self.classify(path=".github/security/policy.json", new_mode="000000")
         )
 

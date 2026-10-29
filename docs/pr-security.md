@@ -39,7 +39,7 @@ policy commit. Only GitHub-hosted runners are used.
   can match; other paths, new findings, changed files, missing source
   and failed analysis still block. The report counts accepted diagnostics and
   retains them in SARIF. Contributor copies of the registry are never read.
-  Updating an exception is a separate policy change requiring owner review.
+  Updating an exception is a separate policy change subject to automatic security checks.
   The Telegram 7.2.7 import adds exact reviewed records for Qt macros and aliases,
   reference return types, default arguments, inherited virtual destruction,
   switch extraction, intentional base-constructor initialization, callback-driven
@@ -53,8 +53,7 @@ policy commit. Only GitHub-hosted runners are used.
   native suite passed 2361 checks; this is not cross-platform or live-chat proof.
   This is source analysis, not a build or runtime test. Generated sources,
   submodule contents, bundled third-party code, Objective-C-specific behavior,
-  and dependency CVEs are not comprehensively covered. Submodule and dependency
-  control changes require owner review. PRs confined to documentation and CI
+  and dependency CVEs are not comprehensively covered. The network classifier cannot inspect changed submodule contents or dependency binaries. PRs confined to documentation and CI
   configuration skip C/C++ analysis only when no C/C++ source changes; their
   secret/workflow checks and applicable owner approval remain required.
 
@@ -66,7 +65,7 @@ scanner results and the owner-review requirement.
 
 The required status is **Telegravim / owner network review**. When review is
 needed, the PR comment names **@Informativus**, lists the files and reasons, and
-the workflow waits at **REQUIRED — Informativus must review network or custom code**.
+the workflow waits at **REQUIRED — Informativus must review network changes**.
 After reading the changes, open the run and select **Review deployments →
 network-review → Approve**. Rejection keeps merging blocked. This also supports
 the owner's own PRs; GitHub does not permit approving one's own PR as a PR review.
@@ -77,23 +76,29 @@ The policy checks those settings before accepting the environment as a gate.
 A missing or misconfigured environment fails closed instead of silently creating
 an unprotected approval step.
 
-The default is conservative:
+Owner review is for network changes only:
 
-1. Workflow, policy, Git attribute and submodule control changes always need review.
-2. A regular file is recognized as official Telegram only when its **path, Git blob
+1. A regular file is recognized as official Telegram only when its **path, Git blob
    and mode** exactly match the `dev` commit fetched directly from
    `telegramdesktop/tdesktop`. The immutable comparison SHA is shown in the PR.
-   PR labels, branch names, descriptions, domains and contributor-supplied
-   upstream remotes are never evidence of provenance.
-3. Non-executable Markdown/text under `docs/` and a narrow set of top-level
-   documentation files do not require network review.
-4. Other changes require owner review. Network APIs, changed URLs and existing network
-   API context produce an explicit network-related reason. Unknown code, resources,
-   scripts and binary changes say that network effects **cannot be excluded**.
-   This deliberately includes more than proven networking changes: textual
-   matching cannot prove that an arbitrary helper has no network effects.
+   PR labels, branch names, descriptions and contributor-supplied upstream remotes
+   are never evidence of provenance.
+2. Changes to network APIs, request context (three lines around each changed
+   block), or URLs require review. Both removed and added code are inspected, so
+   deleting a request or changing its adjacent parameters is also visible.
+   Unrelated network code elsewhere in the same file does not trigger review.
+3. Local UI, keyboard bindings, settings, resources and other custom code do not
+   require owner review merely because they are executable or not upstream code.
+   Workflow/policy files and executable-mode changes also do not trigger this
+   gate without a detected network change. Plain documentation remains exempt.
+4. Secrets, workflow security, diff checks and applicable CodeQL analysis remain
+   mandatory. A successful network classification means only that this heuristic
+   found no matching network changes, not that the entire program was proven
+   offline. Indirect calls, distant data flow, encoded endpoints and opaque
+   binaries can escape textual detection. Do not describe this as a complete
+   network-effect or exfiltration audit.
 
-New commits require a new approval. The final status checks the live PR head,
+New commits containing detected network changes require a new approval. The final status checks the live PR head,
 base and policy SHA again. The base SHA is read from the live branch API because
 GitHub may retain an older base SHA in the PR object. Branch protection must require an up-to-date branch;
 otherwise a green check could survive a later base advance. Cancellation or
@@ -102,8 +107,7 @@ pending status and must be rerun. Changing a PR base also starts a fresh run.
 
 The official `dev` ref is resolved on every inspection, so newer upstream imports
 can be recognized without letting the PR choose an allowlist. An older official
-file no longer present at that tip may conservatively require review. Changing
-this provenance policy itself requires owner review.
+file no longer present at that tip may conservatively require review. Policy changes pass through the same protected PR workflow and automatic checks.
 
 Inspection limits are recorded in `.github/security/policy.json`. At most 1,200
 changed files, 250 introduced commits, 2 MB per changed blob and 8 MB per diff

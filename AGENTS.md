@@ -28,6 +28,15 @@ These rules supersede the old `vim-keymap` branch and rebase workflow in
 historical fork plans. The separate `ai-tdesktop` task repository retains its
 own branch rules.
 
+## Owner network review scope
+
+Owner approval is required for detected network request, endpoint and transmitted
+data changes outside verified Telegram upstream, not for arbitrary custom code.
+Do not require manual network review solely for UI, keyboard, settings, resource,
+policy or executable-mode changes. Keep automatic secret, workflow and applicable
+CodeQL checks mandatory. Report detection limits honestly; an unmatched textual
+scan does not prove absence of network effects.
+
 ## Cumulative delivery and preservation
 
 The product baseline is cumulative. Before building or packaging a task, inspect
