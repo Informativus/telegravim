@@ -7,7 +7,7 @@ must preserve its destination even while that boundary remains unchanged.
 ## Behavior
 
 - Keep the existing account-level private-reading switch and add independent
-  category switches for private chats, groups and channels in Telegravim Privacy.
+  category switches for private chats, bots, groups and channels in Telegravim Privacy.
 - All categories default to selected, preserving the previous all-chat behavior.
   The existing master switch keeps its saved value. No migration sends receipts.
 - In selected categories, viewing and playing messages defer acknowledgements.
@@ -23,7 +23,7 @@ must preserve its destination even while that boundary remains unchanged.
 
 Three independent category switches were selected over a fixed private-only
 preset because they support either combination requested by the user. Per-chat
-exceptions are outside this change. Bots use the private-chat category; group
+exceptions are outside this change. Bots use their own category; group
 topics use the group category. Channel direct-message sublists follow their
 owning peer classification and retain separate acknowledgement cutoffs.
 

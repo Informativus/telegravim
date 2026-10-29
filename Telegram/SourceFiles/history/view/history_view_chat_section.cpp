@@ -1624,6 +1624,15 @@ bool ChatWidget::vimKeymapHandleKey(not_null<QKeyEvent*> e) {
 			Core::App().calls().startOutgoingCall(user, {});
 			return true;
 		}
+	} else if (MarkReadKey(e)) {
+		if (_topic) {
+			session().api().readReceipts().markRead(_topic);
+		} else if (_sublist) {
+			session().api().readReceipts().markRead(_sublist);
+		} else {
+			session().api().readReceipts().markRead(_history);
+		}
+		return true;
 	}
 	if (!selectorOpen && NormalMode() && field && field->isVisible()
 		&& Bindings::IsSystemPaste(e)) {

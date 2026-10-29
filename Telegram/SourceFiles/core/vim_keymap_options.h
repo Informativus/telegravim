@@ -55,6 +55,7 @@ extern base::options::option<QString> VimKeymapKeyHelpOption;
 extern base::options::option<QString> VimKeymapKeyScrollDownOption;
 extern base::options::option<QString> VimKeymapKeyScrollUpOption;
 extern base::options::option<QString> VimKeymapKeyJumpBottomOption;
+extern base::options::option<QString> VimKeymapKeyMarkReadOption;
 extern base::options::option<QString> VimKeymapKeyCopyMessageOption;
 extern base::options::option<QString> VimKeymapKeySelectMessageTextOption;
 extern base::options::option<QString> VimKeymapKeyReplyToMessageOption;

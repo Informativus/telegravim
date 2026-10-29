@@ -390,7 +390,7 @@ VimKeymap::VimKeymap(
 }
 
 rpl::producer<QString> VimKeymap::title() {
-	return rpl::single(u"Vim keymap"_q);
+	return tr::lng_telegravim_vim();
 }
 
 void VimKeymap::setupContent() {
@@ -571,6 +571,9 @@ const auto kTelegravimPrivacyMeta = BuildHelper({
 	addScope(Api::ReadReceipts::Scope::PrivateChats,
 		u"telegravim/read-private-chats"_q,
 		tr::lng_telegravim_read_private_chats());
+	addScope(Api::ReadReceipts::Scope::Bots,
+		u"telegravim/read-bots"_q,
+		tr::lng_telegravim_read_bots());
 	addScope(Api::ReadReceipts::Scope::Groups,
 		u"telegravim/read-groups"_q,
 		tr::lng_telegravim_read_groups());

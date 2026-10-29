@@ -8980,6 +8980,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_telegravim_read_after_send" = "Mark as read only after sending";
 "lng_telegravim_read_scopes" = "Keep unread while viewing";
 "lng_telegravim_read_private_chats" = "Private chats";
+"lng_telegravim_read_bots" = "Bots";
 "lng_telegravim_read_groups" = "Groups";
 "lng_telegravim_read_channels" = "Channels";
 "lng_telegravim_read_scopes_about" = "When the switch above is on, selected chat types stay unread until you send a message or press Mark as read. Unselected chat types use normal Telegram read behavior.\n\nFor example, select only Private chats to read groups and channels normally while keeping private messages unread. Scrolling and jumping to the latest messages do not mark selected chats as read.";
