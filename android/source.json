@@ -61,18 +61,20 @@
     "scripts/ninja.sh": "7b89b0804e02402709919b70ad1e4feec83c06a6bedbbc9fbdcccc9b19fe07cc",
     "settings.gradle": "598ef1bb69fe5dcd85bc981fbe3369169a96f83636a89b2ec6d17d20ee6efecc",
     "televim.gradle": "bf8dbaed590514c5a858c0d5b896a6ca1deab58ab5a8b1a20783f45294bcf243",
-    "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingPolicy.java": "a888a084d8712b6e02d468ecab7ed744195067b0bf97819f4566ac0bdec2f77d",
+    "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingPolicy.java": "5b1fb4a475af2a213ed4f516858424ec815570267ca12cf4ea865027fdeecf84",
     "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingSettings.java": "2cc96f2ca93f436a27f5cfb10c4f95f10c74c97d39eca122cb31116122595a13",
     "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingController.java": "dad0ad949380abf62376306fc5c61ffb8e55250aae5853ce97207892997ba153",
     "TMessagesProj/src/main/java/org/telegram/ui/PrivateReadingSettingsActivity.java": "a744b3279473e096b055e3d95af58ab0ebba16d98892e84184517647926379b6",
     "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingStorage.java": "3e5dee06c051a2f027017976cc1aa60250d900fc0b9758c405d605564b45d0d6",
-    "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingRelease.java": "0bb6e22a0f042d41266bf9fab94336ee7d72cf1ead9995eb00a3bad86049752e",
-    "TMessagesProj/src/main/res/values/televim_receipts.xml": "3c74326e9d5c17d580535b052cdc0f98f23151b35ca1888276d8830a9475d770",
-    "TMessagesProj/src/main/res/values-ru/televim_receipts.xml": "dc8238776fe342e59c925342a4b645ae075ef6a817e7219f42aecd8aaf026730",
+    "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingRelease.java": "697bfdbe637403c3aa591b08310d9a4b17957c030f7eaf32818ec4a2b19bb267",
+    "TMessagesProj/src/main/res/values/televim_receipts.xml": "dce58077af6991b04d0d797e0017cde4bab6c780fcf7f308d07294941956e3be",
+    "TMessagesProj/src/main/res/values-ru/televim_receipts.xml": "02069162ba2e8c234f7979d7b3fb3c0304531792c2c880c5f9e75242a3afdfa7",
     "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingMentionOperation.java": "66b3d6464579d1a37500aa298c77dbf1ff4e84df24b47049c236c500726dca04",
     "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingMentionStorage.java": "748274e9f63d60c7ce9a60b7f45230a4b4335faddef9e81be20bb039efe821e6",
     "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingSend.java": "ada85feb26422ba8d04621227e1b300c628067791e753c33e6439d46cf35733c",
-    "televim-version.properties": "7bc1ce30eb8b85097472392a1888c1f209d470fbae853eb665a5dd2d2d03852f"
+    "televim-version.properties": "7bc1ce30eb8b85097472392a1888c1f209d470fbae853eb665a5dd2d2d03852f",
+    "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingNotificationAction.java": "83012e75e42003b213c69d729817924406d68bd6b5fb9672f5bae661c74ea039",
+    "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingNotificationReceiver.java": "cd62293867f0b705840e354a3c86a98b34b91253f69082a24e0ac46e46ffe2e1"
   },
   "patches": {
     "001-AndroidManifest.patch": "e331ae6f9691410249aefd7985216d5a94b502b8967b940ddeb49e7a19484b05",
@@ -120,7 +122,8 @@
     "039-private-reading-ui-observation.patch": "920709ddae18dd1cf211cf2d1f84f6831de1ec97b1a7f3d0947c1706a922a8c5",
     "040-private-reading-mention-transport.patch": "440396b6ce85de74522e65c257da238f5534c49fa82551720072c2c8712808f2",
     "041-private-reading-mention-commit.patch": "6b61ef8847bfb152f2f867ce25c450d6c4a62b643ff31e64be727d756f032428",
-    "042-private-reading-send.patch": "7d0107cf2b0b30f84a7106027c14ffdaf6d26f5601c6d539b6728689be5446b1"
+    "042-private-reading-send.patch": "7d0107cf2b0b30f84a7106027c14ffdaf6d26f5601c6d539b6728689be5446b1",
+    "044-private-reading-notifications.patch": "406080ecb3ab648216d5b1a87cb9246b1c3c8924647ffa11fcb4b3b73036dc79"
   },
   "upstream_commit": "3de37c8cfb039452be7398909461da6288babf15"
 }

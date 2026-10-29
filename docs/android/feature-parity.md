@@ -713,6 +713,16 @@ that grant. Helper-level origin capture does not establish coverage for every
 earlier UI/notification producer queue. Unknown or restored work cannot recreate
 authorization; explicit manual retry creates a fresh attempt.
 
+Notification Mark as read actions now register a unique immutable PendingIntent
+against the original account lifetime, displayed conversation and cutoff.
+One-shot consumption uses the existing shared policy budget and freezes the
+observed content set before deferred release. Replacements, cancellation and
+failed publication retire their registrations; stale deliveries show localized
+open-app guidance. Native notification producers capture ownership before their
+audited queue hops. Secret actions retain their displayed native date and never
+become ordinary release grants. This does not establish safety of every upstream
+producer or the remaining native read/storage callbacks.
+
 Remaining early UI/storage paths, reaction/poll and explicit mark-all flows,
 TTL consent/replay, unsupported send variants and complete manual-action
 reconciliation remain separate outstanding work. Other queued native storage
@@ -721,6 +731,7 @@ does not establish coverage for every content receipt.
 
 Android Java/resources compilation passed for the account-lifetime, guarded
 transport, queued history, checked scoped-storage and UI/mention integration.
-Subsequent successful-send integration requires its own exact-source compilation;
-no new signed APK or authenticated-device
-acceptance is implied by the source and patch-application checks above.
+Successful-send integration and committed Android fork release numbering also
+passed hosted Java/resources compilation. The subsequent notification increment
+requires its own compilation. No new signed APK or authenticated-device acceptance
+is implied by these source and patch-application checks.

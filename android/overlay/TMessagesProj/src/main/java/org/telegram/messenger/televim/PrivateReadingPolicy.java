@@ -18,6 +18,7 @@ public final class PrivateReadingPolicy {
     public static final int MAX_NOTIFICATIONS = 256;
     public static final int MAX_RETAINED_BYTES = 0x200000;
     private static final int RELEASE_RETAINED_BYTES = 2048;
+    private static final int NOTIFICATION_RETAINED_BYTES = 2048;
     private final Identity identity;
     private boolean active = true;
     private boolean loaded;
@@ -657,17 +658,19 @@ public final class PrivateReadingPolicy {
     }
 
     public synchronized Result<NotificationAction> registerNotification(Identity identity, Conversation conversation, int n) {
-        Failure failure = this.guard(identity, conversation);
-        if (failure != Failure.NONE) {
-            return this.fail(failure);
+        if (!this.owns(identity)) {
+            return this.fail(Failure.INACTIVE);
         }
-        if (!PrivateReadingPolicy.validId(n)) {
+        if (conversation == null || (conversation.category == Category.SECRET
+                ? n >= 0 || n == Integer.MIN_VALUE : !PrivateReadingPolicy.validId(n))) {
             return this.fail(Failure.INVALID);
         }
-        if (this.decision(identity, conversation) != ReceiptDecision.WITHHOLD) {
-            return this.fail(Failure.INVALID);
+        ReceiptDecision decision = this.decision(identity, conversation);
+        if (decision != ReceiptDecision.WITHHOLD && decision != ReceiptDecision.NATIVE) {
+            return this.fail(Failure.NOT_LOADED);
         }
-        if (this.notifications.size() >= 256 || !this.capacity(conversation, 0, 384)) {
+        if (this.notifications.size() >= MAX_NOTIFICATIONS
+                || !this.capacity(conversation, 0, NOTIFICATION_RETAINED_BYTES)) {
             return this.fail(Failure.CAPACITY);
         }
         this.retainKey(conversation);
@@ -677,20 +680,30 @@ public final class PrivateReadingPolicy {
     }
 
     public synchronized Result<ReleaseScope> consumeNotification(Identity identity, String string, Conversation conversation, int n) {
-        if (!this.owns(identity)) {
+        if (identity != this.identity) {
             return this.fail(Failure.INACTIVE);
         }
-        if (!this.matchesClassification(conversation)) {
+        NotificationAction action = this.notifications.remove(string);
+        if (action == null) {
             return this.fail(Failure.INVALID);
         }
-        NotificationAction notificationAction = this.notifications.get(string);
-        if (notificationAction == null || !notificationAction.conversation.equals(conversation) || notificationAction.cutoff != n || !this.valid(notificationAction.stamp, notificationAction.conversation)) {
-            return this.fail(Failure.INVALID);
+        try {
+            if (!this.owns(identity) || conversation == null
+                    || !action.conversation.equals(conversation) || action.cutoff != n
+                    || !this.matchesClassification(conversation) || !this.valid(action.stamp, conversation)) {
+                return this.fail(Failure.INVALID);
+            }
+            ReceiptDecision decision = this.decision(identity, conversation);
+            if (decision == ReceiptDecision.NATIVE) {
+                return PrivateReadingPolicy.ok(null);
+            }
+            if (decision != ReceiptDecision.WITHHOLD || conversation.mask() == 0) {
+                return this.fail(Failure.NOT_LOADED);
+            }
+            return this.release(identity, conversation, n);
+        } finally {
+            this.releaseKey(action.conversation);
         }
-        this.notifications.remove(string);
-        Result<ReleaseScope> result = this.release(identity, notificationAction.conversation, notificationAction.cutoff);
-        this.releaseKey(notificationAction.conversation);
-        return result;
     }
 
     public synchronized boolean retireNotification(Identity identity, String string) {
@@ -790,13 +803,12 @@ public final class PrivateReadingPolicy {
             this.releaseKey(send.conversation);
             sendIterator.remove();
         }
-        Iterator<NotificationAction> iterator = this.notifications.values().iterator();
-        while (iterator.hasNext()) {
-            NotificationAction action = iterator.next();
-            if (this.active && this.valid(action.stamp, action.conversation)) continue;
-            this.releaseKey(action.conversation);
-            iterator.remove();
-        }
+        /*
+         * Notification wrappers and immutable PendingIntents retain their original
+         * identity after a generation change. Keep their reservation until the
+         * publisher retires them or the receiver consumes them; valid(stamp)
+         * rejects stale actions without prematurely returning their byte budget.
+         */
         if (!(this.special == null || this.active && this.valid(this.special.stamp, this.special.conversation))) {
             this.clearSpecial();
         }
@@ -899,7 +911,7 @@ public final class PrivateReadingPolicy {
     }
 
     private int retainedBytes() {
-        return 4096 + this.transportPayloadBytes + this.keys.size() * 256 + (this.contentCount + this.requestContentCount) * 96 + this.sends.size() * 256 + this.releases.size() * RELEASE_RETAINED_BYTES + this.requests.size() * 256 + this.notifications.size() * 384 + (this.special == null ? 0 : 256);
+        return 4096 + this.transportPayloadBytes + this.keys.size() * 256 + (this.contentCount + this.requestContentCount) * 96 + this.sends.size() * 256 + this.releases.size() * RELEASE_RETAINED_BYTES + this.requests.size() * 256 + this.notifications.size() * NOTIFICATION_RETAINED_BYTES + (this.special == null ? 0 : 256);
     }
 
     private void retainKey(Conversation conversation) {

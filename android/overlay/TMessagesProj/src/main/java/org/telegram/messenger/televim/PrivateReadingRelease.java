@@ -221,6 +221,11 @@ public final class PrivateReadingRelease {
         feedback.show(R.string.TelevimReadFailed);
     }
 
+    static void notification(AccountHandle owner, MessagesController messages,
+                             ConnectionsManager connections, ReleaseScope scope) {
+        accepted(owner, messages, connections, scope);
+    }
+
     private static TLRPC.InputPeer knownPeer(MessagesController messages, AccountHandle owner, long dialogId) {
         if (dialogId == 0 || dialogId > 0 && dialogId != owner.identity().userId
                 && (messages.getUser(dialogId) == null || messages.getUser(dialogId).min)
