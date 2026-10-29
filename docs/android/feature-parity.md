@@ -606,3 +606,27 @@ Saved Messages and Secret Chats retain their native behavior. Independent review
 found no blockers, the new patch applies exactly to pinned prepared source, and
 the policy compiles for Java 8. Full Android compilation/device acceptance remain
 separate from these source checks.
+
+
+Account teardown now invalidates the policy synchronously at logout entry and
+before clearing UserConfig identity. Initial configuration load publishes the
+first lifetime; only successful authentication can replace an inactive lifetime.
+Late profile updates cannot reopen it. Native adapters can retain an immutable
+AccountHandle across queues, but isCurrent is only an ownership snapshot, not an
+atomic storage or transport authorization. Queued native read tasks and callbacks
+still require migration to the captured owner.
+
+Checked SQLite transactions require SQLITE_DONE for BEGIN IMMEDIATE, COMMIT,
+ROLLBACK and DML stepping. Failed preparation or checked stepping prevents commit;
+failed BEGIN or ROLLBACK poisons the wrapper until database replacement. Closing
+checked work rolls back instead of committing. The release adapter must execute
+one uninterrupted storageQueue operation against the pinned database, roll back
+all failures and dispose every handle before teardown. These primitives alone do
+not implement native read release or establish live database-error behavior.
+
+Pending-send authorization can now begin while privacy is disabled, so enabling
+privacy before terminal success preserves the accepted send-through-toggle
+contract. A committed local result remains eligible for lifetime-bound projection
+reconciliation after a policy toggle; that toggle still fences unsent transport.
+Unknown or changed aggregate baselines require refresh rather than guessed unread
+counter subtraction. Native release integration and device acceptance remain open.

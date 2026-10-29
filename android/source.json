@@ -61,9 +61,9 @@
     "scripts/ninja.sh": "7b89b0804e02402709919b70ad1e4feec83c06a6bedbbc9fbdcccc9b19fe07cc",
     "settings.gradle": "598ef1bb69fe5dcd85bc981fbe3369169a96f83636a89b2ec6d17d20ee6efecc",
     "televim.gradle": "9ff9507f76f52468a0d9140473d8d138cdd1631229ee173eba9286e647e3768c",
-    "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingPolicy.java": "a387028d9efebeb0178066d8bfa76493691f25e93d60c01008b7ac08ae5ca7b5",
+    "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingPolicy.java": "62d3d791932d1f40f75a6f4a1fd0275ba820d807aea07f35db5e0951590b5d60",
     "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingSettings.java": "2cc96f2ca93f436a27f5cfb10c4f95f10c74c97d39eca122cb31116122595a13",
-    "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingController.java": "a92df58ba169086893f477928baa7299c9149e1d8ae9fb476a4e9c5e5ca0fce0",
+    "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingController.java": "4ecf2b739cc0d7d0cba1513284b922ee6938858327544a1098eeffde3792d10f",
     "TMessagesProj/src/main/java/org/telegram/ui/PrivateReadingSettingsActivity.java": "a744b3279473e096b055e3d95af58ab0ebba16d98892e84184517647926379b6"
   },
   "patches": {
@@ -99,7 +99,9 @@
     "026-e2e-ChatActivityEnterView.patch": "7618e0b1fb16bb6c9165364512ae9ca71382c090a248909a97873b470f97f987",
     "027-e2e-TranslateController.patch": "02cc195f65fe2413193ef3c8f4b0dc783b0f0dfae5b0c82aba190ec9e21ecb77",
     "028-private-reading-native.patch": "ddfcd55c26cd8fcf5f05a4a83373261f5f849b221303388359db0c3b5da984f8",
-    "029-private-reading-conversations.patch": "250238e2d2e6f2b0891ef51378b9a045af8c1c9bf866dc03009114f6977ec7b9"
+    "029-private-reading-conversations.patch": "250238e2d2e6f2b0891ef51378b9a045af8c1c9bf866dc03009114f6977ec7b9",
+    "030-private-reading-account-lifetime.patch": "e3c2d4a9db4560052f89d3777bfef54c897ad5c8cdc65e568196390c8f85c47b",
+    "031-private-reading-checked-sqlite.patch": "c4bfd369c4e4a81b8c4e54c49c92cce0f947372ba7899f52cc9542b48d1d7c57"
   },
   "upstream_commit": "3de37c8cfb039452be7398909461da6288babf15"
 }

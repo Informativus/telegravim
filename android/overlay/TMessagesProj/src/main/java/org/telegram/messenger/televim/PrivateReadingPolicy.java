@@ -203,8 +203,9 @@ public final class PrivateReadingPolicy {
         if (conversation == null || conversation.mask() == 0 || l == 0L || provenance != Provenance.USER_MESSAGE && provenance != Provenance.TVE2_MESSAGE) {
             return this.fail(Failure.INVALID);
         }
-        if (this.decision(identity, conversation) != ReceiptDecision.WITHHOLD) {
-            return this.fail(Failure.INVALID);
+        ReceiptDecision decision = this.decision(identity, conversation);
+        if (decision != ReceiptDecision.WITHHOLD && decision != ReceiptDecision.NATIVE) {
+            return this.fail(Failure.NOT_LOADED);
         }
         if (this.sends.containsKey(l)) {
             return this.fail(Failure.INVALID);
@@ -365,8 +366,7 @@ public final class PrivateReadingPolicy {
         }
         Release release = this.find(completion.reservation.scope);
         int n = 1 << projection.ordinal();
-        if (release == null || release.invalid || !this.valid(release.scope.stamp, release.scope.conversation)
-                || release.completion != completion || (completion.consumedProjections & n) != 0) {
+        if (release == null || release.completion != completion || (completion.consumedProjections & n) != 0) {
             return Reconciliation.REJECT;
         }
         completion.consumedProjections |= n;

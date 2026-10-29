@@ -1,0 +1,158 @@
+--- a/TMessagesProj/src/main/java/org/telegram/SQLite/SQLiteDatabase.java
++++ b/TMessagesProj/src/main/java/org/telegram/SQLite/SQLiteDatabase.java
+@@ -20,0 +21,3 @@
++    private Thread checkedTransactionOwner;
++    private Throwable checkedTransactionFailure;
++    private boolean transactionPoisoned;
+@@ -74,0 +78,4 @@
++            if (checkedTransactionOwner != null || transactionPoisoned) {
++                closeCheckedTransaction();
++                return;
++            }
+@@ -86,0 +94,26 @@
++    private void closeCheckedTransaction() {
++        if (checkedTransactionOwner != null
++                && checkedTransactionOwner != Thread.currentThread()) {
++            throw new IllegalStateException("Checked transaction belongs to another thread");
++        }
++        if (!transactionPoisoned) {
++            try {
++                rollbackTransactionChecked();
++            } catch (SQLiteException e) {
++                if (BuildVars.LOGS_ENABLED) {
++                    FileLog.e(e.getMessage(), e);
++                }
++            }
++        }
++        try {
++            closedb(sqliteHandle);
++            isOpen = false;
++            clearCheckedTransaction();
++        } catch (SQLiteException e) {
++            transactionPoisoned = true;
++            if (BuildVars.LOGS_ENABLED) {
++                FileLog.e(e.getMessage(), e);
++            }
++        }
++    }
++
+@@ -90,0 +124,7 @@
++        if (transactionPoisoned) {
++            throw new SQLiteException("Database transaction state is unknown; close and reopen");
++        }
++        if (checkedTransactionOwner != null
++                && checkedTransactionOwner != Thread.currentThread()) {
++            throw new SQLiteException("Checked transaction belongs to another thread");
++        }
+@@ -97,0 +138,66 @@
++    public void beginTransactionChecked() throws SQLiteException {
++        checkOpened();
++        if (inTransaction) {
++            throw new SQLiteException("Database already in transaction");
++        }
++        try {
++            executeTransactionStatement("BEGIN IMMEDIATE");
++        } catch (SQLiteException | RuntimeException | Error e) {
++            transactionPoisoned = true;
++            throw e;
++        }
++        inTransaction = true;
++        checkedTransactionOwner = Thread.currentThread();
++    }
++
++    public void commitTransactionChecked() throws SQLiteException {
++        checkCheckedTransaction();
++        if (checkedTransactionFailure != null) {
++            SQLiteException failure = new SQLiteException("Checked transaction failed; rollback required");
++            failure.initCause(checkedTransactionFailure);
++            throw failure;
++        }
++        executeTransactionStatement("COMMIT");
++        clearCheckedTransaction();
++    }
++
++    public void rollbackTransactionChecked() throws SQLiteException {
++        checkCheckedTransaction();
++        try {
++            executeTransactionStatement("ROLLBACK");
++        } catch (SQLiteException | RuntimeException | Error e) {
++            transactionPoisoned = true;
++            throw e;
++        }
++        clearCheckedTransaction();
++    }
++
++    private void checkCheckedTransaction() throws SQLiteException {
++        checkOpened();
++        if (checkedTransactionOwner == null) {
++            throw new SQLiteException("No checked transaction");
++        }
++    }
++
++    void failCheckedTransaction(Throwable failure) {
++        if (checkedTransactionOwner == Thread.currentThread()
++                && checkedTransactionFailure == null) {
++            checkedTransactionFailure = failure;
++        }
++    }
++
++    private void executeTransactionStatement(String sql) throws SQLiteException {
++        SQLitePreparedStatement statement = executeFast(sql);
++        try {
++            statement.stepDone();
++        } finally {
++            statement.dispose();
++        }
++    }
++
++    private void clearCheckedTransaction() {
++        inTransaction = false;
++        checkedTransactionOwner = null;
++        checkedTransactionFailure = null;
++    }
++
+@@ -98,0 +205,3 @@
++        if (checkedTransactionOwner != null || transactionPoisoned) {
++            throw new SQLiteException("Legacy transaction cannot replace checked transaction");
++        }
+@@ -110,0 +220,4 @@
++        if (checkedTransactionOwner != null || transactionPoisoned) {
++            throw new IllegalStateException("Legacy commit cannot finish checked transaction",
++                    checkedTransactionFailure);
++        }
+--- a/TMessagesProj/src/main/java/org/telegram/SQLite/SQLitePreparedStatement.java
++++ b/TMessagesProj/src/main/java/org/telegram/SQLite/SQLitePreparedStatement.java
+@@ -21,0 +22 @@
++    private final SQLiteDatabase database;
+@@ -33 +34,8 @@
+-        sqliteStatementHandle = prepare(db.getSQLiteHandle(), sql);
++        database = db;
++        try {
++            db.checkOpened();
++            sqliteStatementHandle = prepare(db.getSQLiteHandle(), sql);
++        } catch (SQLiteException | RuntimeException | Error e) {
++            db.failCheckedTransaction(e);
++            throw e;
++        }
+@@ -78,0 +87 @@
++        checkFinalized();
+@@ -81,0 +91,15 @@
++    public void stepDone() throws SQLiteException {
++        try {
++            checkFinalized();
++            int result = step(sqliteStatementHandle);
++            if (result != 1) {
++                throw new SQLiteException(result == -1
++                        ? "SQLite statement is busy; expected SQLITE_DONE"
++                        : "SQLite statement returned a row; expected SQLITE_DONE");
++            }
++        } catch (SQLiteException | RuntimeException | Error e) {
++            database.failCheckedTransaction(e);
++            throw e;
++        }
++    }
++
+@@ -82,0 +107 @@
++        checkFinalized();
+@@ -96,0 +122 @@
++        database.checkOpened();

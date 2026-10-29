@@ -2,7 +2,6 @@ package org.telegram.messenger.televim;
 
 import android.content.Context;
 
-import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.DialogObject;
@@ -10,7 +9,6 @@ import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.UserConfig;
 import org.telegram.tgnet.ConnectionsManager;
 
-import java.io.File;
 import java.util.concurrent.Executor;
 
 /**
@@ -21,6 +19,7 @@ import java.util.concurrent.Executor;
 public final class PrivateReadingController {
     private static final Object LOCK = new Object();
     private static final State[] STATES = new State[UserConfig.MAX_ACCOUNT_COUNT];
+    private static final Lifetime[] LIFETIMES = new Lifetime[UserConfig.MAX_ACCOUNT_COUNT];
 
     private PrivateReadingController() {
     }
@@ -32,9 +31,9 @@ public final class PrivateReadingController {
     public static boolean blocksHistory(int account, long dialogId, long rootId, long subpeerId) {
         State state = state(account);
         if (state == null) {
-            return false;
+            return validAccount(account);
         }
-        return state.blocks(conversation(account, dialogId, rootId, subpeerId));
+        return state.blocks(conversation(state, dialogId, rootId, subpeerId));
     }
 
     public static boolean blocksContent(int account, long dialogId, int messageId) {
@@ -44,9 +43,9 @@ public final class PrivateReadingController {
     public static boolean blocksContent(int account, long dialogId, long rootId, long subpeerId, int messageId) {
         State state = state(account);
         if (state == null) {
-            return false;
+            return validAccount(account);
         }
-        PrivateReadingPolicy.Conversation conversation = conversation(account, dialogId, rootId, subpeerId);
+        PrivateReadingPolicy.Conversation conversation = conversation(state, dialogId, rootId, subpeerId);
         if (conversation == null) {
             return state.blocks(null);
         }
@@ -77,46 +76,154 @@ public final class PrivateReadingController {
                 master, privateChats, groups, channels, bots));
     }
 
-    public static void invalidate(int account) {
+    public static AccountHandle captureAccount(int account) {
+        State state = state(account);
+        return state == null ? null : new AccountHandle(state);
+    }
+
+    /**
+     * UserConfig publishes these transitions while holding its own lock.
+     * Nothing under LOCK may acquire UserConfig or resolve native singletons.
+     * Initial load publishes only once; only explicit authentication may replace
+     * a logout tombstone. Profile callbacks cannot prove a new account lifetime.
+     * Lifetime object identity also rejects state creation begun before logout.
+     */
+    public static void accountLoaded(int account, long userId) {
+        if (!validAccount(account)) {
+            return;
+        }
         synchronized (LOCK) {
-            State state = STATES[account];
-            STATES[account] = null;
-            if (state != null) {
-                state.close();
+            if (LIFETIMES[account] == null) {
+                LIFETIMES[account] = new Lifetime(userId);
             }
         }
     }
 
+    public static void accountActivated(int account, long userId) {
+        if (!validAccount(account) || userId <= 0) {
+            return;
+        }
+        synchronized (LOCK) {
+            replaceLifetime(account, userId);
+        }
+    }
+
+    public static void currentUserChanged(int account, long userId) {
+        if (!validAccount(account)) {
+            return;
+        }
+        synchronized (LOCK) {
+            Lifetime lifetime = LIFETIMES[account];
+            if (lifetime != null && lifetime.userId > 0 && lifetime.userId != userId) {
+                replaceLifetime(account, 0);
+            }
+        }
+    }
+
+    public static void invalidate(int account) {
+        if (!validAccount(account)) {
+            return;
+        }
+        synchronized (LOCK) {
+            Lifetime lifetime = LIFETIMES[account];
+            if (lifetime == null || lifetime.userId > 0) {
+                replaceLifetime(account, 0);
+            }
+        }
+    }
+
+    private static void replaceLifetime(int account, long userId) {
+        State state = STATES[account];
+        STATES[account] = null;
+        LIFETIMES[account] = new Lifetime(userId);
+        if (state != null) {
+            state.close();
+        }
+    }
+
+    private static boolean validAccount(int account) {
+        return account >= 0 && account < STATES.length;
+    }
+
     private static State state(int account) {
-        if (account < 0 || account >= STATES.length || ApplicationLoader.applicationContext == null) {
+        if (!validAccount(account) || ApplicationLoader.applicationContext == null) {
             return null;
         }
-        long userId = UserConfig.getInstance(account).getClientUserId();
-        if (userId <= 0 || !UserConfig.getInstance(account).isClientActivated()) {
-            invalidate(account);
-            return null;
+        Lifetime lifetime;
+        synchronized (LOCK) {
+            lifetime = LIFETIMES[account];
+            if (lifetime == null || lifetime.userId <= 0) {
+                return null;
+            }
         }
         boolean test = ConnectionsManager.getInstance(account).isTestBackend();
         PrivateReadingPolicy.Environment environment = test
                 ? PrivateReadingPolicy.Environment.TEST
                 : PrivateReadingPolicy.Environment.PRODUCTION;
         synchronized (LOCK) {
+            if (LIFETIMES[account] != lifetime) {
+                return null;
+            }
             State current = STATES[account];
-            if (current != null && current.userId == userId && current.environment == environment) {
+            if (current != null && current.environment == environment) {
                 return current;
             }
             if (current != null) {
                 current.close();
             }
-            current = new State(account, userId, environment);
+            current = new State(account, lifetime, environment);
             STATES[account] = current;
             current.settings.load();
             return current;
         }
     }
 
-    private static PrivateReadingPolicy.Conversation conversation(int account, long dialogId, long rootId, long subpeerId) {
-        long userId = UserConfig.getInstance(account).getClientUserId();
+    /**
+     * Capture at the originating action and retain through its asynchronous work.
+     * The policy and identity always belong to that owner, even after logout, so
+     * cancellation and completion can settle against the original policy.
+     * isCurrent is a snapshot, not a lock around a later native side effect;
+     * storage reservations and transport handoff still need their own fences.
+     */
+    public static final class AccountHandle {
+        private final State owner;
+
+        private AccountHandle(State owner) {
+            this.owner = owner;
+        }
+
+        public int account() {
+            return owner.account;
+        }
+
+        public PrivateReadingPolicy policy() {
+            return owner.policy;
+        }
+
+        public PrivateReadingPolicy.Identity identity() {
+            return owner.identity;
+        }
+
+        public boolean isCurrent() {
+            synchronized (LOCK) {
+                return STATES[owner.account] == owner
+                        && LIFETIMES[owner.account] == owner.lifetime
+                        && owner.policy.owns(owner.identity);
+            }
+        }
+    }
+
+    private static final class Lifetime {
+        final long userId;
+
+        Lifetime(long userId) {
+            this.userId = userId;
+        }
+    }
+
+    private static PrivateReadingPolicy.Conversation conversation(State state, long dialogId, long rootId, long subpeerId) {
+        int account = state.account;
+        long userId = state.userId;
         if (DialogObject.isEncryptedDialog(dialogId)) {
             return new PrivateReadingPolicy.Conversation(dialogId, 0, 0,
                     PrivateReadingPolicy.Category.SECRET);
@@ -147,14 +254,16 @@ public final class PrivateReadingController {
     private static final class State {
         final int account;
         final long userId;
+        final Lifetime lifetime;
         final PrivateReadingPolicy.Environment environment;
         final PrivateReadingPolicy policy;
         final PrivateReadingPolicy.Identity identity;
         final PrivateReadingSettings settings;
 
-        State(int account, long userId, PrivateReadingPolicy.Environment environment) {
+        State(int account, Lifetime lifetime, PrivateReadingPolicy.Environment environment) {
             this.account = account;
-            this.userId = userId;
+            this.lifetime = lifetime;
+            this.userId = lifetime.userId;
             this.environment = environment;
             policy = new PrivateReadingPolicy(environment, userId);
             identity = policy.identity();
@@ -171,7 +280,6 @@ public final class PrivateReadingController {
 
         void close() {
             settings.close();
-            policy.invalidate(policy.identity());
         }
     }
 }
