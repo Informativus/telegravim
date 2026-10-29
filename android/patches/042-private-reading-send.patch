@@ -1,0 +1,140 @@
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/SendMessagesHelper.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/SendMessagesHelper.java
+@@ -72,0 +73 @@
++import org.telegram.messenger.televim.PrivateReadingSend;
+@@ -784,0 +786,2 @@
++    private final PrivateReadingSend.Registry privateReadingSends = new PrivateReadingSend.Registry();
++
+@@ -935,0 +939 @@
++                    PrivateReadingSend.fail(privateReadingSends.capture(obj));
+@@ -945,0 +950 @@
++                PrivateReadingSend.fail(privateReadingSends.capture(obj));
+@@ -989,0 +995 @@
++        privateReadingSends.clear();
+@@ -1589,0 +1596 @@
++            privateReadingSends.cancel(object);
+@@ -1599,0 +1607 @@
++                privateReadingSends.cancel(sendingMessage);
+@@ -1613,0 +1622 @@
++                                privateReadingSends.cancel(messageObject);
+@@ -1670,0 +1680 @@
++                        privateReadingSends.cancel(message.obj);
+@@ -1777,0 +1788,5 @@
++        if (!unsent) {
++            privateReadingSends.manualRetry(messageObject);
++            params.receiptOrigin = PrivateReadingSend.capture(currentAccount);
++            params.receiptManualRetry = true;
++        }
+@@ -2079,0 +2095 @@
++        final PrivateReadingSend.Origin receiptOrigin = PrivateReadingSend.capture(currentAccount);
+@@ -2192,0 +2209 @@
++                    sendMessageParams.receiptOrigin = receiptOrigin;
+@@ -2212,0 +2230 @@
++            sendMessageParams.receiptOrigin = receiptOrigin;
+@@ -2245,0 +2264,20 @@
++    ) {
++        return sendMessage(messages, peer, forwardFromMyName, hideCaption, notify, scheduleDate,
++                scheduleRepeatPeriod, replyToTopMsg, video_timestamp, payStars, monoForumPeerId,
++                suggestionParams, PrivateReadingSend.capture(currentAccount));
++    }
++
++    private int sendMessage(
++        ArrayList<MessageObject> messages,
++        final long peer,
++        boolean forwardFromMyName,
++        boolean hideCaption,
++        boolean notify,
++        int scheduleDate,
++        int scheduleRepeatPeriod,
++        MessageObject replyToTopMsg,
++        int video_timestamp,
++        long payStars,
++        long monoForumPeerId,
++        MessageSuggestionParams suggestionParams,
++        PrivateReadingSend.Origin receiptOrigin
+@@ -2274 +2312 @@
+-                    sendMessage(messages, peer, forwardFromMyName, hideCaption, notify, scheduleDate, scheduleRepeatPeriod, replyToTopMsg, video_timestamp, newPayStars, monoForumPeerId, suggestionParams);
++                    sendMessage(messages, peer, forwardFromMyName, hideCaption, notify, scheduleDate, scheduleRepeatPeriod, replyToTopMsg, video_timestamp, newPayStars, monoForumPeerId, suggestionParams, receiptOrigin);
+@@ -2332,0 +2371 @@
++                        params.receiptOrigin = receiptOrigin;
+@@ -2699,0 +2739,3 @@
++                privateReadingSends.forward(receiptOrigin, newMsgObj, msgObj, scheduleDate,
++                        replyToTopMsg == null ? 0 : replyToTopMsg.getId());
++
+@@ -2757,0 +2800 @@
++                    final PrivateReadingSend.Attempt[] receiptAttempts = privateReadingSends.capture(newMsgArr);
+@@ -2758,0 +2802 @@
++                        PrivateReadingSend.dispatch(receiptAttempts, req, scheduleDate != 0);
+@@ -2759,0 +2804 @@
++                            PrivateReadingSend.terminal(receiptAttempts, response, error);
+@@ -4428,0 +4474 @@
++        PrivateReadingSend.origin(currentAccount, sendMessageParams);
+@@ -5317,0 +5364 @@
++            privateReadingSends.register(sendMessageParams, newMsgObj, isWelcomeMessageTemplate);
+@@ -6558,0 +6606 @@
++            PrivateReadingSend.fail(privateReadingSends.capture(newMsgObj));
+@@ -7719,0 +7768,2 @@
++        final PrivateReadingSend.Attempt[] receiptAttempts = privateReadingSends.capture(msgObjs);
++        PrivateReadingSend.dispatch(receiptAttempts, request, scheduled);
+@@ -7782,0 +7833 @@
++                            PrivateReadingSend.fail(receiptAttempts);
+@@ -7797,0 +7849 @@
++            PrivateReadingSend.terminal(receiptAttempts, response, error);
+@@ -8111,0 +8164,3 @@
++        final PrivateReadingSend.Attempt receiptAttempt = PrivateReadingSend.dispatch(
++                privateReadingSends.capture(msgObj), req, scheduled);
++        final boolean receiptShortResult = PrivateReadingSend.shortResult(receiptAttempt, req);
+@@ -8201,0 +8257 @@
++            PrivateReadingSend.terminal(receiptAttempt, response, error, receiptShortResult);
+@@ -9412 +9468 @@
+-    private static int prepareSendingDocumentInternal(AccountInstance accountInstance, String path, String originalPath, Uri uri, String mime, long dialogId, MessageObject replyToMsg, MessageObject replyToTopMsg, TL_stories.StoryItem storyItem, ChatActivity.ReplyQuote quote, final ArrayList<TLRPC.MessageEntity> entities, final MessageObject editingMessageObject, long[] groupId, boolean isGroupFinal, CharSequence caption, boolean notify, int scheduleDate, int scheduleRepeatPeriod, Integer[] docType, boolean forceDocument, SendMessageChatArguments sendMessageChatArguments, long effectId, boolean invertMedia, long payStars, long monoForumPeerId, MessageSuggestionParams suggestionParams, PollSendParams pollSendParams, int pollIndex) {
++    private static int prepareSendingDocumentInternal(AccountInstance accountInstance, String path, String originalPath, Uri uri, String mime, long dialogId, MessageObject replyToMsg, MessageObject replyToTopMsg, TL_stories.StoryItem storyItem, ChatActivity.ReplyQuote quote, final ArrayList<TLRPC.MessageEntity> entities, final MessageObject editingMessageObject, long[] groupId, boolean isGroupFinal, CharSequence caption, boolean notify, int scheduleDate, int scheduleRepeatPeriod, Integer[] docType, boolean forceDocument, SendMessageChatArguments sendMessageChatArguments, long effectId, boolean invertMedia, long payStars, long monoForumPeerId, MessageSuggestionParams suggestionParams, PollSendParams pollSendParams, int pollIndex, PrivateReadingSend.Origin receiptOrigin) {
+@@ -9713,0 +9770 @@
++                sendMessageParams.receiptOrigin = receiptOrigin;
+@@ -9963,0 +10021,2 @@
++        final PrivateReadingSend.Origin receiptOrigin =
++                PrivateReadingSend.capture(accountInstance.getCurrentAccount());
+@@ -10048,0 +10108 @@
++                        sendMessageParams.receiptOrigin = receiptOrigin;
+@@ -10115,0 +10176,2 @@
++        final PrivateReadingSend.Origin receiptOrigin =
++                PrivateReadingSend.capture(accountInstance.getCurrentAccount());
+@@ -10138 +10200 @@
+-                    error = prepareSendingDocumentInternal(accountInstance, paths.get(a), originalPaths.get(a), null, mime, dialogId, replyToMsg, replyToTopMsg, storyItem, quote, a == 0 ? captionEntities : null, editingMessageObject, groupId, isGroupFinal, captionFinal, notify, scheduleDate, scheduleRepeatPeriod, docType, inputContent == null, sendMessageChatArguments, first ? effectId : 0, invertMedia, payStars, monoForumPeerId, suggestionParams, pollSendParams, pollSendIndexes!= null ? pollSendIndexes.get(a) : -1);
++                    error = prepareSendingDocumentInternal(accountInstance, paths.get(a), originalPaths.get(a), null, mime, dialogId, replyToMsg, replyToTopMsg, storyItem, quote, a == 0 ? captionEntities : null, editingMessageObject, groupId, isGroupFinal, captionFinal, notify, scheduleDate, scheduleRepeatPeriod, docType, inputContent == null, sendMessageChatArguments, first ? effectId : 0, invertMedia, payStars, monoForumPeerId, suggestionParams, pollSendParams, pollSendIndexes!= null ? pollSendIndexes.get(a) : -1, receiptOrigin);
+@@ -10168 +10230 @@
+-                    error = prepareSendingDocumentInternal(accountInstance, null, null, uris.get(a), mime, dialogId, replyToMsg, replyToTopMsg, storyItem, quote, captionEntitiesFinal, editingMessageObject, groupId, isGroupFinal, captionFinal, notify, scheduleDate, scheduleRepeatPeriod, docType, inputContent == null, sendMessageChatArguments, first ? effectId : 0, invertMedia, payStars, monoForumPeerId, suggestionParams, pollSendParams, pollSendUriIndexes != null ? pollSendUriIndexes.get(a) : -1);
++                    error = prepareSendingDocumentInternal(accountInstance, null, null, uris.get(a), mime, dialogId, replyToMsg, replyToTopMsg, storyItem, quote, captionEntitiesFinal, editingMessageObject, groupId, isGroupFinal, captionFinal, notify, scheduleDate, scheduleRepeatPeriod, docType, inputContent == null, sendMessageChatArguments, first ? effectId : 0, invertMedia, payStars, monoForumPeerId, suggestionParams, pollSendParams, pollSendUriIndexes != null ? pollSendUriIndexes.get(a) : -1, receiptOrigin);
+@@ -10697,0 +10760,2 @@
++        final PrivateReadingSend.Origin receiptOrigin =
++                PrivateReadingSend.capture(accountInstance.getCurrentAccount());
+@@ -10714,0 +10779,2 @@
++                    params.receiptOrigin = receiptOrigin;
++                    params.receiptExcluded = topicId != 0 && replyToMsg == null;
+@@ -10864,0 +10931,2 @@
++        final PrivateReadingSend.Origin receiptOrigin =
++                PrivateReadingSend.capture(accountInstance.getCurrentAccount());
+@@ -11114,0 +11183 @@
++                                sendMessageParams.receiptOrigin = receiptOrigin;
+@@ -11198,0 +11268 @@
++                                    sendMessageParams.receiptOrigin = receiptOrigin;
+@@ -11468,0 +11539 @@
++                                    sendMessageParams.receiptOrigin = receiptOrigin;
+@@ -11682,0 +11754 @@
++                                        sendMessageParams.receiptOrigin = receiptOrigin;
+@@ -11731 +11803 @@
+-                    int error = prepareSendingDocumentInternal(accountInstance, sendAsDocuments.get(a), sendAsDocumentsOriginal.get(a), sendAsDocumentsUri.get(a), extension, dialogId, replyToMsg, replyToTopMsg, storyItem, quote, sendAsDocumentsEntities.get(a), editingMessageObject, groupId2, mediaCount == 10 || a == documentsCount - 1, sendAsDocumentsCaptions.get(a), notify, scheduleDate, 0, null, forceDocument, sendMessageChatArguments, effectId, invertMedia, payStars, monoForumPeerId, suggestionParams, null, -1);
++                    int error = prepareSendingDocumentInternal(accountInstance, sendAsDocuments.get(a), sendAsDocumentsOriginal.get(a), sendAsDocumentsUri.get(a), extension, dialogId, replyToMsg, replyToTopMsg, storyItem, quote, sendAsDocumentsEntities.get(a), editingMessageObject, groupId2, mediaCount == 10 || a == documentsCount - 1, sendAsDocumentsCaptions.get(a), notify, scheduleDate, 0, null, forceDocument, sendMessageChatArguments, effectId, invertMedia, payStars, monoForumPeerId, suggestionParams, null, -1, receiptOrigin);
+@@ -12069,0 +12142,2 @@
++        final PrivateReadingSend.Origin receiptOrigin =
++                PrivateReadingSend.capture(accountInstance.getCurrentAccount());
+@@ -12263,0 +12338 @@
++                        sendMessageParams.receiptOrigin = receiptOrigin;
+@@ -12277 +12352 @@
+-                prepareSendingDocumentInternal(accountInstance, videoPath, videoPath, null, null, dialogId, replyToMsg, replyToTopMsg, storyItem, quote, entities, editingMessageObject, null, false, caption, notify, scheduleDate, scheduleRepeatPeriod, null, forceDocument, sendMessageChatArguments, 0, invertMedia, stars, monoForumPeerId, suggestionParams, null, -1);
++                prepareSendingDocumentInternal(accountInstance, videoPath, videoPath, null, null, dialogId, replyToMsg, replyToTopMsg, storyItem, quote, entities, editingMessageObject, null, false, caption, notify, scheduleDate, scheduleRepeatPeriod, null, forceDocument, sendMessageChatArguments, 0, invertMedia, stars, monoForumPeerId, suggestionParams, null, -1, receiptOrigin);
+@@ -12282,0 +12358,4 @@
++        public PrivateReadingSend.Origin receiptOrigin;
++        public boolean receiptRegistered;
++        public boolean receiptManualRetry;
++        public boolean receiptExcluded;

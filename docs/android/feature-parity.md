@@ -692,14 +692,35 @@ remain unsupported because the pinned unread-mentions API has no subpeer field;
 they do not become zero or fall back to another conversation. Token custody lasts
 through both transport settlement and counter reconciliation.
 
+Ordinary-send integration captures the original account before helper preparation
+queues and retains a bounded attempt through native uploads and retries. Terminal
+success requires the exact random-ID mapping, outgoing server message and frozen
+conversation, or a request-specific short result whose peer and reply scope are
+proved. Explicit positive roots, including the General topic, cannot fall back to
+the parent dialog. Proven ordinary replies in known private/group parent dialogs
+freeze their original reply target for short-result validation. Ambiguous replies,
+unresolved topic/subpeer metadata and unsupported payload types withhold release.
+Quick acknowledgements, failed sends and E2E controls do not authorize it. A valid
+success freezes its policy generation before deferred storage/drain work; the
+drain consumes that existing scope without creating another manual-read grant.
+Admission and pending feedback are bounded, and a later failure remains visible.
+
+The admitted send paths cover ordinary text, photos, documents, audio, video,
+stickers, albums, forwards and locally prepared TVE2 messages when terminal proof
+exists. Scheduled, template, business/service/edit, paid/ephemeral, inline-bot,
+poll/todo/game/invoice, story/live-photo and suggested-post variants remain outside
+that grant. Helper-level origin capture does not establish coverage for every
+earlier UI/notification producer queue. Unknown or restored work cannot recreate
+authorization; explicit manual retry creates a fresh attempt.
+
 Remaining early UI/storage paths, reaction/poll and explicit mark-all flows,
-TTL consent/replay, successful-send release and complete manual-action
+TTL consent/replay, unsupported send variants and complete manual-action
 reconciliation remain separate outstanding work. Other queued native storage
 paths still need their own lifetime/revision fencing; the mention transaction
 does not establish coverage for every content receipt.
 
 Android Java/resources compilation passed for the account-lifetime, guarded
-transport, queued history and checked scoped-storage foundation. Subsequent
-UI observation and typed-mention integration requires
-its own exact-source compilation; no new signed APK or authenticated-device
+transport, queued history, checked scoped-storage and UI/mention integration.
+Subsequent successful-send integration requires its own exact-source compilation;
+no new signed APK or authenticated-device
 acceptance is implied by the source and patch-application checks above.

@@ -14,6 +14,7 @@ import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.BaseFragment;
+import org.telegram.ui.LaunchActivity;
 
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
@@ -26,6 +27,7 @@ import org.telegram.messenger.televim.PrivateReadingPolicy.ReleaseScope;
 import org.telegram.messenger.televim.PrivateReadingPolicy.RequestToken;
 
 public final class PrivateReadingRelease {
+    private static final Feedback[] SEND_FEEDBACK = new Feedback[UserConfig.MAX_ACCOUNT_COUNT];
     private PrivateReadingRelease() {
     }
 
@@ -157,6 +159,68 @@ public final class PrivateReadingRelease {
         }
     }
 
+    static void sendPending(AccountHandle owner) {
+        sendFeedback(owner).show(R.string.TelevimReadScopePending);
+    }
+
+    private static synchronized Feedback sendFeedback(AccountHandle owner) {
+        Feedback feedback = SEND_FEEDBACK[owner.account()];
+        if (feedback == null || feedback.owner.identity() != owner.identity()) {
+            feedback = new Feedback(null, owner);
+            SEND_FEEDBACK[owner.account()] = feedback;
+        }
+        return feedback;
+    }
+
+    /**
+     * acceptedSend has already chosen the scope and generation on the terminal
+     * callback thread. The UI handoff only resolves native peers and continues
+     * that exact scope; failure abandons it without another manualRead snapshot.
+     * Native-policy acceptance has no scope and needs no drain or feedback.
+     */
+    static void accepted(AccountHandle owner, MessagesController messages,
+                         ConnectionsManager connections, ReleaseScope scope) {
+        if (scope == null) {
+            return;
+        }
+        Feedback feedback = sendFeedback(owner);
+        try {
+            if (ApplicationLoader.applicationHandler.post(() -> {
+                if (!owner.isCurrent() || scope.identity != owner.identity()) {
+                    owner.policy().abandonRelease(owner.identity(), scope);
+                    return;
+                }
+                try {
+                    TLRPC.InputPeer peer = knownPeer(messages, owner, scope.conversation.dialogId);
+                    TLRPC.InputPeer subpeer = scope.conversation.subpeerId == 0 ? null
+                            : knownPeer(messages, owner, scope.conversation.subpeerId);
+                    if (peer == null || scope.conversation.subpeerId != 0 && subpeer == null) {
+                        owner.policy().abandonRelease(owner.identity(), scope);
+                        feedback.show(R.string.TelevimReadScopePending);
+                        return;
+                    }
+                    Drain drain = new Drain(owner, messages, connections, scope, peer, subpeer, feedback);
+                    try {
+                        owner.storage().commitPrivateReadingRelease(owner, scope, drain::committed);
+                    } catch (RuntimeException error) {
+                        drain.finish(R.string.TelevimReadFailed);
+                    }
+                } catch (RuntimeException error) {
+                    owner.policy().abandonRelease(owner.identity(), scope);
+                    feedback.show(R.string.TelevimReadFailed);
+                }
+            })) {
+                return;
+            }
+        } catch (RuntimeException error) {
+            owner.policy().abandonRelease(owner.identity(), scope);
+            feedback.show(R.string.TelevimReadFailed);
+            return;
+        }
+        owner.policy().abandonRelease(owner.identity(), scope);
+        feedback.show(R.string.TelevimReadFailed);
+    }
+
     private static TLRPC.InputPeer knownPeer(MessagesController messages, AccountHandle owner, long dialogId) {
         if (dialogId == 0 || dialogId > 0 && dialogId != owner.identity().userId
                 && (messages.getUser(dialogId) == null || messages.getUser(dialogId).min)
@@ -177,30 +241,47 @@ public final class PrivateReadingRelease {
     private static final class Feedback {
         final WeakReference<BaseFragment> fragment;
         final AccountHandle owner;
+        final boolean send;
         private int state;
         private int shownState;
         private boolean scheduled;
         private Toast toast;
+        private long lastShown;
 
         Feedback(BaseFragment fragment, AccountHandle owner) {
             this.fragment = new WeakReference<>(fragment);
             this.owner = owner;
+            send = fragment == null;
         }
 
         synchronized void show(int text) {
             int requested = text == R.string.TelevimReadFailed ? 3
                     : text == R.string.TelevimReadScopePending ? 2 : 1;
+            if (send && !scheduled && android.os.SystemClock.elapsedRealtime() - lastShown >= 5000) {
+                state = 0;
+                shownState = 0;
+            }
             state = Math.max(state, requested);
             if (scheduled || state <= shownState) {
                 return;
             }
             scheduled = true;
-            AndroidUtilities.runOnUIThread(this::display, 1);
+            if (send) {
+                try {
+                    if (!ApplicationLoader.applicationHandler.postDelayed(this::display, 1)) {
+                        scheduled = false;
+                    }
+                } catch (RuntimeException error) {
+                    scheduled = false;
+                }
+            } else {
+                AndroidUtilities.runOnUIThread(this::display, 1);
+            }
         }
 
         private synchronized void display() {
             scheduled = false;
-            BaseFragment screen = fragment.get();
+            BaseFragment screen = send ? LaunchActivity.getSafeLastFragment() : fragment.get();
             if (screen == null || screen.isFinished || screen.isPaused() || screen.getParentActivity() == null
                     || screen.getCurrentAccount() != UserConfig.selectedAccount
                     || owner != null && (!owner.isCurrent() || screen.getCurrentAccount() != owner.account())) {
@@ -208,6 +289,7 @@ public final class PrivateReadingRelease {
                 return;
             }
             shownState = state;
+            lastShown = android.os.SystemClock.elapsedRealtime();
             int text = state == 3 ? R.string.TelevimReadFailed
                     : state == 2 ? R.string.TelevimReadScopePending : R.string.TelevimReadSentPending;
             if (toast != null) {

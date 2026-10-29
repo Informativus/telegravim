@@ -66,11 +66,12 @@
     "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingController.java": "dad0ad949380abf62376306fc5c61ffb8e55250aae5853ce97207892997ba153",
     "TMessagesProj/src/main/java/org/telegram/ui/PrivateReadingSettingsActivity.java": "a744b3279473e096b055e3d95af58ab0ebba16d98892e84184517647926379b6",
     "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingStorage.java": "3e5dee06c051a2f027017976cc1aa60250d900fc0b9758c405d605564b45d0d6",
-    "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingRelease.java": "4100fcb2b54f9f3f0c5d2cc57ff60f5990443c5382876a5f9a44ab2c38f68483",
+    "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingRelease.java": "0bb6e22a0f042d41266bf9fab94336ee7d72cf1ead9995eb00a3bad86049752e",
     "TMessagesProj/src/main/res/values/televim_receipts.xml": "3c74326e9d5c17d580535b052cdc0f98f23151b35ca1888276d8830a9475d770",
     "TMessagesProj/src/main/res/values-ru/televim_receipts.xml": "dc8238776fe342e59c925342a4b645ae075ef6a817e7219f42aecd8aaf026730",
     "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingMentionOperation.java": "66b3d6464579d1a37500aa298c77dbf1ff4e84df24b47049c236c500726dca04",
-    "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingMentionStorage.java": "748274e9f63d60c7ce9a60b7f45230a4b4335faddef9e81be20bb039efe821e6"
+    "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingMentionStorage.java": "748274e9f63d60c7ce9a60b7f45230a4b4335faddef9e81be20bb039efe821e6",
+    "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingSend.java": "ada85feb26422ba8d04621227e1b300c628067791e753c33e6439d46cf35733c"
   },
   "patches": {
     "001-AndroidManifest.patch": "e331ae6f9691410249aefd7985216d5a94b502b8967b940ddeb49e7a19484b05",
@@ -117,7 +118,8 @@
     "038-private-reading-queue-completion.patch": "d85ae0f14f880555e28377269a7423c16c3e2086733721fc020ad2948b8fcb26",
     "039-private-reading-ui-observation.patch": "920709ddae18dd1cf211cf2d1f84f6831de1ec97b1a7f3d0947c1706a922a8c5",
     "040-private-reading-mention-transport.patch": "440396b6ce85de74522e65c257da238f5534c49fa82551720072c2c8712808f2",
-    "041-private-reading-mention-commit.patch": "6b61ef8847bfb152f2f867ce25c450d6c4a62b643ff31e64be727d756f032428"
+    "041-private-reading-mention-commit.patch": "6b61ef8847bfb152f2f867ce25c450d6c4a62b643ff31e64be727d756f032428",
+    "042-private-reading-send.patch": "7d0107cf2b0b30f84a7106027c14ffdaf6d26f5601c6d539b6728689be5446b1"
   },
   "upstream_commit": "3de37c8cfb039452be7398909461da6288babf15"
 }
