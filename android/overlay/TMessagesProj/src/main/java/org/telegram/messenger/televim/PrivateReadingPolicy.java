@@ -36,6 +36,7 @@ public final class PrivateReadingPolicy {
     private long sequence;
     private int contentCount;
     private int requestContentCount;
+    private int transportPayloadBytes;
     private int committing;
     private final Map<Conversation, Pending> pending = new HashMap<Conversation, Pending>();
     private final Map<Conversation, Classification> keys = new HashMap<Conversation, Classification>();
@@ -414,6 +415,27 @@ public final class PrivateReadingPolicy {
         return PrivateReadingPolicy.ok(requestToken);
     }
 
+    public synchronized boolean claimTransport(Identity identity, RequestToken requestToken, int payloadBytes) {
+        if (!this.owns(identity) || !this.requests.containsKey(requestToken)
+                || requestToken.transportBytes != 0 || requestToken.invalid
+                || !this.valid(requestToken.stamp, requestToken.conversation)
+                || payloadBytes <= 0 || payloadBytes > MAX_RETAINED_BYTES) {
+            return false;
+        }
+        if (!this.capacity(requestToken.conversation, 0, payloadBytes)) {
+            this.failure = Failure.CAPACITY;
+            return false;
+        }
+        requestToken.transportBytes = payloadBytes;
+        this.transportPayloadBytes += payloadBytes;
+        return true;
+    }
+
+    public synchronized boolean finishUnclaimedRequest(Identity identity, RequestToken requestToken) {
+        return requestToken != null && requestToken.transportBytes == 0
+                && this.finishRequest(identity, requestToken);
+    }
+
     public synchronized boolean handOff(Identity identity, RequestToken requestToken) {
         if (!this.owns(identity) || !this.requests.containsKey(requestToken) || requestToken.handedOff || requestToken.invalid || !this.valid(requestToken.stamp, requestToken.conversation)) {
             return false;
@@ -454,6 +476,7 @@ public final class PrivateReadingPolicy {
             return false;
         }
         this.requestContentCount -= requestToken.count;
+        this.transportPayloadBytes -= requestToken.transportBytes;
         Release release = this.find(requestToken.scope);
         if (release != null) {
             --release.requests;
@@ -722,7 +745,7 @@ public final class PrivateReadingPolicy {
     }
 
     private int retainedBytes() {
-        return 4096 + this.keys.size() * 256 + (this.contentCount + this.requestContentCount) * 96 + this.sends.size() * 256 + this.releases.size() * 512 + this.requests.size() * 256 + this.notifications.size() * 384 + (this.special == null ? 0 : 256);
+        return 4096 + this.transportPayloadBytes + this.keys.size() * 256 + (this.contentCount + this.requestContentCount) * 96 + this.sends.size() * 256 + this.releases.size() * 512 + this.requests.size() * 256 + this.notifications.size() * 384 + (this.special == null ? 0 : 256);
     }
 
     private void retainKey(Conversation conversation) {
@@ -1122,6 +1145,7 @@ public final class PrivateReadingPolicy {
         private final Stamp stamp;
         private final int offset;
         private final int count;
+        private int transportBytes;
         private boolean handedOff;
         private boolean invalid;
 

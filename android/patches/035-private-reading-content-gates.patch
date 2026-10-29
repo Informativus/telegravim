@@ -1,0 +1,33 @@
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
+@@ -14401 +14401,11 @@
+-        if (messageObject.scheduled) {
++        if (messageObject == null || messageObject.currentAccount != currentAccount || messageObject.scheduled) {
++            return;
++        }
++        final long contentDialogId = messageObject.getDialogId();
++        final int forumFlags = getMessagesStorage().getForumTypeFlags(contentDialogId);
++        final boolean monoForum = (forumFlags & MessagesStorage.FORUM_TYPE_DIRECT) != 0;
++        final long contentTopicId = MessageObject.getTopicId(currentAccount, messageObject.messageOwner, forumFlags);
++        final long contentRootId = contentTopicId == 0 && (monoForum || messageObject.messageOwner.isThreadMessage)
++                ? -1 : monoForum ? 0 : contentTopicId;
++        if (org.telegram.messenger.televim.PrivateReadingController.blocksContent(currentAccount, contentDialogId,
++                contentRootId, monoForum ? contentTopicId : 0, messageObject.getId())) {
+@@ -14706,0 +14717,5 @@
++        final boolean monoForum = getMessagesStorage().isMonoForum(dialogId);
++        if (org.telegram.messenger.televim.PrivateReadingController.blocksHistory(currentAccount, dialogId,
++                monoForum ? 0 : topicId, monoForum ? topicId : 0)) {
++            return;
++        }
+@@ -21675,0 +21691,5 @@
++        final boolean monoForum = getMessagesStorage().isMonoForum(dialogId);
++        if (org.telegram.messenger.televim.PrivateReadingController.blocksHistory(currentAccount, dialogId,
++                monoForum ? 0 : topicId, monoForum ? topicId : 0)) {
++            return;
++        }
+@@ -21706,0 +21727,5 @@
++        final boolean monoForum = getMessagesStorage().isMonoForum(dialogId);
++        if (org.telegram.messenger.televim.PrivateReadingController.blocksHistory(currentAccount, dialogId,
++                monoForum ? 0 : topicId, monoForum ? topicId : 0)) {
++            return;
++        }

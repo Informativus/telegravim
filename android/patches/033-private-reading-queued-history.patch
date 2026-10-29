@@ -1,0 +1,201 @@
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
+@@ -60,0 +61,2 @@
++import org.telegram.messenger.televim.PrivateReadingController;
++import org.telegram.messenger.televim.PrivateReadingPolicy;
+@@ -1250,0 +1253,6 @@
++        public final PrivateReadingController.AccountHandle owner;
++
++        ReadTask(PrivateReadingController.AccountHandle owner) {
++            this.owner = owner;
++        }
++
+@@ -14562,2 +14570,5 @@
+-        if (org.telegram.messenger.televim.PrivateReadingController.blocksHistory(currentAccount, task.dialogId,
+-                task.monoForumPeerId == 0 ? task.replyId : 0, task.monoForumPeerId)) {
++        final PrivateReadingController.AccountHandle owner = task.owner;
++        final PrivateReadingPolicy.Conversation conversation =
++                owner.conversation(task.dialogId, task.monoForumPeerId == 0 ? task.replyId : 0, task.monoForumPeerId);
++        if (conversation == null || owner.policy().decision(owner.identity(), conversation)
++                != PrivateReadingPolicy.ReceiptDecision.NATIVE) {
+@@ -14566,38 +14577 @@
+-        if (task.replyId != 0 && task.monoForumPeerId == 0) {
+-            TLRPC.TL_messages_readDiscussion req = new TLRPC.TL_messages_readDiscussion();
+-            req.msg_id = (int) task.replyId;
+-            req.peer = getInputPeer(task.dialogId);
+-            req.read_max_id = task.maxId;
+-            getConnectionsManager().sendRequest(req, (response, error) -> {
+-
+-            });
+-        } else if (!DialogObject.isEncryptedDialog(task.dialogId)) {
+-            TLRPC.InputPeer inputPeer = getInputPeer(task.dialogId);
+-            TLObject req;
+-
+-            if (task.monoForumPeerId != 0) {
+-                TLRPC.TL_messages_readSavedHistory request = new TLRPC.TL_messages_readSavedHistory();
+-                request.parent_peer = getInputPeer(task.dialogId);
+-                request.peer = getInputPeer(task.monoForumPeerId);
+-                request.max_id = task.maxId;
+-                req = request;
+-            } else if (inputPeer instanceof TLRPC.TL_inputPeerChannel) {
+-                TLRPC.TL_channels_readHistory request = new TLRPC.TL_channels_readHistory();
+-                request.channel = getInputChannel(-task.dialogId);
+-                request.max_id = task.maxId;
+-                req = request;
+-            } else {
+-                TLRPC.TL_messages_readHistory request = new TLRPC.TL_messages_readHistory();
+-                request.peer = inputPeer;
+-                request.max_id = task.maxId;
+-                req = request;
+-            }
+-            getConnectionsManager().sendRequest(req, (response, error) -> {
+-                if (error == null) {
+-                    if (response instanceof TLRPC.TL_messages_affectedMessages) {
+-                        TLRPC.TL_messages_affectedMessages res = (TLRPC.TL_messages_affectedMessages) response;
+-                        processNewDifferenceParams(-1, res.pts, -1, res.pts_count);
+-                    }
+-                }
+-            });
+-        } else {
++        if (DialogObject.isEncryptedDialog(task.dialogId)) {
+@@ -14605 +14579,2 @@
+-            if (chat.auth_key != null && chat.auth_key.length > 1 && chat instanceof TLRPC.TL_encryptedChat) {
++            if (chat != null && chat.auth_key != null && chat.auth_key.length > 1
++                    && chat instanceof TLRPC.TL_encryptedChat && owner.isCurrent()) {
+@@ -14615 +14590,52 @@
+-        }
++            return;
++        }
++        TLRPC.InputPeer inputPeer = getInputPeer(task.dialogId);
++        if (inputPeer == null || inputPeer instanceof TLRPC.TL_inputPeerEmpty) {
++            return;
++        }
++        TLObject req;
++        if (task.replyId != 0 && task.monoForumPeerId == 0) {
++            if (task.replyId < 0 || task.replyId > Integer.MAX_VALUE) {
++                return;
++            }
++            TLRPC.TL_messages_readDiscussion request = new TLRPC.TL_messages_readDiscussion();
++            request.msg_id = (int) task.replyId;
++            request.peer = inputPeer;
++            request.read_max_id = task.maxId;
++            req = request;
++        } else if (task.monoForumPeerId != 0) {
++            TLRPC.InputPeer subpeer = getInputPeer(task.monoForumPeerId);
++            if (subpeer == null || subpeer instanceof TLRPC.TL_inputPeerEmpty) {
++                return;
++            }
++            TLRPC.TL_messages_readSavedHistory request = new TLRPC.TL_messages_readSavedHistory();
++            request.parent_peer = inputPeer;
++            request.peer = subpeer;
++            request.max_id = task.maxId;
++            req = request;
++        } else if (inputPeer instanceof TLRPC.TL_inputPeerChannel) {
++            TLRPC.InputChannel channel = getInputChannel(-task.dialogId);
++            if (channel == null || channel instanceof TLRPC.TL_inputChannelEmpty) {
++                return;
++            }
++            TLRPC.TL_channels_readHistory request = new TLRPC.TL_channels_readHistory();
++            request.channel = channel;
++            request.max_id = task.maxId;
++            req = request;
++        } else {
++            TLRPC.TL_messages_readHistory request = new TLRPC.TL_messages_readHistory();
++            request.peer = inputPeer;
++            request.max_id = task.maxId;
++            req = request;
++        }
++        PrivateReadingPolicy.Result<PrivateReadingPolicy.RequestToken> reservation =
++                owner.policy().reserveNativeHistory(owner.identity(), conversation, task.maxId);
++        if (!reservation.accepted()) {
++            return;
++        }
++        getConnectionsManager().sendPrivateReadingRequest(req, owner, reservation.value, (response, error) -> {
++            if (error == null && response instanceof TLRPC.TL_messages_affectedMessages && owner.isCurrent()) {
++                TLRPC.TL_messages_affectedMessages res = (TLRPC.TL_messages_affectedMessages) response;
++                processNewDifferenceParams(-1, res.pts, -1, res.pts_count);
++            }
++        });
+@@ -14622 +14648 @@
+-            if (task.sendRequestTime > time) {
++            if (task.owner.isCurrent() && task.sendRequestTime > time) {
+@@ -14633 +14659 @@
+-            if (task.sendRequestTime > time) {
++            if (task.owner.isCurrent() && task.sendRequestTime > time) {
+@@ -14644,0 +14671,5 @@
++        final PrivateReadingController.AccountHandle owner =
++                PrivateReadingController.captureAccount(currentAccount);
++        if (owner == null || !owner.isCurrent()) {
++            return;
++        }
+@@ -14646,8 +14677,18 @@
+-            if (replyId != 0) {
+-                String key = dialogId + "_" + replyId;
+-                ReadTask currentReadTask = threadsReadTasksMap.get(key);
+-                if (currentReadTask == null) {
+-                    return;
+-                }
+-                completeReadTask(currentReadTask);
+-                repliesReadTasks.remove(currentReadTask);
++            if (!owner.isCurrent()) {
++                return;
++            }
++            ReadTask currentReadTask = replyId != 0
++                    ? threadsReadTasksMap.get(dialogId + "_" + replyId)
++                    : readTasksMap.get(dialogId);
++            if (currentReadTask == null || currentReadTask.owner.identity() != owner.identity()) {
++                return;
++            }
++            removeReadTask(currentReadTask);
++            completeReadTask(currentReadTask);
++        });
++    }
++
++    private void removeReadTask(ReadTask task) {
++        if (task.replyId != 0) {
++            String key = task.dialogId + "_" + task.replyId;
++            if (threadsReadTasksMap.get(key) == task) {
+@@ -14655,10 +14696,8 @@
+-            } else {
+-                ReadTask currentReadTask = readTasksMap.get(dialogId);
+-                if (currentReadTask == null) {
+-                    return;
+-                }
+-                completeReadTask(currentReadTask);
+-                readTasks.remove(currentReadTask);
+-                readTasksMap.remove(dialogId);
+-            }
+-        });
++            }
++            repliesReadTasks.remove(task);
++        } else {
++            if (readTasksMap.get(task.dialogId) == task) {
++                readTasksMap.remove(task.dialogId);
++            }
++            readTasks.remove(task);
++        }
+@@ -14681,0 +14721,5 @@
++        final PrivateReadingController.AccountHandle owner =
++                PrivateReadingController.captureAccount(currentAccount);
++        if (owner == null || !owner.isCurrent()) {
++            return;
++        }
+@@ -14683,2 +14727 @@
+-        if (org.telegram.messenger.televim.PrivateReadingController.blocksHistory(currentAccount, dialogId,
+-                monoForumPeerId == 0 ? threadId : 0, monoForumPeerId)) {
++        if (owner.blocksHistory(dialogId, monoForumPeerId == 0 ? threadId : 0, monoForumPeerId)) {
+@@ -14803,0 +14847,3 @@
++                if (owner.blocksHistory(dialogId, monoForumPeerId == 0 ? threadId : 0, monoForumPeerId)) {
++                    return;
++                }
+@@ -14809,0 +14856,5 @@
++                if (currentReadTask != null && (currentReadTask.owner.identity() != owner.identity()
++                        || currentReadTask.monoForumPeerId != monoForumPeerId)) {
++                    removeReadTask(currentReadTask);
++                    currentReadTask = null;
++                }
+@@ -14811 +14862 @@
+-                    currentReadTask = new ReadTask();
++                    currentReadTask = new ReadTask(owner);
+@@ -14828,0 +14880 @@
++                    removeReadTask(currentReadTask);

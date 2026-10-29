@@ -61,10 +61,11 @@
     "scripts/ninja.sh": "7b89b0804e02402709919b70ad1e4feec83c06a6bedbbc9fbdcccc9b19fe07cc",
     "settings.gradle": "598ef1bb69fe5dcd85bc981fbe3369169a96f83636a89b2ec6d17d20ee6efecc",
     "televim.gradle": "9ff9507f76f52468a0d9140473d8d138cdd1631229ee173eba9286e647e3768c",
-    "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingPolicy.java": "62d3d791932d1f40f75a6f4a1fd0275ba820d807aea07f35db5e0951590b5d60",
+    "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingPolicy.java": "427842475224d22f9017d40dc2e0508df3a6bfe5608a3df5f3914005b8f2571e",
     "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingSettings.java": "2cc96f2ca93f436a27f5cfb10c4f95f10c74c97d39eca122cb31116122595a13",
-    "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingController.java": "4ecf2b739cc0d7d0cba1513284b922ee6938858327544a1098eeffde3792d10f",
-    "TMessagesProj/src/main/java/org/telegram/ui/PrivateReadingSettingsActivity.java": "a744b3279473e096b055e3d95af58ab0ebba16d98892e84184517647926379b6"
+    "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingController.java": "a6670ab4482f2697201aa42c8febf85fd2fc779a00b4a862a2a7fbe61134e11e",
+    "TMessagesProj/src/main/java/org/telegram/ui/PrivateReadingSettingsActivity.java": "a744b3279473e096b055e3d95af58ab0ebba16d98892e84184517647926379b6",
+    "TMessagesProj/src/main/java/org/telegram/messenger/televim/PrivateReadingStorage.java": "3e5dee06c051a2f027017976cc1aa60250d900fc0b9758c405d605564b45d0d6"
   },
   "patches": {
     "001-AndroidManifest.patch": "e331ae6f9691410249aefd7985216d5a94b502b8967b940ddeb49e7a19484b05",
@@ -101,7 +102,11 @@
     "028-private-reading-native.patch": "ddfcd55c26cd8fcf5f05a4a83373261f5f849b221303388359db0c3b5da984f8",
     "029-private-reading-conversations.patch": "250238e2d2e6f2b0891ef51378b9a045af8c1c9bf866dc03009114f6977ec7b9",
     "030-private-reading-account-lifetime.patch": "e3c2d4a9db4560052f89d3777bfef54c897ad5c8cdc65e568196390c8f85c47b",
-    "031-private-reading-checked-sqlite.patch": "c4bfd369c4e4a81b8c4e54c49c92cce0f947372ba7899f52cc9542b48d1d7c57"
+    "031-private-reading-checked-sqlite.patch": "c4bfd369c4e4a81b8c4e54c49c92cce0f947372ba7899f52cc9542b48d1d7c57",
+    "032-private-reading-transport.patch": "ade0c4b714f609f8d16e0a956aa1a2e14d344bf462d7c7ffb0a91bfb823b10d3",
+    "033-private-reading-queued-history.patch": "f469d56476246384f6b1771963fa9c903fbb2d17f0f1b2079bf51d48918d5392",
+    "034-private-reading-storage-release.patch": "84320c11203b78ddb879c738e107e88919a617b0612f7b6fe237056262692cfe",
+    "035-private-reading-content-gates.patch": "628a34e1db67b64a4438deb88b8950da33769c55a48e8c5266698bbe88919f50"
   },
   "upstream_commit": "3de37c8cfb039452be7398909461da6288babf15"
 }

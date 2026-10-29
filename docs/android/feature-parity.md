@@ -630,3 +630,37 @@ contract. A committed local result remains eligible for lifetime-bound projectio
 reconciliation after a policy toggle; that toggle still fences unsent transport.
 Unknown or changed aggregate baselines require refresh rather than guessed unread
 counter subtraction. Native release integration and device acceptance remain open.
+
+
+Queued ordinary history receipts now capture AccountHandle at the originating
+action and carry it through ReadTask creation, coalescing and completion. Stale
+queued work cannot attach itself to a replacement account. Ordinary receipt RPCs
+use a narrow transport boundary which binds peer, root/subpeer, cutoff and exact
+content IDs to a policy token, checks at native handoff and settles custody once.
+Policy changes and teardown schedule cancellation against the captured native
+connection owner. Cancellation after submission remains best effort.
+
+Serialized request custody shares the policy retained-byte limit. Duplicate
+submissions cannot claim or retire another sender's token. AccountHandle also
+pins the original MessagesStorage and its database at capture, so storage work
+can reject database replacement before entering its checked transaction.
+
+The scoped storage adapter writes known history/content flags, exact reaction
+rows and selected reaction message data in one checked transaction. Topic and
+subpeer duplicates require matching membership. It preserves aggregate counts
+when coverage is unknown and leaves poll-vote markers unchanged. Unsupported
+discussion membership fails without a parent-scope fallback. The adapter still
+needs explicit user-action wiring and lifetime/revision-aware projections; its
+presence does not establish a complete Mark as read flow.
+
+Content observation now gates markMessageContentAsRead before local writes and
+network requests, preserving forum/bot roots and monoforum subpeers. Unknown
+thread identity withholds conservatively. Whole-scope mention/reaction/poll
+methods are gated before their eager counter resets. Other early UI mutations,
+native content transport queued before a toggle, TTL consent/replay and complete
+explicit-send/manual-release integration remain separate outstanding work.
+
+Android Java/resources compilation passed for the account-lifetime and checked
+SQLite foundation. Each subsequent transport/storage/content increment requires
+its own exact-source compilation; no new signed APK or authenticated-device
+acceptance is implied by the source and patch-application checks above.

@@ -1,0 +1,453 @@
+--- a/TMessagesProj/src/main/java/org/telegram/tgnet/ConnectionsManager.java
++++ b/TMessagesProj/src/main/java/org/telegram/tgnet/ConnectionsManager.java
+@@ -79,0 +80 @@
++import java.util.concurrent.atomic.AtomicBoolean;
+@@ -395,0 +397,106 @@
++    }
++
++    public int sendPrivateReadingRequest(final TLObject object,
++            final org.telegram.messenger.televim.PrivateReadingController.AccountHandle owner,
++            final org.telegram.messenger.televim.PrivateReadingPolicy.RequestToken policyToken,
++            final RequestDelegate completionBlock) {
++        final int requestToken = lastRequestToken.getAndIncrement();
++        if (object == null || owner == null || policyToken == null
++                || owner.account() != currentAccount
++                || policyToken.identity != owner.identity()) {
++            rejectUnclaimedPrivateReadingRequest(owner, policyToken, completionBlock,
++                    privateReadingError(400, "PRIVATE_READING_INVALID_REQUEST"));
++            return requestToken;
++        }
++        try {
++            if (!privateReadingPayloadMatches(owner, policyToken, object)) {
++                rejectUnclaimedPrivateReadingRequest(owner, policyToken, completionBlock,
++                        privateReadingError(400, "PRIVATE_READING_INVALID_PAYLOAD"));
++                return requestToken;
++            }
++        } catch (Exception error) {
++            rejectUnclaimedPrivateReadingRequest(owner, policyToken, completionBlock,
++                    privateReadingError(400, "PRIVATE_READING_INVALID_PAYLOAD"));
++            return requestToken;
++        }
++        if (!owner.policy().claimTransport(owner.identity(), policyToken,
++                PRIVATE_READING_MAX_PAYLOAD_BYTES)) {
++            rejectUnclaimedPrivateReadingRequest(owner, policyToken, completionBlock,
++                    privateReadingError(409, "PRIVATE_READING_TRANSPORT_CLAIM_REJECTED"));
++            return requestToken;
++        }
++        NativeByteBuffer payload = null;
++        final PrivateReadingRequest request;
++        try {
++            TLObject snapshot = snapshotPrivateReadingRequest(object, policyToken);
++            if (!privateReadingPayloadMatches(owner, policyToken, snapshot)
++                    || !org.telegram.messenger.televim.E2eChat.allowRequest(currentAccount, snapshot)) {
++                throw new IllegalArgumentException("Private reading payload changed");
++            }
++            int payloadSize = snapshot.getObjectSize();
++            if (payloadSize <= 0 || payloadSize > PRIVATE_READING_MAX_PAYLOAD_BYTES) {
++                throw new IllegalArgumentException("Private reading payload exceeds limit");
++            }
++            payload = new NativeByteBuffer(payloadSize);
++            snapshot.serializeToStream(payload);
++            if (payload.position() != payloadSize) {
++                throw new IllegalStateException("Incomplete private reading serialization");
++            }
++            boolean affectedMessages = snapshot.getClass() == TLRPC.TL_messages_readHistory.class
++                    || snapshot.getClass() == TLRPC.TL_messages_readMessageContents.class;
++            request = new PrivateReadingRequest(requestToken, affectedMessages, payload,
++                    owner, policyToken, completionBlock);
++            privateReadingRequests.put(requestToken, request);
++        } catch (Exception error) {
++            if (payload != null) {
++                payload.reuse();
++            }
++            finishClaimedPrivateReadingRequest(owner, policyToken, completionBlock,
++                    privateReadingError(500, "PRIVATE_READING_SERIALIZATION_FAILED"));
++            return requestToken;
++        }
++        Utilities.stageQueue.postRunnable(() -> sendPrivateReadingRequestInternal(request));
++        return requestToken;
++    }
++
++    public void cancelPrivateReadingRequest(int requestToken,
++            org.telegram.messenger.televim.PrivateReadingController.AccountHandle owner,
++            org.telegram.messenger.televim.PrivateReadingPolicy.RequestToken policyToken) {
++        PrivateReadingRequest request = privateReadingRequests.get(requestToken);
++        if (request == null || owner == null || policyToken == null
++                || request.owner.account() != owner.account()
++                || request.owner.identity() != owner.identity()
++                || request.policyToken != policyToken) {
++            return;
++        }
++        Utilities.stageQueue.postRunnable(() -> {
++            if (request.terminal.get()) {
++                return;
++            }
++            if (!request.handedOff) {
++                requestCallbacks.remove(request.nativeToken);
++                completePrivateReadingRequest(request, null, privateReadingError(499,
++                        "PRIVATE_READING_CANCELLED"));
++            } else {
++                cancelRequest(request.nativeToken, true, () -> completePrivateReadingRequest(request, null,
++                        privateReadingError(499, "PRIVATE_READING_CANCELLED")));
++            }
++        });
++    }
++
++    public void cancelPrivateReadingRequests(
++            org.telegram.messenger.televim.PrivateReadingController.AccountHandle owner) {
++        if (owner == null) {
++            return;
++        }
++        int scanned = 0;
++        for (PrivateReadingRequest request : privateReadingRequests.values()) {
++            if (scanned++ >= org.telegram.messenger.televim.PrivateReadingPolicy.MAX_REQUESTS) {
++                break;
++            }
++            if (request.owner.account() == owner.account()
++                    && request.owner.identity() == owner.identity()
++                    && owner.policy().needsCancellation(request.policyToken)) {
++                cancelPrivateReadingRequest(request.nativeToken, request.owner, request.policyToken);
++            }
++        }
+@@ -505,0 +613,341 @@
++    private final ConcurrentHashMap<Integer, PrivateReadingRequest> privateReadingRequests = new ConcurrentHashMap<>();
++
++    private static final class PrivateReadingRequest {
++        final int nativeToken;
++        final boolean affectedMessages;
++        final NativeByteBuffer payload;
++        final org.telegram.messenger.televim.PrivateReadingController.AccountHandle owner;
++        final org.telegram.messenger.televim.PrivateReadingPolicy.RequestToken policyToken;
++        final RequestDelegate completion;
++        final AtomicBoolean terminal = new AtomicBoolean();
++        final AtomicBoolean payloadReleased = new AtomicBoolean();
++        volatile boolean handedOff;
++
++        PrivateReadingRequest(int nativeToken, boolean affectedMessages, NativeByteBuffer payload,
++                org.telegram.messenger.televim.PrivateReadingController.AccountHandle owner,
++                org.telegram.messenger.televim.PrivateReadingPolicy.RequestToken policyToken,
++                RequestDelegate completion) {
++            this.nativeToken = nativeToken;
++            this.affectedMessages = affectedMessages;
++            this.payload = payload;
++            this.owner = owner;
++            this.policyToken = policyToken;
++            this.completion = completion;
++        }
++    }
++
++    private void rejectUnclaimedPrivateReadingRequest(
++            org.telegram.messenger.televim.PrivateReadingController.AccountHandle owner,
++            org.telegram.messenger.televim.PrivateReadingPolicy.RequestToken policyToken,
++            RequestDelegate completion, TLRPC.TL_error error) {
++        if (owner == null || policyToken == null
++                || !owner.policy().finishUnclaimedRequest(owner.identity(), policyToken)) {
++            return;
++        }
++        deliverPrivateReadingCompletion(completion, error);
++    }
++
++    private void finishClaimedPrivateReadingRequest(
++            org.telegram.messenger.televim.PrivateReadingController.AccountHandle owner,
++            org.telegram.messenger.televim.PrivateReadingPolicy.RequestToken policyToken,
++            RequestDelegate completion, TLRPC.TL_error error) {
++        if (owner == null || policyToken == null
++                || !owner.policy().finishRequest(owner.identity(), policyToken)) {
++            return;
++        }
++        deliverPrivateReadingCompletion(completion, error);
++    }
++
++    private void deliverPrivateReadingCompletion(RequestDelegate completion, TLRPC.TL_error error) {
++        if (completion == null) {
++            return;
++        }
++        Utilities.stageQueue.postRunnable(() -> {
++            try {
++                completion.run(null, error);
++            } catch (Throwable exception) {
++                if (BuildVars.LOGS_ENABLED) {
++                    FileLog.e(exception);
++                }
++            }
++        });
++    }
++
++    private static TLRPC.TL_error privateReadingError(int code, String text) {
++        TLRPC.TL_error error = new TLRPC.TL_error();
++        error.code = code;
++        error.text = text;
++        return error;
++    }
++
++    private static final int PRIVATE_READING_MAX_PAYLOAD_BYTES = 4096;
++
++    private static TLObject snapshotPrivateReadingRequest(TLObject object,
++            org.telegram.messenger.televim.PrivateReadingPolicy.RequestToken token) {
++        if (object.getClass() == TLRPC.TL_messages_readHistory.class) {
++            TLRPC.TL_messages_readHistory source = (TLRPC.TL_messages_readHistory) object;
++            TLRPC.TL_messages_readHistory result = new TLRPC.TL_messages_readHistory();
++            result.peer = snapshotPrivateReadingPeer(source.peer);
++            result.max_id = source.max_id;
++            return result;
++        } else if (object.getClass() == TLRPC.TL_channels_readHistory.class) {
++            TLRPC.TL_channels_readHistory source = (TLRPC.TL_channels_readHistory) object;
++            TLRPC.TL_channels_readHistory result = new TLRPC.TL_channels_readHistory();
++            result.channel = snapshotPrivateReadingChannel(source.channel);
++            result.max_id = source.max_id;
++            return result;
++        } else if (object.getClass() == TLRPC.TL_messages_readDiscussion.class) {
++            TLRPC.TL_messages_readDiscussion source = (TLRPC.TL_messages_readDiscussion) object;
++            TLRPC.TL_messages_readDiscussion result = new TLRPC.TL_messages_readDiscussion();
++            result.peer = snapshotPrivateReadingPeer(source.peer);
++            result.msg_id = source.msg_id;
++            result.read_max_id = source.read_max_id;
++            return result;
++        } else if (object.getClass() == TLRPC.TL_messages_readSavedHistory.class) {
++            TLRPC.TL_messages_readSavedHistory source = (TLRPC.TL_messages_readSavedHistory) object;
++            TLRPC.TL_messages_readSavedHistory result = new TLRPC.TL_messages_readSavedHistory();
++            result.parent_peer = snapshotPrivateReadingPeer(source.parent_peer);
++            result.peer = snapshotPrivateReadingPeer(source.peer);
++            result.max_id = source.max_id;
++            return result;
++        } else if (object.getClass() == TLRPC.TL_messages_readMessageContents.class) {
++            TLRPC.TL_messages_readMessageContents source = (TLRPC.TL_messages_readMessageContents) object;
++            TLRPC.TL_messages_readMessageContents result = new TLRPC.TL_messages_readMessageContents();
++            for (int index = 0; index < token.contentCount(); ++index) {
++                result.id.add(source.id.get(index));
++            }
++            return result;
++        } else if (object.getClass() == TLRPC.TL_channels_readMessageContents.class) {
++            TLRPC.TL_channels_readMessageContents source = (TLRPC.TL_channels_readMessageContents) object;
++            TLRPC.TL_channels_readMessageContents result = new TLRPC.TL_channels_readMessageContents();
++            result.channel = snapshotPrivateReadingChannel(source.channel);
++            for (int index = 0; index < token.contentCount(); ++index) {
++                result.id.add(source.id.get(index));
++            }
++            return result;
++        }
++        throw new IllegalArgumentException("Unsupported private reading request");
++    }
++
++    private static TLRPC.InputPeer snapshotPrivateReadingPeer(TLRPC.InputPeer peer) {
++        TLRPC.InputPeer result;
++        if (peer.getClass() == TLRPC.TL_inputPeerSelf.class) {
++            result = new TLRPC.TL_inputPeerSelf();
++        } else if (peer.getClass() == TLRPC.TL_inputPeerUser.class) {
++            result = new TLRPC.TL_inputPeerUser();
++        } else if (peer.getClass() == TLRPC.TL_inputPeerChat.class) {
++            result = new TLRPC.TL_inputPeerChat();
++        } else if (peer.getClass() == TLRPC.TL_inputPeerChannel.class) {
++            result = new TLRPC.TL_inputPeerChannel();
++        } else {
++            throw new IllegalArgumentException("Unsupported private reading peer");
++        }
++        result.user_id = peer.user_id;
++        result.chat_id = peer.chat_id;
++        result.channel_id = peer.channel_id;
++        result.access_hash = peer.access_hash;
++        return result;
++    }
++
++    private static TLRPC.InputChannel snapshotPrivateReadingChannel(TLRPC.InputChannel channel) {
++        if (channel.getClass() != TLRPC.TL_inputChannel.class) {
++            throw new IllegalArgumentException("Unsupported private reading channel");
++        }
++        TLRPC.TL_inputChannel result = new TLRPC.TL_inputChannel();
++        result.channel_id = channel.channel_id;
++        result.access_hash = channel.access_hash;
++        return result;
++    }
++
++    private static boolean privateReadingPayloadMatches(
++            org.telegram.messenger.televim.PrivateReadingController.AccountHandle owner,
++            org.telegram.messenger.televim.PrivateReadingPolicy.RequestToken token,
++            TLObject object) {
++        org.telegram.messenger.televim.PrivateReadingPolicy.Conversation conversation = token.conversation;
++        if (conversation == null || token.historyCutoff < 0) {
++            return false;
++        }
++        if (object.getClass() == TLRPC.TL_messages_readHistory.class) {
++            TLRPC.TL_messages_readHistory request = (TLRPC.TL_messages_readHistory) object;
++            return token.contentCount() == 0 && token.historyCutoff > 0
++                    && request.max_id == token.historyCutoff
++                    && privateReadingPeerMatches(request.peer, conversation.dialogId, owner.identity().userId)
++                    && conversation.rootId == 0 && conversation.subpeerId == 0;
++        } else if (object.getClass() == TLRPC.TL_channels_readHistory.class) {
++            TLRPC.TL_channels_readHistory request = (TLRPC.TL_channels_readHistory) object;
++            return token.contentCount() == 0 && token.historyCutoff > 0
++                    && request.max_id == token.historyCutoff
++                    && privateReadingChannelMatches(request.channel, conversation.dialogId)
++                    && conversation.rootId == 0 && conversation.subpeerId == 0;
++        } else if (object.getClass() == TLRPC.TL_messages_readDiscussion.class) {
++            TLRPC.TL_messages_readDiscussion request = (TLRPC.TL_messages_readDiscussion) object;
++            return token.contentCount() == 0 && token.historyCutoff > 0
++                    && request.read_max_id == token.historyCutoff
++                    && request.msg_id > 0 && conversation.rootId == request.msg_id
++                    && conversation.subpeerId == 0
++                    && privateReadingPeerMatches(request.peer, conversation.dialogId, owner.identity().userId);
++        } else if (object.getClass() == TLRPC.TL_messages_readSavedHistory.class) {
++            TLRPC.TL_messages_readSavedHistory request = (TLRPC.TL_messages_readSavedHistory) object;
++            return token.contentCount() == 0 && token.historyCutoff > 0
++                    && request.max_id == token.historyCutoff
++                    && conversation.rootId == 0 && conversation.subpeerId != 0
++                    && privateReadingPeerMatches(request.parent_peer, conversation.dialogId, owner.identity().userId)
++                    && privateReadingPeerMatches(request.peer, conversation.subpeerId, owner.identity().userId);
++        } else if (object.getClass() == TLRPC.TL_messages_readMessageContents.class) {
++            TLRPC.TL_messages_readMessageContents request = (TLRPC.TL_messages_readMessageContents) object;
++            return token.historyCutoff == 0 && privateReadingIdsMatch(request.id, token);
++        } else if (object.getClass() == TLRPC.TL_channels_readMessageContents.class) {
++            TLRPC.TL_channels_readMessageContents request = (TLRPC.TL_channels_readMessageContents) object;
++            return token.historyCutoff == 0 && privateReadingChannelMatches(request.channel, conversation.dialogId)
++                    && privateReadingIdsMatch(request.id, token);
++        }
++        return false;
++    }
++
++    private static boolean privateReadingIdsMatch(java.util.ArrayList<Integer> ids,
++            org.telegram.messenger.televim.PrivateReadingPolicy.RequestToken token) {
++        if (ids == null || ids.size() != token.contentCount() || ids.isEmpty()) {
++            return false;
++        }
++        for (int index = 0; index < ids.size(); ++index) {
++            Integer id = ids.get(index);
++            if (id == null || id != token.contentIdAt(index)) {
++                return false;
++            }
++        }
++        return true;
++    }
++
++    private static boolean privateReadingPeerMatches(TLRPC.InputPeer peer, long dialogId, long userId) {
++        if (peer != null && peer.getClass() == TLRPC.TL_inputPeerSelf.class) {
++            return dialogId == userId;
++        } else if (peer != null && peer.getClass() == TLRPC.TL_inputPeerUser.class) {
++            return dialogId > 0 && ((TLRPC.TL_inputPeerUser) peer).user_id == dialogId;
++        } else if (peer != null && peer.getClass() == TLRPC.TL_inputPeerChat.class) {
++            return dialogId < 0 && ((TLRPC.TL_inputPeerChat) peer).chat_id == -dialogId;
++        } else if (peer != null && peer.getClass() == TLRPC.TL_inputPeerChannel.class) {
++            return dialogId < 0 && ((TLRPC.TL_inputPeerChannel) peer).channel_id == -dialogId;
++        }
++        return false;
++    }
++
++    private static boolean privateReadingChannelMatches(TLRPC.InputChannel channel, long dialogId) {
++        return channel != null && channel.getClass() == TLRPC.TL_inputChannel.class
++                && dialogId < 0
++                && ((TLRPC.TL_inputChannel) channel).channel_id == -dialogId;
++    }
++
++    private void sendPrivateReadingRequestInternal(final PrivateReadingRequest request) {
++        if (request.terminal.get()) {
++            return;
++        }
++        if (request.owner.account() != currentAccount || !request.owner.isCurrent()) {
++            completePrivateReadingRequest(request, null, privateReadingError(401,
++                    "PRIVATE_READING_ACCOUNT_REPLACED"));
++            return;
++        }
++        org.telegram.messenger.televim.PrivateReadingPolicy.Conversation captured = request.policyToken.conversation;
++        org.telegram.messenger.televim.PrivateReadingPolicy.Conversation current = request.owner.conversation(
++                captured.dialogId, captured.rootId, captured.subpeerId);
++        if (current == null) {
++            completePrivateReadingRequest(request, null, privateReadingError(401,
++                    "PRIVATE_READING_ACCOUNT_REPLACED"));
++            return;
++        }
++        listen(request.nativeToken, (response, errorCode, errorText, networkType, timestamp, requestMsgId, dcId) -> {
++            TLObject result = null;
++            TLRPC.TL_error error = null;
++            try {
++                if (response != 0) {
++                    NativeByteBuffer buffer = NativeByteBuffer.wrap(response);
++                    buffer.setDataSourceType(TLDataSourceType.NETWORK);
++                    buffer.reused = true;
++                    int magic = buffer.readInt32(true);
++                    result = request.affectedMessages
++                            ? TLRPC.TL_messages_affectedMessages.TLdeserialize(buffer, magic, true)
++                            : TLRPC.Bool.TLdeserialize(buffer, magic, true);
++                    if (result != null) {
++                        result.networkType = networkType;
++                    } else {
++                        error = privateReadingError(500, "PRIVATE_READING_RESPONSE_FAILED");
++                    }
++                } else {
++                    error = privateReadingError(errorCode, errorText == null
++                            ? "PRIVATE_READING_EMPTY_RESPONSE" : errorText);
++                }
++            } catch (Throwable exception) {
++                error = privateReadingError(500, "PRIVATE_READING_RESPONSE_FAILED");
++                if (BuildVars.LOGS_ENABLED) {
++                    FileLog.e(exception);
++                }
++            }
++            final TLObject finalResult = result;
++            final TLRPC.TL_error finalError = error;
++            Utilities.stageQueue.postRunnable(() -> {
++                if (request.owner.account() != currentAccount || !request.owner.isCurrent()) {
++                    if (finalResult != null) {
++                        finalResult.freeResources();
++                    }
++                    completePrivateReadingRequest(request, null, privateReadingError(401,
++                            "PRIVATE_READING_ACCOUNT_REPLACED"));
++                    return;
++                }
++                completePrivateReadingRequest(request, finalResult, finalError);
++            });
++        }, null, null);
++        TLRPC.TL_error handoffError = null;
++        Throwable handoffException = null;
++        synchronized (request.owner.policy()) {
++            request.owner.policy().decision(request.owner.identity(), current);
++            if (!request.owner.policy().handOff(request.owner.identity(), request.policyToken)) {
++                handoffError = privateReadingError(499, "PRIVATE_READING_POLICY_CHANGED");
++            } else {
++                try {
++                    request.handedOff = true;
++                    native_sendRequest(currentAccount, request.payload.address, 0, DEFAULT_DATACENTER_ID,
++                            ConnectionTypeGeneric, true, request.nativeToken, 0);
++                } catch (Throwable exception) {
++                    request.handedOff = false;
++                    handoffError = privateReadingError(500, "PRIVATE_READING_TRANSPORT_FAILED");
++                    handoffException = exception;
++                }
++            }
++        }
++        cancelPrivateReadingRequests(request.owner);
++        if (handoffError != null) {
++            requestCallbacks.remove(request.nativeToken);
++            completePrivateReadingRequest(request, null, handoffError);
++            if (handoffException != null && BuildVars.LOGS_ENABLED) {
++                FileLog.e(handoffException);
++            }
++        }
++    }
++
++    private void completePrivateReadingRequest(PrivateReadingRequest request,
++            TLObject response, TLRPC.TL_error error) {
++        if (!request.terminal.compareAndSet(false, true)) {
++            if (response != null) {
++                response.freeResources();
++            }
++            return;
++        }
++        privateReadingRequests.remove(request.nativeToken, request);
++        if (!request.handedOff && request.payloadReleased.compareAndSet(false, true)) {
++            request.payload.reuse();
++        }
++        request.owner.policy().finishRequest(request.owner.identity(), request.policyToken);
++        try {
++            if (request.completion != null) {
++                request.completion.run(response, error);
++            }
++        } catch (Throwable exception) {
++            if (BuildVars.LOGS_ENABLED) {
++                FileLog.e(exception);
++            }
++        } finally {
++            if (response != null) {
++                response.freeResources();
++            }
++        }
++    }
++

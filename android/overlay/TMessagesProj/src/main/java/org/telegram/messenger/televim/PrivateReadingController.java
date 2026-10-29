@@ -2,19 +2,23 @@ package org.telegram.messenger.televim;
 
 import android.content.Context;
 
+import org.telegram.SQLite.SQLiteDatabase;
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.MessagesController;
+import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.UserConfig;
 import org.telegram.tgnet.ConnectionsManager;
 
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Account-owned adapter for ordinary read and content receipt entry points.
- * It deliberately has no network path: native callers decide whether to enter
- * their existing local and transport work after this gate returns.
+ * Native callers retain their local and transport pipelines; this adapter
+ * captures their owner and schedules cancellation when that owner's requests
+ * become invalid, without resolving account singletons during teardown.
  */
 public final class PrivateReadingController {
     private static final Object LOCK = new Object();
@@ -52,6 +56,7 @@ public final class PrivateReadingController {
         PrivateReadingPolicy.ReceiptDecision decision = state.policy.decision(
                 state.identity,
                 conversation);
+        state.cancelRequests();
         if (decision == PrivateReadingPolicy.ReceiptDecision.NATIVE) {
             return false;
         }
@@ -71,9 +76,13 @@ public final class PrivateReadingController {
     public static boolean saveSelection(int account, PrivateReadingPolicy.Identity expectedIdentity,
                                         boolean master, boolean privateChats, boolean groups, boolean channels, boolean bots) {
         State state = state(account);
-        return state != null && state.identity == expectedIdentity && state.policy.status().loaded
-                && state.settings.requestSave(new PrivateReadingPolicy.Selection(
+        if (state == null || state.identity != expectedIdentity || !state.policy.status().loaded) {
+            return false;
+        }
+        boolean scheduled = state.settings.requestSave(new PrivateReadingPolicy.Selection(
                 master, privateChats, groups, channels, bots));
+        state.cancelRequests();
+        return scheduled;
     }
 
     public static AccountHandle captureAccount(int account) {
@@ -156,7 +165,9 @@ public final class PrivateReadingController {
                 return null;
             }
         }
-        boolean test = ConnectionsManager.getInstance(account).isTestBackend();
+        ConnectionsManager connections = ConnectionsManager.getInstance(account);
+        MessagesStorage storage = MessagesStorage.getInstance(account);
+        boolean test = connections.isTestBackend();
         PrivateReadingPolicy.Environment environment = test
                 ? PrivateReadingPolicy.Environment.TEST
                 : PrivateReadingPolicy.Environment.PRODUCTION;
@@ -171,7 +182,7 @@ public final class PrivateReadingController {
             if (current != null) {
                 current.close();
             }
-            current = new State(account, lifetime, environment);
+            current = new State(account, lifetime, environment, connections, storage);
             STATES[account] = current;
             current.settings.load();
             return current;
@@ -187,9 +198,19 @@ public final class PrivateReadingController {
      */
     public static final class AccountHandle {
         private final State owner;
+        private final SQLiteDatabase database;
 
         private AccountHandle(State owner) {
             this.owner = owner;
+            database = owner.storage.getDatabase();
+        }
+
+        public MessagesStorage storage() {
+            return owner.storage;
+        }
+
+        public SQLiteDatabase database() {
+            return database;
         }
 
         public int account() {
@@ -202,6 +223,20 @@ public final class PrivateReadingController {
 
         public PrivateReadingPolicy.Identity identity() {
             return owner.identity;
+        }
+
+        public PrivateReadingPolicy.Conversation conversation(long dialogId, long rootId, long subpeerId) {
+            if (!isCurrent()) {
+                return null;
+            }
+            PrivateReadingPolicy.Conversation result = PrivateReadingController.conversation(
+                    owner, dialogId, rootId, subpeerId);
+            return isCurrent() ? result : null;
+        }
+
+        public boolean blocksHistory(long dialogId, long rootId, long subpeerId) {
+            PrivateReadingPolicy.Conversation conversation = conversation(dialogId, rootId, subpeerId);
+            return !isCurrent() || owner.blocks(conversation);
         }
 
         public boolean isCurrent() {
@@ -228,11 +263,11 @@ public final class PrivateReadingController {
             return new PrivateReadingPolicy.Conversation(dialogId, 0, 0,
                     PrivateReadingPolicy.Category.SECRET);
         }
-        if (dialogId == userId) {
-            return new PrivateReadingPolicy.Conversation(dialogId, 0, 0, PrivateReadingPolicy.Category.SELF);
-        }
         if (dialogId == 0 || rootId < 0 || (rootId != 0 && subpeerId != 0)) {
             return null;
+        }
+        if (dialogId == userId) {
+            return new PrivateReadingPolicy.Conversation(dialogId, rootId, subpeerId, PrivateReadingPolicy.Category.SELF);
         }
         if (dialogId > 0) {
             org.telegram.tgnet.TLRPC.User user = MessagesController.getInstance(account).getUser(dialogId);
@@ -259,12 +294,18 @@ public final class PrivateReadingController {
         final PrivateReadingPolicy policy;
         final PrivateReadingPolicy.Identity identity;
         final PrivateReadingSettings settings;
+        final ConnectionsManager connections;
+        final MessagesStorage storage;
+        final AtomicBoolean cancellationScheduled = new AtomicBoolean();
 
-        State(int account, Lifetime lifetime, PrivateReadingPolicy.Environment environment) {
+        State(int account, Lifetime lifetime, PrivateReadingPolicy.Environment environment,
+              ConnectionsManager connections, MessagesStorage storage) {
             this.account = account;
             this.lifetime = lifetime;
             this.userId = lifetime.userId;
             this.environment = environment;
+            this.connections = connections;
+            this.storage = storage;
             policy = new PrivateReadingPolicy(environment, userId);
             identity = policy.identity();
             Context context = ApplicationLoader.applicationContext;
@@ -275,11 +316,24 @@ public final class PrivateReadingController {
         boolean blocks(PrivateReadingPolicy.Conversation conversation) {
             PrivateReadingPolicy.ReceiptDecision decision = conversation == null
                     ? policy.decisionForUnknownConversation(identity) : policy.decision(identity, conversation);
+            cancelRequests();
             return decision != PrivateReadingPolicy.ReceiptDecision.NATIVE;
+        }
+
+        void cancelRequests() {
+            if (policy.cancellationAt(0) == null || !cancellationScheduled.compareAndSet(false, true)) {
+                return;
+            }
+            AccountHandle handle = new AccountHandle(this);
+            org.telegram.messenger.Utilities.stageQueue.postRunnable(() -> {
+                cancellationScheduled.set(false);
+                connections.cancelPrivateReadingRequests(handle);
+            });
         }
 
         void close() {
             settings.close();
+            cancelRequests();
         }
     }
 }

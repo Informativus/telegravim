@@ -1,0 +1,42 @@
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/MessagesStorage.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/MessagesStorage.java
+@@ -82 +82 @@
+-    private SQLiteDatabase database;
++    private volatile SQLiteDatabase database;
+@@ -240,0 +241,23 @@
++    }
++
++    public void commitPrivateReadingRelease(
++            org.telegram.messenger.televim.PrivateReadingController.AccountHandle owner,
++            org.telegram.messenger.televim.PrivateReadingPolicy.ReleaseScope scope,
++            org.telegram.messenger.televim.PrivateReadingStorage.CommitCallback callback) {
++        if (callback == null) {
++            throw new IllegalArgumentException("Missing private reading callback");
++        }
++        if (owner == null || scope == null || owner.account() != currentAccount
++                || scope.identity != owner.identity() || !owner.isCurrent()
++                || owner.storage() != this || owner.database() == null || owner.database() != database) {
++            callback.complete(org.telegram.messenger.televim.PrivateReadingStorage.unavailable(
++                    scope, org.telegram.messenger.televim.PrivateReadingPolicy.Failure.INACTIVE));
++            return;
++        }
++        final SQLiteDatabase lease = owner.database();
++        if (!storageQueue.postRunnable(() -> callback.complete(
++                org.telegram.messenger.televim.PrivateReadingStorage.commit(
++                        this, lease, currentAccount, owner, scope)))) {
++            callback.complete(org.telegram.messenger.televim.PrivateReadingStorage.unavailable(
++                    scope, org.telegram.messenger.televim.PrivateReadingPolicy.Failure.STORAGE));
++        }
+--- a/TMessagesProj/src/main/java/org/telegram/SQLite/SQLiteCursor.java
++++ b/TMessagesProj/src/main/java/org/telegram/SQLite/SQLiteCursor.java
+@@ -93,0 +94,10 @@
++    public boolean nextChecked() throws SQLiteException {
++        inRow = false;
++        int result = preparedStatement.step();
++        if (result != 0 && result != 1) {
++            throw new SQLiteException("SQLite cursor is busy; expected SQLITE_ROW or SQLITE_DONE");
++        }
++        inRow = result == 0;
++        return inRow;
++    }
++
