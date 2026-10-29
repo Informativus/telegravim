@@ -26,19 +26,30 @@ public final class PrivateReadingController {
     }
 
     public static boolean blocksHistory(int account, long dialogId) {
+        return blocksHistory(account, dialogId, 0, 0);
+    }
+
+    public static boolean blocksHistory(int account, long dialogId, long rootId, long subpeerId) {
         State state = state(account);
         if (state == null) {
             return false;
         }
-        return state.blocks(conversation(account, dialogId));
+        return state.blocks(conversation(account, dialogId, rootId, subpeerId));
     }
 
     public static boolean blocksContent(int account, long dialogId, int messageId) {
+        return blocksContent(account, dialogId, 0, 0, messageId);
+    }
+
+    public static boolean blocksContent(int account, long dialogId, long rootId, long subpeerId, int messageId) {
         State state = state(account);
         if (state == null) {
             return false;
         }
-        PrivateReadingPolicy.Conversation conversation = conversation(account, dialogId);
+        PrivateReadingPolicy.Conversation conversation = conversation(account, dialogId, rootId, subpeerId);
+        if (conversation == null) {
+            return state.blocks(null);
+        }
         PrivateReadingPolicy.ReceiptDecision decision = state.policy.decision(
                 state.identity,
                 conversation);
@@ -104,22 +115,24 @@ public final class PrivateReadingController {
         }
     }
 
-    private static PrivateReadingPolicy.Conversation conversation(int account, long dialogId) {
+    private static PrivateReadingPolicy.Conversation conversation(int account, long dialogId, long rootId, long subpeerId) {
         long userId = UserConfig.getInstance(account).getClientUserId();
         if (DialogObject.isEncryptedDialog(dialogId)) {
             return new PrivateReadingPolicy.Conversation(dialogId, 0, 0,
                     PrivateReadingPolicy.Category.SECRET);
         }
-        if (dialogId == 0 || dialogId == userId) {
-            return new PrivateReadingPolicy.Conversation(dialogId == 0 ? userId : dialogId,
-                    0, 0, PrivateReadingPolicy.Category.SELF);
+        if (dialogId == userId) {
+            return new PrivateReadingPolicy.Conversation(dialogId, 0, 0, PrivateReadingPolicy.Category.SELF);
+        }
+        if (dialogId == 0 || rootId < 0 || (rootId != 0 && subpeerId != 0)) {
+            return null;
         }
         if (dialogId > 0) {
             org.telegram.tgnet.TLRPC.User user = MessagesController.getInstance(account).getUser(dialogId);
             PrivateReadingPolicy.Category category = user == null || user.min
                     ? PrivateReadingPolicy.Category.UNKNOWN_PRIVATE_OR_BOT
                     : user.bot ? PrivateReadingPolicy.Category.BOT : PrivateReadingPolicy.Category.PRIVATE;
-            return new PrivateReadingPolicy.Conversation(dialogId, 0, 0, category);
+            return new PrivateReadingPolicy.Conversation(dialogId, rootId, subpeerId, category);
         }
         long chatId = -dialogId;
         org.telegram.tgnet.TLRPC.Chat chat = MessagesController.getInstance(account).getChat(chatId);
@@ -128,7 +141,7 @@ public final class PrivateReadingController {
         PrivateReadingPolicy.Category category = !known
                 ? PrivateReadingPolicy.Category.UNKNOWN_GROUP_OR_CHANNEL
                 : broadcast ? PrivateReadingPolicy.Category.CHANNEL : PrivateReadingPolicy.Category.GROUP;
-        return new PrivateReadingPolicy.Conversation(dialogId, 0, 0, category);
+        return new PrivateReadingPolicy.Conversation(dialogId, rootId, subpeerId, category);
     }
 
     private static final class State {
@@ -151,8 +164,9 @@ public final class PrivateReadingController {
         }
 
         boolean blocks(PrivateReadingPolicy.Conversation conversation) {
-            return policy.decision(policy.identity(), conversation)
-                    != PrivateReadingPolicy.ReceiptDecision.NATIVE;
+            PrivateReadingPolicy.ReceiptDecision decision = conversation == null
+                    ? policy.decisionForUnknownConversation(identity) : policy.decision(identity, conversation);
+            return decision != PrivateReadingPolicy.ReceiptDecision.NATIVE;
         }
 
         void close() {

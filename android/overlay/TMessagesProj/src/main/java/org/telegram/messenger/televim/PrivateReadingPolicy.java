@@ -81,6 +81,17 @@ public final class PrivateReadingPolicy {
         return ((this.published.mask() | this.durable.mask() | this.fenceMask) & conversation.mask()) != 0 ? ReceiptDecision.WITHHOLD : ReceiptDecision.NATIVE;
     }
 
+    public synchronized ReceiptDecision decisionForUnknownConversation(Identity identity) {
+        if (!this.owns(identity)) {
+            return ReceiptDecision.INACTIVE;
+        }
+        if (!this.loaded) {
+            return ReceiptDecision.NOT_LOADED;
+        }
+        return (this.published.mask() | this.durable.mask() | this.fenceMask) != 0
+                ? ReceiptDecision.WITHHOLD : ReceiptDecision.NATIVE;
+    }
+
     synchronized boolean loaded(Identity identity, Selection selection) {
         if (!this.owns(identity) || this.loaded || this.transition != 0L) {
             return false;

@@ -1,0 +1,37 @@
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
+@@ -14559,7 +14559,8 @@
+     }
+ 
+     private void completeReadTask(ReadTask task) {
+-        if (org.telegram.messenger.televim.PrivateReadingController.blocksHistory(currentAccount, task.dialogId)) {
++        if (org.telegram.messenger.televim.PrivateReadingController.blocksHistory(currentAccount, task.dialogId,
++                task.monoForumPeerId == 0 ? task.replyId : 0, task.monoForumPeerId)) {
+             return;
+         }
+         if (task.replyId != 0 && task.monoForumPeerId == 0) {
+@@ -14678,7 +14679,9 @@
+     }
+ 
+     public void markDialogAsRead(long dialogId, int maxPositiveId, int maxNegativeId, int maxDate, boolean popup, long threadId, int countDiff, boolean readNow, int scheduledCount) {
+-        if (org.telegram.messenger.televim.PrivateReadingController.blocksHistory(currentAccount, dialogId)) {
++        final long monoForumPeerId = getMessagesStorage().isMonoForum(dialogId) ? threadId : 0;
++        if (org.telegram.messenger.televim.PrivateReadingController.blocksHistory(currentAccount, dialogId,
++                monoForumPeerId == 0 ? threadId : 0, monoForumPeerId)) {
+             return;
+         }
+         boolean createReadTask;
+@@ -14794,13 +14797,6 @@
+                     getMessagesStorage().createTaskForSecretChat(chat.id, maxDate, serverTime, 0, null);
+                 }
+             }
+-        }
+-
+-        final long monoForumPeerId;
+-        if (getMessagesStorage().isMonoForum(dialogId)) {
+-            monoForumPeerId = threadId;
+-        } else {
+-            monoForumPeerId = 0;
+         }
+ 
+         if (createReadTask) {

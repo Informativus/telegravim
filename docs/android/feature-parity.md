@@ -590,3 +590,19 @@ generations, preserving the previously accepted send-through-toggle behavior.
 
 These changes do not wire native explicit releases or supply missing topic/subpeer
 identities. Those implementation and authenticated-device gates remain open.
+
+
+History receipt gates now preserve the native conversation identity both at
+`markDialogAsRead` entry and for the queued `ReadTask`: ordinary forum/bot roots
+use rootId, and monoforum peers use subpeerId with rootId zero. The native
+monoforum classification is captured once and reused by the queued task. Content
+adapter overloads accept the same explicit identity, but existing content call
+sites still need their message/topic mapping and complete native release wiring.
+
+Missing dialog IDs no longer become Saved Messages. Unknown or invalid ordinary
+conversation identity uses the effective union of selected privacy scopes,
+including restrictive unsaved transitions; unloaded policy withholds. Actual
+Saved Messages and Secret Chats retain their native behavior. Independent review
+found no blockers, the new patch applies exactly to pinned prepared source, and
+the policy compiles for Java 8. Full Android compilation/device acceptance remain
+separate from these source checks.
