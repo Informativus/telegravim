@@ -99,7 +99,7 @@
     "026-e2e-ChatActivityEnterView.patch": "7618e0b1fb16bb6c9165364512ae9ca71382c090a248909a97873b470f97f987",
     "027-e2e-TranslateController.patch": "02cc195f65fe2413193ef3c8f4b0dc783b0f0dfae5b0c82aba190ec9e21ecb77",
     "028-private-reading-native.patch": "ddfcd55c26cd8fcf5f05a4a83373261f5f849b221303388359db0c3b5da984f8",
-    "029-private-reading-conversations.patch": "6f0190b8b12e8e3f004bae839485c151b83f137e0bc34df0732b455566a2538a"
+    "029-private-reading-conversations.patch": "250238e2d2e6f2b0891ef51378b9a045af8c1c9bf866dc03009114f6977ec7b9"
   },
   "upstream_commit": "3de37c8cfb039452be7398909461da6288babf15"
 }
