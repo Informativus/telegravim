@@ -1,7 +1,7 @@
 # Android and Desktop feature parity
 
-Status: independently approved design for the first privacy increment and shared
-inventory constraints; implementation and runtime acceptance remain outstanding.
+Status: independently approved design and partial native Android integration.
+Remaining feature implementation and authenticated runtime acceptance are open.
 
 The Android APK must preserve the accepted Android importer and implement the
 applicable local features of the coordinated Desktop release. A common version,
@@ -649,18 +649,31 @@ The scoped storage adapter writes known history/content flags, exact reaction
 rows and selected reaction message data in one checked transaction. Topic and
 subpeer duplicates require matching membership. It preserves aggregate counts
 when coverage is unknown and leaves poll-vote markers unchanged. Unsupported
-discussion membership fails without a parent-scope fallback. The adapter still
-needs explicit user-action wiring and lifetime/revision-aware projections; its
-presence does not establish a complete Mark as read flow.
+discussion membership fails without a parent-scope fallback. Native dialog and
+topic Mark as read actions now capture one account owner and share a bounded
+batch across bulk/community actions. Each release freezes its cutoff and observed
+content IDs, commits locally, then sends exact history and content receipts.
+Unknown topic coverage remains visibly pending; failure retains observations
+for a fresh explicit action. Revision-aware unread projections and notification
+reconciliation remain open, so successful receipts report counters pending
+refresh instead of clearing badges speculatively.
 
 Content observation now gates markMessageContentAsRead before local writes and
 network requests, preserving forum/bot roots and monoforum subpeers. Unknown
 thread identity withholds conservatively. Whole-scope mention/reaction/poll
-methods are gated before their eager counter resets. Other early UI mutations,
-native content transport queued before a toggle, TTL consent/replay and complete
-explicit-send/manual-release integration remain separate outstanding work.
+methods are gated before their eager counter resets. Ordinary content requests
+now reserve a bounded single-ID token before local effects and recheck the
+policy at transport handoff. Canceled observations remain available for a later
+explicit release. Self and secret scopes retain their privacy exemption while
+account teardown still invalidates ownership. Queue rejection settles unsent
+requests once; submitted native requests keep custody until terminal evidence.
+Normal response/PTS processing stays on the stage queue; unavailable queues
+deliver only failure. Other early UI/storage mutations, standalone mention
+paths, TTL consent/replay, successful-send release and complete manual-action
+reconciliation remain separate outstanding work.
 
-Android Java/resources compilation passed for the account-lifetime and checked
-SQLite foundation. Each subsequent transport/storage/content increment requires
+Android Java/resources compilation passed for the account-lifetime, guarded
+transport, queued history and checked scoped-storage foundation. Subsequent
+content-transport and manual-action integration requires
 its own exact-source compilation; no new signed APK or authenticated-device
 acceptance is implied by the source and patch-application checks above.

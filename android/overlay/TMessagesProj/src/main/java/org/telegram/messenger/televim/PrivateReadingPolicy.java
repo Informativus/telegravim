@@ -17,6 +17,7 @@ public final class PrivateReadingPolicy {
     public static final int MAX_REQUEST_IDS = 100;
     public static final int MAX_NOTIFICATIONS = 256;
     public static final int MAX_RETAINED_BYTES = 0x200000;
+    private static final int RELEASE_RETAINED_BYTES = 2048;
     private final Identity identity;
     private boolean active = true;
     private boolean loaded;
@@ -282,7 +283,7 @@ public final class PrivateReadingPolicy {
         int additionalIds = recovered - reclaimIds;
         if (this.releases.size() - reclaimReleases >= MAX_RELEASES
                 || !this.capacity(conversation, additionalIds,
-                        512 - reclaimReleases * 512 + additionalIds * 96)) {
+                        RELEASE_RETAINED_BYTES - reclaimReleases * RELEASE_RETAINED_BYTES + additionalIds * 96)) {
             return this.fail(Failure.CAPACITY);
         }
         TreeSet<Integer> ids = new TreeSet<Integer>();
@@ -415,6 +416,20 @@ public final class PrivateReadingPolicy {
         return PrivateReadingPolicy.ok(requestToken);
     }
 
+    public synchronized Result<RequestToken> reserveNativeContent(Identity identity, Conversation conversation, int messageId) {
+        if (conversation == null || this.decision(identity, conversation) != ReceiptDecision.NATIVE || !validId(messageId)) {
+            return this.fail(Failure.INVALID);
+        }
+        if (this.requests.size() >= MAX_REQUESTS || !this.capacity(conversation, 1, 352)) {
+            return this.fail(Failure.CAPACITY);
+        }
+        this.retainKey(conversation);
+        RequestToken token = new RequestToken(this, null, conversation, 0, 0, 1, messageId);
+        this.requests.put(token, true);
+        ++this.requestContentCount;
+        return ok(token);
+    }
+
     public synchronized boolean claimTransport(Identity identity, RequestToken requestToken, int payloadBytes) {
         if (!this.owns(identity) || !this.requests.containsKey(requestToken)
                 || requestToken.transportBytes != 0 || requestToken.invalid
@@ -482,8 +497,34 @@ public final class PrivateReadingPolicy {
             --release.requests;
             this.retireIfUnowned(release);
         } else if (requestToken.scope == null) {
+            if (this.active && requestToken.invalid && requestToken.nativeContentId > 0) {
+                Pending observed = this.pending.get(requestToken.conversation);
+                if (observed == null) {
+                    observed = new Pending();
+                    this.pending.put(requestToken.conversation, observed);
+                    this.retainKey(requestToken.conversation);
+                }
+                if (observed.ids.add(requestToken.nativeContentId)) {
+                    ++this.contentCount;
+                }
+            }
             this.releaseKey(requestToken.conversation);
         }
+        return true;
+    }
+
+    public synchronized boolean abandonRelease(Identity identity, ReleaseScope releaseScope) {
+        if (identity != this.identity) {
+            return false;
+        }
+        Release release = this.find(releaseScope);
+        if (release == null || release.reservation != null || release.requests != 0) {
+            return false;
+        }
+        release.invalid = true;
+        release.preserveContent = this.active;
+        release.completion = null;
+        this.retireIfUnowned(release);
         return true;
     }
 
@@ -719,11 +760,11 @@ public final class PrivateReadingPolicy {
     private boolean valid(Stamp stamp, Conversation conversation) {
         int mask = conversation.mask();
         return this.validClassification(stamp.classification, conversation)
-                && stamp.master == this.masterGeneration
+                && (mask == 0 || (stamp.master == this.masterGeneration
                 && ((mask & 1) == 0 || stamp.privateChats == this.privateGeneration)
                 && ((mask & 2) == 0 || stamp.groups == this.groupGeneration)
                 && ((mask & 4) == 0 || stamp.channels == this.channelGeneration)
-                && ((mask & 8) == 0 || stamp.bots == this.botGeneration);
+                && ((mask & 8) == 0 || stamp.bots == this.botGeneration)));
     }
 
     private Failure guard(Identity identity, Conversation conversation) {
@@ -745,7 +786,7 @@ public final class PrivateReadingPolicy {
     }
 
     private int retainedBytes() {
-        return 4096 + this.transportPayloadBytes + this.keys.size() * 256 + (this.contentCount + this.requestContentCount) * 96 + this.sends.size() * 256 + this.releases.size() * 512 + this.requests.size() * 256 + this.notifications.size() * 384 + (this.special == null ? 0 : 256);
+        return 4096 + this.transportPayloadBytes + this.keys.size() * 256 + (this.contentCount + this.requestContentCount) * 96 + this.sends.size() * 256 + this.releases.size() * RELEASE_RETAINED_BYTES + this.requests.size() * 256 + this.notifications.size() * 384 + (this.special == null ? 0 : 256);
     }
 
     private void retainKey(Conversation conversation) {
@@ -1145,11 +1186,18 @@ public final class PrivateReadingPolicy {
         private final Stamp stamp;
         private final int offset;
         private final int count;
+        private final int nativeContentId;
         private int transportBytes;
         private boolean handedOff;
         private boolean invalid;
 
         private RequestToken(PrivateReadingPolicy privateReadingPolicy, ReleaseScope releaseScope, Conversation conversation, int n, int n2, int n3) {
+            this(privateReadingPolicy, releaseScope, conversation, n, n2, n3, 0);
+        }
+
+        private RequestToken(PrivateReadingPolicy privateReadingPolicy, ReleaseScope releaseScope, Conversation conversation,
+                             int n, int n2, int n3, int nativeContentId) {
+            this.nativeContentId = nativeContentId;
             this.identity = privateReadingPolicy.identity;
             this.scope = releaseScope;
             this.conversation = conversation;
@@ -1167,7 +1215,7 @@ public final class PrivateReadingPolicy {
             if (n < 0 || n >= this.count) {
                 throw new IndexOutOfBoundsException();
             }
-            return this.scope.contentIdAt(this.offset + n);
+            return this.scope == null ? this.nativeContentId : this.scope.contentIdAt(this.offset + n);
         }
     }
 

@@ -49,19 +49,7 @@ public final class PrivateReadingController {
         if (state == null) {
             return validAccount(account);
         }
-        PrivateReadingPolicy.Conversation conversation = conversation(state, dialogId, rootId, subpeerId);
-        if (conversation == null) {
-            return state.blocks(null);
-        }
-        PrivateReadingPolicy.ReceiptDecision decision = state.policy.decision(
-                state.identity,
-                conversation);
-        state.cancelRequests();
-        if (decision == PrivateReadingPolicy.ReceiptDecision.NATIVE) {
-            return false;
-        }
-        state.policy.observeContent(state.identity, conversation, messageId);
-        return true;
+        return state.blocksContent(conversation(state, dialogId, rootId, subpeerId), messageId);
     }
 
     public static boolean isProtected(int account, long dialogId) {
@@ -239,6 +227,11 @@ public final class PrivateReadingController {
             return !isCurrent() || owner.blocks(conversation);
         }
 
+        public boolean blocksContent(long dialogId, long rootId, long subpeerId, int messageId) {
+            PrivateReadingPolicy.Conversation conversation = conversation(dialogId, rootId, subpeerId);
+            return !isCurrent() || owner.blocksContent(conversation, messageId);
+        }
+
         public boolean isCurrent() {
             synchronized (LOCK) {
                 return STATES[owner.account] == owner
@@ -320,15 +313,37 @@ public final class PrivateReadingController {
             return decision != PrivateReadingPolicy.ReceiptDecision.NATIVE;
         }
 
+        boolean blocksContent(PrivateReadingPolicy.Conversation conversation, int messageId) {
+            if (conversation == null) {
+                return blocks(null);
+            }
+            PrivateReadingPolicy.ReceiptDecision decision = policy.decision(identity, conversation);
+            cancelRequests();
+            if (decision == PrivateReadingPolicy.ReceiptDecision.NATIVE) {
+                return false;
+            }
+            policy.observeContent(identity, conversation, messageId);
+            return true;
+        }
+
         void cancelRequests() {
             if (policy.cancellationAt(0) == null || !cancellationScheduled.compareAndSet(false, true)) {
                 return;
             }
             AccountHandle handle = new AccountHandle(this);
-            org.telegram.messenger.Utilities.stageQueue.postRunnable(() -> {
+            Runnable cancellation = () -> {
                 cancellationScheduled.set(false);
                 connections.cancelPrivateReadingRequests(handle);
-            });
+            };
+            boolean posted;
+            try {
+                posted = org.telegram.messenger.Utilities.stageQueue.postRunnable(cancellation);
+            } catch (RuntimeException error) {
+                posted = false;
+            }
+            if (!posted) {
+                cancellation.run();
+            }
         }
 
         void close() {

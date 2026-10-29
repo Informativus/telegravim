@@ -1,0 +1,82 @@
+--- a/TMessagesProj/src/main/java/org/telegram/tgnet/ConnectionsManager.java
++++ b/TMessagesProj/src/main/java/org/telegram/tgnet/ConnectionsManager.java
+@@ -458 +458,4 @@
+-        Utilities.stageQueue.postRunnable(() -> sendPrivateReadingRequestInternal(request));
++        if (!enqueuePrivateReading(() -> sendPrivateReadingRequestInternal(request))) {
++            completePrivateReadingRequest(request, null, privateReadingError(503,
++                    "PRIVATE_READING_QUEUE_UNAVAILABLE"));
++        }
+@@ -472 +475 @@
+-        Utilities.stageQueue.postRunnable(() -> {
++        Runnable cancellation = () -> {
+@@ -481,4 +484,20 @@
+-                cancelRequest(request.nativeToken, true, () -> completePrivateReadingRequest(request, null,
+-                        privateReadingError(499, "PRIVATE_READING_CANCELLED")));
+-            }
+-        });
++                listenCancel(request.nativeToken, () -> {
++                    Runnable completion = () -> completePrivateReadingRequest(request, null,
++                            privateReadingError(499, "PRIVATE_READING_CANCELLED"));
++                    if (!enqueuePrivateReading(completion)) {
++                        completion.run();
++                    }
++                });
++                try {
++                    native_cancelRequest(currentAccount, request.nativeToken, true);
++                } catch (Throwable exception) {
++                    if (BuildVars.LOGS_ENABLED) {
++                        FileLog.e(exception);
++                    }
++                }
++            }
++        };
++        if (!enqueuePrivateReading(cancellation)) {
++            settlePrivateReadingRequest(request, null, privateReadingError(503,
++                    "PRIVATE_READING_QUEUE_UNAVAILABLE"), true);
++        }
+@@ -665 +684 @@
+-        Utilities.stageQueue.postRunnable(() -> {
++        Runnable delivery = () -> {
+@@ -673 +692,12 @@
+-        });
++        };
++        if (!enqueuePrivateReading(delivery)) {
++            delivery.run();
++        }
++    }
++
++    private boolean enqueuePrivateReading(Runnable runnable) {
++        try {
++            return Utilities.stageQueue.postRunnable(runnable);
++        } catch (RuntimeException error) {
++            return false;
++        }
+@@ -886 +916 @@
+-            Utilities.stageQueue.postRunnable(() -> {
++            Runnable delivery = () -> {
+@@ -896 +926,8 @@
+-            });
++            };
++            if (!enqueuePrivateReading(delivery)) {
++                if (finalResult != null) {
++                    finalResult.freeResources();
++                }
++                completePrivateReadingRequest(request, null, privateReadingError(503,
++                        "PRIVATE_READING_QUEUE_UNAVAILABLE"));
++            }
+@@ -902 +939 @@
+-            if (!request.owner.policy().handOff(request.owner.identity(), request.policyToken)) {
++            if (request.terminal.get() || !request.owner.policy().handOff(request.owner.identity(), request.policyToken)) {
+@@ -928 +965,11 @@
+-        if (!request.terminal.compareAndSet(false, true)) {
++        settlePrivateReadingRequest(request, response, error, false);
++    }
++
++    private void settlePrivateReadingRequest(PrivateReadingRequest request,
++            TLObject response, TLRPC.TL_error error, boolean onlyUnsent) {
++        boolean terminalOwner;
++        synchronized (request.owner.policy()) {
++            terminalOwner = (!onlyUnsent || !request.handedOff)
++                    && request.terminal.compareAndSet(false, true);
++        }
++        if (!terminalOwner) {
