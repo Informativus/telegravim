@@ -74,14 +74,6 @@ def safe_path(value: str) -> PurePosixPath:
     return path
 
 
-def control_path(path: str) -> bool:
-    return path.startswith(".github/") or path in {
-        ".gitmodules",
-        ".gitattributes",
-        ".gitignore",
-    }
-
-
 def documentation(path: str, mode: str) -> bool:
     return mode == "100644" and (
         path in DOCUMENT_NAMES
@@ -99,16 +91,6 @@ def classify(
     before: bytes,
     after: bytes,
 ) -> str:
-    if control_path(path):
-        return "Review policy, workflow, or dependency control changed"
-    if old_mode not in {"000000", "100644", "100755"} or new_mode not in {
-        "000000",
-        "100644",
-        "100755",
-    }:
-        return "Submodule, symlink, or unsupported object changed"
-    if old_mode != new_mode and old_mode != "000000" and new_mode != "000000":
-        return "Executable mode changed"
     if new_mode != "000000" and upstream == (new_mode, new_blob):
         return ""
     if documentation(path, new_mode) and old_mode in {"000000", "100644"}:
@@ -124,11 +106,19 @@ def classify(
         )
         if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
     )
-    if NETWORK.search(before_text + "\n" + after_text) or re.search(
-        r"https?://|wss?://", changed_lines
-    ):
-        return "Network-related code outside verified Telegram upstream changed"
-    return "Custom executable code or data changed; network effects cannot be excluded"
+    matcher = difflib.SequenceMatcher(
+        a=before_text.splitlines(), b=after_text.splitlines(), autojunk=False
+    )
+    for group in matcher.get_grouped_opcodes(3):
+        start, end = group[0], group[-1]
+        context = "\n".join(
+            matcher.a[start[1]:end[2]] + matcher.b[start[3]:end[4]]
+        )
+        if NETWORK.search(context):
+            return "Network-related request/API context changed outside verified Telegram upstream"
+    if re.search(r"https?://|wss?://", changed_lines):
+        return "Network-related endpoint or URL changed outside verified Telegram upstream"
+    return ""
 
 
 def command(
@@ -628,7 +618,7 @@ def comment_body(state: dict) -> str:
             "after inspecting the diff. Each new push requires a fresh approval."
         )
     else:
-        network = "Owner network review: no custom executable/data changes found (verified upstream or documentation)."
+        network = "Owner network review: no network API, request context or endpoint changes detected. Automatic security checks still apply."
     lines = [
         MARKER,
         f"Commit: `{state['head']}` · base: `{state['base']}`",

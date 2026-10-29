@@ -97,7 +97,7 @@
             "type": "string"
         },
         "vim-keymap-key-chat-preview": {
-            "default": "Ctrl+V, Ctrl+м",
+            "default": "Ctrl+V",
             "description": "Показывает метки чатов для предпросмотра без прочтения. На macOS физический Ctrl+V отличается от Cmd+V: Cmd+V остаётся вставкой из буфера.",
             "maxLength": 1024,
             "title": "Vim key: chat preview hints",
@@ -171,6 +171,13 @@
             "description": "Выполняет действие нижней угловой кнопки чата: переход к актуальной позиции или возврат по истории переходов. Это не просто прокрутка до конца загруженных сообщений.",
             "maxLength": 1024,
             "title": "Vim key: jump to bottom",
+            "type": "string"
+        },
+        "vim-keymap-key-mark-read": {
+            "default": "Ctrl+M, Ctrl+ь",
+            "description": "Помечает текущий чат прочитанным штатным действием Telegram. При приватном чтении это явное действие снимает отложенное состояние только для текущего чата или темы.",
+            "maxLength": 1024,
+            "title": "Vim key: mark chat as read",
             "type": "string"
         },
         "vim-keymap-key-next-chat": {

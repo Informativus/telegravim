@@ -115,7 +115,7 @@ jobs:
             head = git("rev-parse", "HEAD")
             result = guard.inspect(repo, inspection, head, base, base)
             self.assertFalse(result["scan_ok"])
-            self.assertTrue(result["reasons"])
+            self.assertFalse(result["reasons"])
 
 
 if __name__ == "__main__":

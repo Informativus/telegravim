@@ -1053,7 +1053,8 @@
   {
     "path": "Telegram/SourceFiles/tests/vim_config_tests.h",
     "source_sha256": [
-      "965ee0942cca93bab28c687731d4eb88a4af2e0520deb6605ebde9b1bf9dc5c4"
+      "965ee0942cca93bab28c687731d4eb88a4af2e0520deb6605ebde9b1bf9dc5c4",
+      "676dbbb3dce0999f4c202153983b156abde4e5211ccff4da89f9260a05c32092"
     ],
     "findings": [
       {

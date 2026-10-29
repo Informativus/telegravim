@@ -13,8 +13,8 @@ void TestVimConfig() {
 	const auto saved = ConfigSnapshot();
 	const auto fields = ConfigOptions();
 	const auto defaults = ConfigSnapshot(true);
-	Check(fields.size() == 37 && defaults.size() == 37,
-		"JSON includes all 37 real Vim options, including undo and redo");
+	Check(fields.size() == 38 && defaults.size() == 38,
+		"JSON includes all 38 real Vim options, including mark as read");
 	Check(ValidateConfig(encode(defaults)).error.isEmpty(), "actual defaults are valid JSON config");
 	const auto schema = ConfigSchema().value(u"properties"_q).toObject();
 	auto guideFile = QFile(QString::fromUtf8(VIM_KEYMAP_DOCS_DIR) + u"/vim-keymap.md"_q);
