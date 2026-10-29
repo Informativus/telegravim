@@ -56,6 +56,7 @@
     <string name="TelevimPrivateReadingAbout">Пассивный просмотр и прослушивание не отправляют уведомления о прочтении и контентные квитанции. Явные действия и успешные обычные сообщения могут разрешить квитанцию до зафиксированного момента диалога.</string>
     <string name="TelevimPrivateReadingMaster">Защищать квитанции о прочтении</string>
     <string name="TelevimPrivateReadingPrivate">Личные чаты</string>
+    <string name="TelevimPrivateReadingBots">Боты</string>
     <string name="TelevimPrivateReadingGroups">Группы</string>
     <string name="TelevimPrivateReadingChannels">Каналы</string>
     <string name="TelevimPrivateReadingHelp">Секретные чаты сохраняют свой штатный протокол. Квитанции, уже переданные на отправку, могут прийти после изменения настройки.</string>

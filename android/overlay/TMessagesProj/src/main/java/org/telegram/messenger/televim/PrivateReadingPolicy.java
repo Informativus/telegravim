@@ -32,11 +32,13 @@ public final class PrivateReadingPolicy {
     private long privateGeneration;
     private long groupGeneration;
     private long channelGeneration;
+    private long botGeneration;
     private long sequence;
     private int contentCount;
+    private int requestContentCount;
     private int committing;
     private final Map<Conversation, Pending> pending = new HashMap<Conversation, Pending>();
-    private final Map<Conversation, Integer> keys = new HashMap<Conversation, Integer>();
+    private final Map<Conversation, Classification> keys = new HashMap<Conversation, Classification>();
     private final Map<Long, SendAuthorization> sends = new HashMap<Long, SendAuthorization>();
     private final Map<Long, Release> releases = new LinkedHashMap<Long, Release>();
     private final Map<RequestToken, Boolean> requests = new LinkedHashMap<RequestToken, Boolean>();
@@ -64,6 +66,12 @@ public final class PrivateReadingPolicy {
             return ReceiptDecision.INACTIVE;
         }
         Objects.requireNonNull(conversation);
+        Classification classification = this.keys.get(conversation);
+        if (classification != null && classification.category != conversation.category) {
+            classification.category = conversation.category;
+            classification.revision = ++this.sequence;
+            this.invalidateStale();
+        }
         if (conversation.mask() == 0) {
             return ReceiptDecision.NATIVE;
         }
@@ -113,6 +121,9 @@ public final class PrivateReadingPolicy {
         }
         if (selection2.channels != selection.channels) {
             ++this.channelGeneration;
+        }
+        if (selection2.bots != selection.bots) {
+            ++this.botGeneration;
         }
         this.invalidateStale();
         this.storageFailed = false;
@@ -190,9 +201,9 @@ public final class PrivateReadingPolicy {
         if (this.sends.size() >= 512 || !this.capacity(conversation, 0, 256)) {
             return this.fail(Failure.CAPACITY);
         }
-        SendAuthorization sendAuthorization = new SendAuthorization(this.identity, conversation, l);
-        this.sends.put(l, sendAuthorization);
         this.retainKey(conversation);
+        SendAuthorization sendAuthorization = new SendAuthorization(this, conversation, l);
+        this.sends.put(l, sendAuthorization);
         return PrivateReadingPolicy.ok(sendAuthorization);
     }
 
@@ -200,15 +211,15 @@ public final class PrivateReadingPolicy {
         if (!this.owns(identity)) {
             return this.fail(Failure.INACTIVE);
         }
-        if (!PrivateReadingPolicy.validId(n) || sendAuthorization == null || this.sends.get(sendAuthorization.originalRandomId) != sendAuthorization) {
+        if (!PrivateReadingPolicy.validId(n) || sendAuthorization == null || this.sends.get(sendAuthorization.originalRandomId) != sendAuthorization
+                || !this.validClassification(sendAuthorization.classificationRevision, sendAuthorization.conversation)) {
             return this.fail(Failure.INVALID);
         }
         this.sends.remove(sendAuthorization.originalRandomId);
+        Result<ReleaseScope> result = this.currentDecision(sendAuthorization.conversation) == ReceiptDecision.NATIVE
+                ? PrivateReadingPolicy.ok(null) : this.release(identity, sendAuthorization.conversation, n);
         this.releaseKey(sendAuthorization.conversation);
-        if (this.decision(identity, sendAuthorization.conversation) == ReceiptDecision.NATIVE) {
-            return PrivateReadingPolicy.ok(null);
-        }
-        return this.release(identity, sendAuthorization.conversation, n);
+        return result;
     }
 
     public synchronized boolean failedSend(Identity identity, SendAuthorization sendAuthorization) {
@@ -235,29 +246,67 @@ public final class PrivateReadingPolicy {
         if (!PrivateReadingPolicy.validId(n) || conversation.mask() == 0) {
             return this.fail(Failure.INVALID);
         }
-        if (this.releases.size() >= 64 || !this.capacity(conversation, 0, 512)) {
+        /*
+         * Invalid snapshots keep their IDs until a fresh action takes ownership.
+         * A recovery cutoff prevents taking the same IDs twice while old native
+         * callbacks still own the immutable snapshot. Only settled snapshots can
+         * transfer their budget; outstanding requests and completions keep theirs.
+         */
+        Pending pending = this.pending.get(conversation);
+        int recovered = 0;
+        int reclaimIds = 0;
+        int reclaimReleases = 0;
+        for (Release release : this.releases.values()) {
+            if (!release.recoverable(conversation)) continue;
+            for (int id : release.scope.contentIds) {
+                if (id > release.recoveredThrough && id <= n) ++recovered;
+            }
+            if (release.unowned() && release.recoveredBy(n)) {
+                reclaimIds += release.scope.contentCount();
+                ++reclaimReleases;
+            }
+        }
+        int additionalIds = recovered - reclaimIds;
+        if (this.releases.size() - reclaimReleases >= MAX_RELEASES
+                || !this.capacity(conversation, additionalIds,
+                        512 - reclaimReleases * 512 + additionalIds * 96)) {
             return this.fail(Failure.CAPACITY);
         }
-        Pending pending = this.pending.get(conversation);
-        int n2 = pending == null ? 0 : pending.ids.headSet(n, true).size();
-        int[] nArray = new int[n2];
-        if (pending != null) {
-            int n3;
-            Iterator<Integer> object = pending.ids.iterator();
-            int n4 = 0;
-            while (object.hasNext() && (n3 = ((Integer)object.next()).intValue()) <= n) {
-                nArray[n4++] = n3;
-                object.remove();
+        TreeSet<Integer> ids = new TreeSet<Integer>();
+        if (pending != null) ids.addAll(pending.ids.headSet(n, true));
+        for (Release release : this.releases.values()) {
+            if (!release.recoverable(conversation)) continue;
+            for (int id : release.scope.contentIds) {
+                if (id > release.recoveredThrough && id <= n) ids.add(id);
             }
+        }
+        int[] contentIds = new int[ids.size()];
+        int index = 0;
+        for (int id : ids) contentIds[index++] = id;
+        this.retainKey(conversation);
+        ReleaseScope scope = new ReleaseScope(this, conversation, n, contentIds);
+        if (pending != null) {
+            int removed = pending.ids.headSet(n, true).size();
+            pending.ids.headSet(n, true).clear();
+            this.contentCount -= removed;
             if (pending.ids.isEmpty()) {
                 this.pending.remove(conversation);
                 this.releaseKey(conversation);
             }
         }
-        ReleaseScope object = new ReleaseScope(this, conversation, n, nArray);
-        this.releases.put(object.releaseId, new Release(object));
-        this.retainKey(conversation);
-        return PrivateReadingPolicy.ok(object);
+        Iterator<Release> iterator = this.releases.values().iterator();
+        while (iterator.hasNext()) {
+            Release release = iterator.next();
+            if (!release.recoverable(conversation)) continue;
+            release.recoveredThrough = Math.max(release.recoveredThrough, n);
+            if (!release.unowned() || !release.recoveredBy(release.recoveredThrough)) continue;
+            this.contentCount -= release.scope.contentCount();
+            this.releaseKey(release.scope.conversation);
+            iterator.remove();
+        }
+        this.contentCount += contentIds.length;
+        this.releases.put(scope.releaseId, new Release(scope));
+        return PrivateReadingPolicy.ok(scope);
     }
 
     public synchronized Result<CommitReservation> reserveCommit(Identity identity, ReleaseScope releaseScope, long l) {
@@ -288,6 +337,7 @@ public final class PrivateReadingPolicy {
         --this.committing;
         if (!this.active || !bl) {
             release.invalid = true;
+            release.preserveContent = this.active;
             this.retireIfUnowned(release);
             this.publishIfSettled();
             return this.fail(this.active ? Failure.STORAGE : Failure.INACTIVE);
@@ -304,7 +354,8 @@ public final class PrivateReadingPolicy {
         }
         Release release = this.find(completion.reservation.scope);
         int n = 1 << projection.ordinal();
-        if (release == null || release.completion != completion || (completion.consumedProjections & n) != 0) {
+        if (release == null || release.invalid || !this.valid(release.scope.stamp, release.scope.conversation)
+                || release.completion != completion || (completion.consumedProjections & n) != 0) {
             return Reconciliation.REJECT;
         }
         completion.consumedProjections |= n;
@@ -323,11 +374,12 @@ public final class PrivateReadingPolicy {
             if (!release.claimed[i]) continue;
             return this.fail(Failure.INVALID);
         }
-        if (this.requests.size() >= 16 || !this.capacity(releaseScope.conversation, 0, 256 + n2 * 96)) {
+        if (this.requests.size() >= 16 || !this.capacity(releaseScope.conversation, n2, 256 + n2 * 96)) {
             return this.fail(Failure.CAPACITY);
         }
         RequestToken requestToken = new RequestToken(this, releaseScope, releaseScope.conversation, bl ? releaseScope.historyCutoff : 0, n, n2);
         this.requests.put(requestToken, true);
+        this.requestContentCount += n2;
         ++release.requests;
         if (bl) {
             release.historyClaimed = true;
@@ -345,9 +397,9 @@ public final class PrivateReadingPolicy {
         if (this.requests.size() >= 16 || !this.capacity(conversation, 0, 256)) {
             return this.fail(Failure.CAPACITY);
         }
+        this.retainKey(conversation);
         RequestToken requestToken = new RequestToken(this, null, conversation, n, 0, 0);
         this.requests.put(requestToken, true);
-        this.retainKey(conversation);
         return PrivateReadingPolicy.ok(requestToken);
     }
 
@@ -355,7 +407,7 @@ public final class PrivateReadingPolicy {
         if (!this.owns(identity) || !this.requests.containsKey(requestToken) || requestToken.handedOff || requestToken.invalid || !this.valid(requestToken.stamp, requestToken.conversation)) {
             return false;
         }
-        if (requestToken.scope == null && this.decision(identity, requestToken.conversation) != ReceiptDecision.NATIVE) {
+        if (requestToken.scope == null && this.currentDecision(requestToken.conversation) != ReceiptDecision.NATIVE) {
             return false;
         }
         Release release = this.find(requestToken.scope);
@@ -390,6 +442,7 @@ public final class PrivateReadingPolicy {
         if (identity != this.identity || this.requests.remove(requestToken) == null) {
             return false;
         }
+        this.requestContentCount -= requestToken.count;
         Release release = this.find(requestToken.scope);
         if (release != null) {
             --release.requests;
@@ -408,7 +461,10 @@ public final class PrivateReadingPolicy {
         if (release == null || release.reservation != null || release.requests != 0) {
             return false;
         }
-        this.removeRelease(release);
+        release.completion = null;
+        if (!release.invalid || !release.preserveContent || release.recoveredBy(release.recoveredThrough)) {
+            this.removeRelease(release);
+        }
         return true;
     }
 
@@ -426,9 +482,9 @@ public final class PrivateReadingPolicy {
         if (this.notifications.size() >= 256 || !this.capacity(conversation, 0, 384)) {
             return this.fail(Failure.CAPACITY);
         }
+        this.retainKey(conversation);
         NotificationAction notificationAction = new NotificationAction(this, conversation, n);
         this.notifications.put(notificationAction.actionId, notificationAction);
-        this.retainKey(conversation);
         return PrivateReadingPolicy.ok(notificationAction);
     }
 
@@ -436,13 +492,17 @@ public final class PrivateReadingPolicy {
         if (!this.owns(identity)) {
             return this.fail(Failure.INACTIVE);
         }
+        if (!this.matchesClassification(conversation)) {
+            return this.fail(Failure.INVALID);
+        }
         NotificationAction notificationAction = this.notifications.get(string);
         if (notificationAction == null || !notificationAction.conversation.equals(conversation) || notificationAction.cutoff != n || !this.valid(notificationAction.stamp, notificationAction.conversation)) {
             return this.fail(Failure.INVALID);
         }
         this.notifications.remove(string);
+        Result<ReleaseScope> result = this.release(identity, notificationAction.conversation, notificationAction.cutoff);
         this.releaseKey(notificationAction.conversation);
-        return this.release(identity, notificationAction.conversation, notificationAction.cutoff);
+        return result;
     }
 
     public synchronized boolean retireNotification(Identity identity, String string) {
@@ -474,8 +534,8 @@ public final class PrivateReadingPolicy {
         if (!this.capacity(conversation, 0, 256)) {
             return this.fail(Failure.CAPACITY);
         }
-        this.special = new SpecialConsent(this, conversation, n);
         this.retainKey(conversation);
+        this.special = new SpecialConsent(this, conversation, n);
         return PrivateReadingPolicy.ok(this.special);
     }
 
@@ -492,7 +552,8 @@ public final class PrivateReadingPolicy {
     }
 
     public synchronized boolean consumeSpecialConsent(Identity identity, SpecialConsent specialConsent, Conversation conversation, int n) {
-        if (!(this.owns(identity) && this.special != null && this.special == specialConsent && specialConsent.confirmed && specialConsent.conversation.equals(conversation) && specialConsent.messageId == n && this.valid(specialConsent.stamp, conversation))) {
+        if (!(this.owns(identity) && this.matchesClassification(conversation)
+                && this.special != null && this.special == specialConsent && specialConsent.confirmed && specialConsent.conversation.equals(conversation) && specialConsent.messageId == n && this.valid(specialConsent.stamp, conversation))) {
             return false;
         }
         this.clearSpecial();
@@ -523,20 +584,23 @@ public final class PrivateReadingPolicy {
         this.active = false;
         ++this.masterGeneration;
         this.invalidateStale();
-        for (SendAuthorization sendAuthorization : this.sends.values()) {
-            this.releaseKey(sendAuthorization.conversation);
-        }
-        this.sends.clear();
     }
 
     private void invalidateStale() {
         Iterator<Map.Entry<Conversation, Pending>> iterator2 = this.pending.entrySet().iterator();
         while (iterator2.hasNext()) {
             Map.Entry<Conversation, Pending> object = iterator2.next();
-            if (this.active && this.decision(this.identity, (Conversation)object.getKey()) != ReceiptDecision.NATIVE) continue;
+            if (this.active) continue;
             this.contentCount -= ((Pending)object.getValue()).ids.size();
             this.releaseKey((Conversation)object.getKey());
             iterator2.remove();
+        }
+        Iterator<SendAuthorization> sendIterator = this.sends.values().iterator();
+        while (sendIterator.hasNext()) {
+            SendAuthorization send = sendIterator.next();
+            if (this.active && this.validClassification(send.classificationRevision, send.conversation)) continue;
+            this.releaseKey(send.conversation);
+            sendIterator.remove();
         }
         Iterator<NotificationAction> iterator = this.notifications.values().iterator();
         while (iterator.hasNext()) {
@@ -557,7 +621,8 @@ public final class PrivateReadingPolicy {
             Release release = releaseIterator.next();
             if (this.active && this.valid(release.scope.stamp, release.scope.conversation)) continue;
             release.invalid = true;
-            if (release.reservation != null || release.requests != 0 || release.completion != null) continue;
+            release.preserveContent = this.active;
+            if (!release.unowned() || release.preserveContent && !release.recoveredBy(release.recoveredThrough)) continue;
             this.contentCount -= release.scope.contentCount();
             this.releaseKey(release.scope.conversation);
             releaseIterator.remove();
@@ -572,7 +637,8 @@ public final class PrivateReadingPolicy {
     }
 
     private void retireIfUnowned(Release release) {
-        if (release.invalid && release.reservation == null && release.requests == 0 && (release.completion == null || !this.active)) {
+        if (release.invalid && release.unowned()
+                && (!release.preserveContent || !this.active || release.recoveredBy(release.recoveredThrough))) {
             this.removeRelease(release);
         }
     }
@@ -591,9 +657,39 @@ public final class PrivateReadingPolicy {
         return release != null && release.scope == releaseScope ? release : null;
     }
 
+    private ReceiptDecision currentDecision(Conversation conversation) {
+        Classification classification = this.keys.get(conversation);
+        int mask = classification == null ? conversation.mask() : Conversation.mask(classification.category);
+        if (mask == 0) return ReceiptDecision.NATIVE;
+        if (!this.loaded) return ReceiptDecision.NOT_LOADED;
+        return ((this.published.mask() | this.durable.mask() | this.fenceMask) & mask) != 0
+                ? ReceiptDecision.WITHHOLD : ReceiptDecision.NATIVE;
+    }
+
+    private boolean matchesClassification(Conversation conversation) {
+        if (conversation == null) return false;
+        Classification classification = this.keys.get(conversation);
+        if (classification == null) return false;
+        if (classification.category == conversation.category) return true;
+        classification.revision = ++this.sequence;
+        this.invalidateStale();
+        return false;
+    }
+
+    private boolean validClassification(long revision, Conversation conversation) {
+        Classification classification = this.keys.get(conversation);
+        return classification != null && classification.category == conversation.category
+                && revision == classification.revision;
+    }
+
     private boolean valid(Stamp stamp, Conversation conversation) {
-        int n = conversation.mask();
-        return !(stamp.master != this.masterGeneration || (n & 1) != 0 && stamp.privateChats != this.privateGeneration || (n & 2) != 0 && stamp.groups != this.groupGeneration || (n & 4) != 0 && stamp.channels != this.channelGeneration);
+        int mask = conversation.mask();
+        return this.validClassification(stamp.classification, conversation)
+                && stamp.master == this.masterGeneration
+                && ((mask & 1) == 0 || stamp.privateChats == this.privateGeneration)
+                && ((mask & 2) == 0 || stamp.groups == this.groupGeneration)
+                && ((mask & 4) == 0 || stamp.channels == this.channelGeneration)
+                && ((mask & 8) == 0 || stamp.bots == this.botGeneration);
     }
 
     private Failure guard(Identity identity, Conversation conversation) {
@@ -611,27 +707,38 @@ public final class PrivateReadingPolicy {
     }
 
     private boolean capacity(Conversation conversation, int n, int n2) {
-        return this.contentCount + n <= 8192 && (this.keys.containsKey(conversation) || this.keys.size() < 1024) && this.retainedBytes() + n2 + (this.keys.containsKey(conversation) ? 0 : 256) <= 0x200000;
+        return this.contentCount + this.requestContentCount + n <= MAX_CONTENT_IDS && (this.keys.containsKey(conversation) || this.keys.size() < 1024) && this.retainedBytes() + n2 + (this.keys.containsKey(conversation) ? 0 : 256) <= 0x200000;
     }
 
     private int retainedBytes() {
-        return 4096 + this.keys.size() * 256 + this.contentCount * 96 + this.sends.size() * 256 + this.releases.size() * 512 + this.requests.size() * 256 + this.notifications.size() * 384 + (this.special == null ? 0 : 256);
+        return 4096 + this.keys.size() * 256 + (this.contentCount + this.requestContentCount) * 96 + this.sends.size() * 256 + this.releases.size() * 512 + this.requests.size() * 256 + this.notifications.size() * 384 + (this.special == null ? 0 : 256);
     }
 
     private void retainKey(Conversation conversation) {
-        Integer n = this.keys.get(conversation);
-        this.keys.put(conversation, n == null ? 1 : n + 1);
+        Classification classification = this.keys.get(conversation);
+        if (classification == null) {
+            classification = new Classification(conversation.category, ++this.sequence);
+            this.keys.put(conversation, classification);
+        }
+        ++classification.references;
     }
 
     private void releaseKey(Conversation conversation) {
-        Integer n = this.keys.get(conversation);
-        if (n == null) {
+        Classification classification = this.keys.get(conversation);
+        if (classification == null) {
             throw new IllegalStateException("Unowned conversation");
         }
-        if (n == 1) {
-            this.keys.remove(conversation);
-        } else {
-            this.keys.put(conversation, n - 1);
+        if (--classification.references == 0) this.keys.remove(conversation);
+    }
+
+    private static final class Classification {
+        Category category;
+        long revision;
+        int references;
+
+        Classification(Category category, long revision) {
+            this.category = category;
+            this.revision = revision;
         }
     }
 
@@ -676,12 +783,18 @@ public final class PrivateReadingPolicy {
         public final boolean privateChats;
         public final boolean groups;
         public final boolean channels;
+        public final boolean bots;
 
         public Selection(boolean bl, boolean bl2, boolean bl3, boolean bl4) {
-            this.master = bl;
-            this.privateChats = bl2;
-            this.groups = bl3;
-            this.channels = bl4;
+            this(bl, bl2, bl3, bl4, bl2);
+        }
+
+        public Selection(boolean master, boolean privateChats, boolean groups, boolean channels, boolean bots) {
+            this.master = master;
+            this.privateChats = privateChats;
+            this.groups = groups;
+            this.channels = channels;
+            this.bots = bots;
         }
 
         public static Selection off() {
@@ -689,7 +802,7 @@ public final class PrivateReadingPolicy {
         }
 
         private int mask() {
-            return this.master ? (this.privateChats ? 1 : 0) | (this.groups ? 2 : 0) | (this.channels ? 4 : 0) : 0;
+            return this.master ? (this.privateChats ? 1 : 0) | (this.groups ? 2 : 0) | (this.channels ? 4 : 0) | (this.bots ? 8 : 0) : 0;
         }
 
         public boolean equals(Object object) {
@@ -697,11 +810,11 @@ public final class PrivateReadingPolicy {
                 return false;
             }
             Selection selection = (Selection)object;
-            return this.master == selection.master && this.privateChats == selection.privateChats && this.groups == selection.groups && this.channels == selection.channels;
+            return this.master == selection.master && this.privateChats == selection.privateChats && this.groups == selection.groups && this.channels == selection.channels && this.bots == selection.bots;
         }
 
         public int hashCode() {
-            return (this.master ? 8 : 0) | (this.privateChats ? 1 : 0) | (this.groups ? 2 : 0) | (this.channels ? 4 : 0);
+            return (this.master ? 16 : 0) | (this.privateChats ? 1 : 0) | (this.groups ? 2 : 0) | (this.channels ? 4 : 0) | (this.bots ? 8 : 0);
         }
     }
 
@@ -738,7 +851,7 @@ public final class PrivateReadingPolicy {
             this.unsavedProtection = (privateReadingPolicy.fenceMask & ~this.durable.mask()) != 0;
             this.storageFailed = privateReadingPolicy.storageFailed;
             this.failure = privateReadingPolicy.failure;
-            this.retainedContentIds = privateReadingPolicy.contentCount;
+            this.retainedContentIds = privateReadingPolicy.contentCount + privateReadingPolicy.requestContentCount;
             this.retainedBytes = privateReadingPolicy.retainedBytes();
         }
     }
@@ -784,7 +897,17 @@ public final class PrivateReadingPolicy {
         }
 
         private int mask() {
-            switch (this.category) {
+            return mask(this.category);
+        }
+
+        private static int mask(Category category) {
+            switch (category) {
+                case BOT: {
+                    return 8;
+                }
+                case UNKNOWN_PRIVATE_OR_BOT: {
+                    return 9;
+                }
                 case PRIVATE: {
                     return 1;
                 }
@@ -806,11 +929,11 @@ public final class PrivateReadingPolicy {
                 return false;
             }
             Conversation conversation = (Conversation)object;
-            return this.dialogId == conversation.dialogId && this.rootId == conversation.rootId && this.subpeerId == conversation.subpeerId && this.category == conversation.category;
+            return this.dialogId == conversation.dialogId && this.rootId == conversation.rootId && this.subpeerId == conversation.subpeerId;
         }
 
         public int hashCode() {
-            return Objects.hash(new Object[]{this.dialogId, this.rootId, this.subpeerId, this.category});
+            return Objects.hash(new Object[]{this.dialogId, this.rootId, this.subpeerId});
         }
     }
 
@@ -852,8 +975,11 @@ public final class PrivateReadingPolicy {
         public final Conversation conversation;
         public final long originalRandomId;
 
-        private SendAuthorization(Identity identity, Conversation conversation, long l) {
-            this.identity = identity;
+        private final long classificationRevision;
+
+        private SendAuthorization(PrivateReadingPolicy policy, Conversation conversation, long l) {
+            this.identity = policy.identity;
+            this.classificationRevision = policy.keys.get(conversation).revision;
             this.conversation = conversation;
             this.originalRandomId = l;
         }
@@ -872,7 +998,7 @@ public final class PrivateReadingPolicy {
             this.releaseId = ++privateReadingPolicy.sequence;
             this.conversation = conversation;
             this.historyCutoff = n;
-            this.stamp = new Stamp(privateReadingPolicy);
+            this.stamp = new Stamp(privateReadingPolicy, conversation);
             this.contentIds = nArray;
         }
 
@@ -890,6 +1016,8 @@ public final class PrivateReadingPolicy {
         final boolean[] claimed;
         boolean historyClaimed;
         boolean invalid;
+        boolean preserveContent;
+        int recoveredThrough;
         boolean committed;
         CommitReservation reservation;
         Completion completion;
@@ -898,6 +1026,19 @@ public final class PrivateReadingPolicy {
         Release(ReleaseScope releaseScope) {
             this.scope = releaseScope;
             this.claimed = new boolean[releaseScope.contentCount()];
+        }
+
+        boolean unowned() {
+            return this.reservation == null && this.requests == 0 && this.completion == null;
+        }
+
+        boolean recoverable(Conversation conversation) {
+            return this.invalid && this.preserveContent && this.scope.conversation.equals(conversation);
+        }
+
+        boolean recoveredBy(int cutoff) {
+            return this.scope.contentCount() == 0
+                    || this.scope.contentIdAt(this.scope.contentCount() - 1) <= Math.max(cutoff, this.recoveredThrough);
         }
     }
 
@@ -920,12 +1061,16 @@ public final class PrivateReadingPolicy {
         final long privateChats;
         final long groups;
         final long channels;
+        final long bots;
+        final long classification;
 
-        Stamp(PrivateReadingPolicy privateReadingPolicy) {
+        Stamp(PrivateReadingPolicy privateReadingPolicy, Conversation conversation) {
             this.master = privateReadingPolicy.masterGeneration;
             this.privateChats = privateReadingPolicy.privateGeneration;
             this.groups = privateReadingPolicy.groupGeneration;
             this.channels = privateReadingPolicy.channelGeneration;
+            this.bots = privateReadingPolicy.botGeneration;
+            this.classification = privateReadingPolicy.keys.get(conversation).revision;
         }
     }
 
@@ -974,7 +1119,7 @@ public final class PrivateReadingPolicy {
             this.scope = releaseScope;
             this.conversation = conversation;
             this.historyCutoff = n;
-            this.stamp = new Stamp(privateReadingPolicy);
+            this.stamp = new Stamp(privateReadingPolicy, conversation);
             this.offset = n2;
             this.count = n3;
         }
@@ -1003,7 +1148,7 @@ public final class PrivateReadingPolicy {
             this.actionId = UUID.randomUUID().toString();
             this.conversation = conversation;
             this.cutoff = n;
-            this.stamp = new Stamp(privateReadingPolicy);
+            this.stamp = new Stamp(privateReadingPolicy, conversation);
         }
     }
 
@@ -1018,12 +1163,14 @@ public final class PrivateReadingPolicy {
             this.identity = privateReadingPolicy.identity;
             this.conversation = conversation;
             this.messageId = n;
-            this.stamp = new Stamp(privateReadingPolicy);
+            this.stamp = new Stamp(privateReadingPolicy, conversation);
         }
     }
 
     public static enum Category {
         PRIVATE,
+        BOT,
+        UNKNOWN_PRIVATE_OR_BOT,
         GROUP,
         CHANNEL,
         UNKNOWN_GROUP_OR_CHANNEL,

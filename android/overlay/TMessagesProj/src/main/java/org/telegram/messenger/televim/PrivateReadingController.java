@@ -59,11 +59,11 @@ public final class PrivateReadingController {
     }
 
     public static boolean saveSelection(int account, PrivateReadingPolicy.Identity expectedIdentity,
-                                        boolean master, boolean privateChats, boolean groups, boolean channels) {
+                                        boolean master, boolean privateChats, boolean groups, boolean channels, boolean bots) {
         State state = state(account);
         return state != null && state.identity == expectedIdentity && state.policy.status().loaded
                 && state.settings.requestSave(new PrivateReadingPolicy.Selection(
-                master, privateChats, groups, channels));
+                master, privateChats, groups, channels, bots));
     }
 
     public static void invalidate(int account) {
@@ -115,8 +115,11 @@ public final class PrivateReadingController {
                     0, 0, PrivateReadingPolicy.Category.SELF);
         }
         if (dialogId > 0) {
-            return new PrivateReadingPolicy.Conversation(dialogId, 0, 0,
-                    PrivateReadingPolicy.Category.PRIVATE);
+            org.telegram.tgnet.TLRPC.User user = MessagesController.getInstance(account).getUser(dialogId);
+            PrivateReadingPolicy.Category category = user == null || user.min
+                    ? PrivateReadingPolicy.Category.UNKNOWN_PRIVATE_OR_BOT
+                    : user.bot ? PrivateReadingPolicy.Category.BOT : PrivateReadingPolicy.Category.PRIVATE;
+            return new PrivateReadingPolicy.Conversation(dialogId, 0, 0, category);
         }
         long chatId = -dialogId;
         org.telegram.tgnet.TLRPC.Chat chat = MessagesController.getInstance(account).getChat(chatId);

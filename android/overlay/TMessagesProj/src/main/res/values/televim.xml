@@ -59,6 +59,7 @@
     <string name="TelevimPrivateReadingAbout">Keep passive viewing and listening from sending read or content receipts. Explicit actions and successful ordinary messages can release the captured conversation cutoff.</string>
     <string name="TelevimPrivateReadingMaster">Protect read receipts</string>
     <string name="TelevimPrivateReadingPrivate">Private chats</string>
+    <string name="TelevimPrivateReadingBots">Bots</string>
     <string name="TelevimPrivateReadingGroups">Groups</string>
     <string name="TelevimPrivateReadingChannels">Channels</string>
     <string name="TelevimPrivateReadingHelp">Secret Chats keep their native protocol. Receipts already handed off for sending may still arrive after this setting changes.</string>

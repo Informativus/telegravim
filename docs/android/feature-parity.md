@@ -33,14 +33,14 @@ from the Android implementation baseline.
 | Same-chat E2E | TVE2 state, native menu and send/receive integration | Preserve protocol; verify two endpoints, restart, history and key-change behavior |
 | Signed updates | Fork-owned catalog verification and native update presentation | Verify published feed and native download/install cycle separately |
 | Import appearance | Native-style device introduction and locally bundled QR animation | Preserve accepted aspect ratio, light/dark and lifecycle behavior |
-| Private reading and listening | No Televim receipt policy in the Android patches | Native account setting, category switches, all receipt paths and explicit release actions |
+| Private reading and listening | Account policy/storage, native settings and initial controller gates | Complete topic/subpeer mapping, all receipt paths and native explicit release actions |
 | Local folders and colors | Upstream cloud folders; no `chat_folders` consumer | Local native folder backend and portable identities, rules, color and order |
 | Saved Messages tags | Upstream reaction/tag UI; no local `saved_tags` consumer | Local picker, naming, inline tags, filters and search without Premium API dependency |
 | Local pins | No portable local-pin implementation | Native list/order backed by the Desktop module contract |
 | Folder markers and navigation | No `navigation_preferences` consumer | Native markers, applicable folder navigation and stable portable references |
 | Local quick replies and help | Upstream Business controller uses cloud quick-reply requests | Local native template editor, attachments, variables, preview and explicit sending |
 | Local transcription and dictation | No Televim local recognizer integration | Optional local engine and resources, editable text/voice choice, no cloud fallback |
-| Unified settings | Import entry exists; Desktop module settings are absent | Native Android entry points and feature-specific settings |
+| Unified settings | Native Televim settings with offline import and account privacy settings | Native settings for remaining local feature modules |
 | Physical Vim shortcuts | Desktop keyboard behavior | No imitation in touch UI; assess hardware-keyboard behavior separately |
 
 The initial importer explicitly retains unsupported modules without activating
@@ -561,3 +561,32 @@ so they cannot hide an outstanding save error or its retry action. Failure text
 without new unsaved protection refers to the previously saved protection
 settings, without claiming that protection is enabled when master was off.
 Compilation and real-device lifecycle behavior remain separate acceptance gates.
+
+
+The Bots storage/controller/UI increment passed independent source review.
+Version 1 retains its original CRC and rejects flags outside its original mask;
+Bots inherits the stored personal-chat selection without writing during load.
+Version 2 saves all five fields, retaining the master storage bit and assigning
+Bots its own bit. Cached absent/minimal users select the unknown human-or-bot
+category without a fetch. The native Bots row saves the whole loaded tuple.
+Policy continuity, compilation and device behavior are separate checks.
+
+
+The Bots policy increment keeps conversation identity independent of category.
+Retained keys carry a classification revision; changed cached classification
+invalidates captured capabilities without discarding observed content. Invalid
+release snapshots retain their IDs until a fresh explicit action recovers them.
+Recovery admits the complete bounded result before changing any cutoff or IDs,
+and counts snapshots plus outstanding request payloads until their owners finish.
+
+Native adapters must call `decision` with freshly cache-resolved metadata before
+using an asynchronous capability. Capability validation does not adopt metadata
+from a captured old conversation. Notification/consent category mismatches revoke
+captured state without rolling classification backward. Pending sends retain only
+the classification revision: preference toggles preserve their eligibility, while
+terminal success captures the current selection generations in the new release.
+The coordinator caught and corrected an initial use of submission-time selection
+generations, preserving the previously accepted send-through-toggle behavior.
+
+These changes do not wire native explicit releases or supply missing topic/subpeer
+identities. Those implementation and authenticated-device gates remain open.

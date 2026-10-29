@@ -30,11 +30,12 @@ public final class PrivateReadingSettingsActivity extends BaseFragment {
     private static final int ROW_ABOUT = 0;
     private static final int ROW_MASTER = 1;
     private static final int ROW_PRIVATE = 2;
-    private static final int ROW_GROUPS = 3;
-    private static final int ROW_CHANNELS = 4;
-    private static final int ROW_HELP = 5;
-    private static final int ROW_STATUS = 6;
-    private static final int ROW_RETRY = 7;
+    private static final int ROW_BOTS = 3;
+    private static final int ROW_GROUPS = 4;
+    private static final int ROW_CHANNELS = 5;
+    private static final int ROW_HELP = 6;
+    private static final int ROW_STATUS = 7;
+    private static final int ROW_RETRY = 8;
     private static final long REFRESH_INTERVAL_MS = 500;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -146,7 +147,8 @@ public final class PrivateReadingSettingsActivity extends BaseFragment {
                 position == ROW_MASTER ? !selection.master : selection.master,
                 position == ROW_PRIVATE ? !selection.privateChats : selection.privateChats,
                 position == ROW_GROUPS ? !selection.groups : selection.groups,
-                position == ROW_CHANNELS ? !selection.channels : selection.channels);
+                position == ROW_CHANNELS ? !selection.channels : selection.channels,
+                position == ROW_BOTS ? !selection.bots : selection.bots);
         refreshStatus();
     }
 
@@ -209,9 +211,11 @@ public final class PrivateReadingSettingsActivity extends BaseFragment {
                 PrivateReadingPolicy.Selection selection = status.desired;
                 int label = position == ROW_MASTER ? R.string.TelevimPrivateReadingMaster
                         : position == ROW_PRIVATE ? R.string.TelevimPrivateReadingPrivate
+                        : position == ROW_BOTS ? R.string.TelevimPrivateReadingBots
                         : position == ROW_GROUPS ? R.string.TelevimPrivateReadingGroups : R.string.TelevimPrivateReadingChannels;
                 boolean checked = position == ROW_MASTER ? selection.master
                         : position == ROW_PRIVATE ? selection.privateChats
+                        : position == ROW_BOTS ? selection.bots
                         : position == ROW_GROUPS ? selection.groups : selection.channels;
                 TextCheckCell cell = (TextCheckCell) holder.itemView;
                 cell.setTextAndCheck(LocaleController.getString(label), checked, position != ROW_CHANNELS);

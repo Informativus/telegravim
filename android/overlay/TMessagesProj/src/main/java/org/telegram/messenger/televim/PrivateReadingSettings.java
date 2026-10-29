@@ -20,7 +20,7 @@ import org.telegram.messenger.televim.PrivateReadingPolicy;
 public final class PrivateReadingSettings
 implements AutoCloseable {
     private static final int MAGIC = 1414942802;
-    private static final int VERSION = 1;
+    private static final int VERSION = 2;
     private static final int RECORD_BYTES = 32;
     public static final String FAILED_ENABLE = "Could not save. Protection is active now, but may be off if Android stops or restarts the app. Retry saving before relying on it later.";
     public static final String FAILED_DISABLE = "Could not save. Private reading remains protected; the change was not saved.";
@@ -171,19 +171,27 @@ implements AutoCloseable {
             } else {
                 try (FileInputStream fileInputStream = this.file.openRead();
                      DataInputStream dataInputStream = new DataInputStream(fileInputStream);){
-                    if (fileInputStream.getChannel().size() != 32L) {
+                    if (fileInputStream.getChannel().size() != RECORD_BYTES) {
                         throw new IOException("Invalid policy size");
                     }
-                    int n = dataInputStream.readInt();
-                    int n2 = dataInputStream.readInt();
-                    int n3 = dataInputStream.readInt();
-                    long l = dataInputStream.readLong();
-                    int n4 = dataInputStream.readInt();
-                    long l2 = dataInputStream.readLong();
-                    if (n != 1414942802 || n2 != 1 || n3 != this.identity.environment.ordinal() || l != this.identity.userId || (n4 & 0xFFFFFFF0) != 0 || dataInputStream.read() != -1 || l2 != PrivateReadingSettings.checksum(n3, l, n4)) {
+                    int magic = dataInputStream.readInt();
+                    int version = dataInputStream.readInt();
+                    int environment = dataInputStream.readInt();
+                    long userId = dataInputStream.readLong();
+                    int flags = dataInputStream.readInt();
+                    long checksum = dataInputStream.readLong();
+                    int allowedFlags = version == 1 ? 15 : 31;
+                    if (magic != MAGIC || (version != 1 && version != VERSION)
+                            || environment != this.identity.environment.ordinal()
+                            || userId != this.identity.userId || (flags & ~allowedFlags) != 0
+                            || dataInputStream.read() != -1
+                            || checksum != checksum(version, environment, userId, flags)) {
                         throw new IOException("Invalid policy record");
                     }
-                    selection = new PrivateReadingPolicy.Selection((n4 & 8) != 0, (n4 & 1) != 0, (n4 & 2) != 0, (n4 & 4) != 0);
+                    boolean privateChats = (flags & 1) != 0;
+                    boolean bots = version == 1 ? privateChats : (flags & 16) != 0;
+                    selection = new PrivateReadingPolicy.Selection(
+                            (flags & 8) != 0, privateChats, (flags & 2) != 0, (flags & 4) != 0, bots);
                 }
             }
             this.loadedStorage = true;
@@ -212,12 +220,12 @@ implements AutoCloseable {
             }
             object = new DataOutputStream(fileOutputStream);
             int n = PrivateReadingSettings.flags(intent.selection);
-            ((DataOutputStream)object).writeInt(1414942802);
-            ((DataOutputStream)object).writeInt(1);
+            ((DataOutputStream)object).writeInt(MAGIC);
+            ((DataOutputStream)object).writeInt(VERSION);
             ((DataOutputStream)object).writeInt(this.identity.environment.ordinal());
             ((DataOutputStream)object).writeLong(this.identity.userId);
             ((DataOutputStream)object).writeInt(n);
-            ((DataOutputStream)object).writeLong(PrivateReadingSettings.checksum(this.identity.environment.ordinal(), this.identity.userId, n));
+            ((DataOutputStream)object).writeLong(PrivateReadingSettings.checksum(VERSION, this.identity.environment.ordinal(), this.identity.userId, n));
             ((DataOutputStream)object).flush();
             fileOutputStream.getFD().sync();
             PrivateReadingPolicy privateReadingPolicy = this.policy;
@@ -252,20 +260,20 @@ implements AutoCloseable {
         try (FileInputStream fileInputStream = this.file.openRead();
              DataInputStream dataInputStream = new DataInputStream(fileInputStream);){
             int n = PrivateReadingSettings.flags(selection);
-            if (fileInputStream.getChannel().size() != 32L || dataInputStream.readInt() != 1414942802 || dataInputStream.readInt() != 1 || dataInputStream.readInt() != this.identity.environment.ordinal() || dataInputStream.readLong() != this.identity.userId || dataInputStream.readInt() != n || dataInputStream.readLong() != PrivateReadingSettings.checksum(this.identity.environment.ordinal(), this.identity.userId, n) || dataInputStream.read() != -1) {
+            if (fileInputStream.getChannel().size() != RECORD_BYTES || dataInputStream.readInt() != MAGIC || dataInputStream.readInt() != VERSION || dataInputStream.readInt() != this.identity.environment.ordinal() || dataInputStream.readLong() != this.identity.userId || dataInputStream.readInt() != n || dataInputStream.readLong() != PrivateReadingSettings.checksum(VERSION, this.identity.environment.ordinal(), this.identity.userId, n) || dataInputStream.read() != -1) {
                 throw new IOException("Policy publication failed");
             }
         }
     }
 
     private static int flags(PrivateReadingPolicy.Selection selection) {
-        return (selection.master ? 8 : 0) | (selection.privateChats ? 1 : 0) | (selection.groups ? 2 : 0) | (selection.channels ? 4 : 0);
+        return (selection.master ? 8 : 0) | (selection.privateChats ? 1 : 0) | (selection.groups ? 2 : 0) | (selection.channels ? 4 : 0) | (selection.bots ? 16 : 0);
     }
 
-    private static long checksum(int n, long l, int n2) {
+    private static long checksum(int version, int n, long l, int n2) {
         CRC32 cRC32 = new CRC32();
-        PrivateReadingSettings.update(cRC32, 1414942802L, 4);
-        PrivateReadingSettings.update(cRC32, 1L, 4);
+        PrivateReadingSettings.update(cRC32, MAGIC, 4);
+        PrivateReadingSettings.update(cRC32, version, 4);
         PrivateReadingSettings.update(cRC32, n, 4);
         PrivateReadingSettings.update(cRC32, l, 8);
         PrivateReadingSettings.update(cRC32, n2, 4);
