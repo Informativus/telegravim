@@ -315,34 +315,17 @@ void ArchiveChats::nextBatch() {
 	_status = tr::lng_archive_cleanup_progress(tr::now, lt_count, _archived);
 	const auto automatic = (_mode == Mode::Automatic);
 	const auto end = std::min(_position + size_t(kBatchSize), _work.size());
-	auto batch = QVector<MTPInputDialogPeer>();
+	auto peers = std::vector<PeerId>();
+	peers.reserve(end - _position);
 	for (auto i = _position; i != end; ++i) {
-		batch.push_back(MTP_inputDialogPeer(
-			_session->data().peer(_work[i])->input()));
-	}
-	_request = _api.request(MTPmessages_GetPeerDialogs(
-		MTP_vector(std::move(batch))
-	)).done([=](const MTPmessages_PeerDialogs &result) {
-		_request = 0;
-		const auto &data = result.data();
-		_session->data().processUsers(data.vusers());
-		_session->data().processChats(data.vchats());
-		auto peers = std::vector<PeerId>();
-		for (const auto &dialog : data.vdialogs().v) {
-			dialog.match([&](const MTPDdialog &entry) {
-				const auto peer = peerFromMTP(entry.vpeer());
-				const auto inBatch = std::find(
-					_work.begin() + _position, _work.begin() + end, peer)
-					!= _work.begin() + end;
-				if (inBatch && eligible(entry, automatic)
-					&& (!automatic || _automatic.current())) {
-					peers.push_back(peer);
-				}
-			}, [](const auto &) {});
+		const auto peer = _work[i];
+		if (eligible(_session->data().peer(peer), automatic)
+			&& (!automatic || _automatic.current())) {
+			peers.push_back(peer);
 		}
-		_position = end;
-		sendBatch(std::move(peers));
-	}).fail([=] { fail(); }).handleFloodErrors().send();
+	}
+	_position = end;
+	sendBatch(std::move(peers));
 }
 
 void ArchiveChats::sendBatch(std::vector<PeerId> peers) {
