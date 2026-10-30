@@ -1986,10 +1986,11 @@ void ArchiveCleanupBox(
 	const auto container = box->verticalLayout();
 	AddSkip(container);
 	AddDividerText(container, tr::lng_archive_cleanup_about());
-	const auto prepare = container->add(object_ptr<Button>(
+	const auto prepare = container->add(object_ptr<Ui::RoundButton>(
 		container,
 		tr::lng_archive_cleanup_prepare(),
-		st::settingsButtonNoIcon));
+		st::defaultActiveButton));
+	prepare->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
 	prepare->setClickedCallback([=] { archive->prepare(); });
 	archive->busyValue() | rpl::on_next([=](bool busy) {
 		prepare->setDisabled(busy);
@@ -2033,14 +2034,27 @@ void ArchiveSettingsBox(
 	const auto container = box->verticalLayout();
 	const auto archive = &controller->session().archiveChats();
 	AddSkip(container);
-	const auto cleanup = container->add(object_ptr<Button>(
+	const auto cleanup = container->add(object_ptr<Ui::RoundButton>(
 		container,
 		tr::lng_archive_cleanup_title(),
-		st::settingsButtonNoIcon));
+		st::defaultActiveButton));
+	cleanup->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
 	cleanup->setClickedCallback([=] {
 		controller->show(
 			Box(ArchiveCleanupBox, controller), Ui::LayerOption::KeepOther);
 	});
+	const auto undo = container->add(object_ptr<Ui::RoundButton>(
+		container,
+		tr::lng_archive_cleanup_undo(),
+		st::defaultBoxButton));
+	undo->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
+	undo->setClickedCallback([=] { archive->undo(); });
+	archive->undoAvailableValue() | rpl::on_next([=](bool available) {
+		undo->setDisabled(!available);
+	}, undo->lifetime());
+	archive->busyValue() | rpl::on_next([=](bool busy) {
+		undo->setDisabled(busy || !archive->undoAvailable());
+	}, undo->lifetime());
 	const auto automatic = container->add(object_ptr<Button>(
 		container,
 		tr::lng_archive_cleanup_automatic(),
@@ -2058,14 +2072,6 @@ void ArchiveSettingsBox(
 	}, automatic->lifetime());
 	AddDividerText(container, tr::lng_archive_cleanup_automatic_about());
 	AddDividerText(container, archive->statusValue());
-	const auto retry = container->add(object_ptr<Button>(
-		container,
-		tr::lng_archive_cleanup_retry(),
-		st::settingsButtonNoIcon));
-	retry->setClickedCallback([=] { archive->retryAutomatic(); });
-	archive->busyValue() | rpl::on_next([=](bool busy) {
-		retry->setDisabled(busy);
-	}, retry->lifetime());
 	AddSkip(container);
 	AddSubsectionTitle(container, tr::lng_settings_unmuted_chats());
 

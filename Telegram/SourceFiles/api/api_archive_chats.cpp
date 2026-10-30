@@ -28,7 +28,7 @@ constexpr auto kPageSize = 100;
 constexpr auto kBatchSize = 20;
 constexpr auto kBatchDelay = crl::time(1000);
 constexpr auto kMaxPeers = 100000;
-constexpr auto kSettingsVersion = quint32(1);
+constexpr auto kSettingsVersion = quint32(2);
 
 } // namespace
 
@@ -248,11 +248,16 @@ void ArchiveChats::confirm() {
 	_preview = -1;
 	_position = 0;
 	_archived = 0;
+	_lastArchived.clear();
+	_undoAvailable = false;
+	saveSettings();
 	nextBatch();
 }
 
 void ArchiveChats::cancel() {
-	if (_mode == Mode::Manual || _mode == Mode::Automatic) {
+	if (_mode == Mode::Manual
+		|| _mode == Mode::Automatic
+		|| _mode == Mode::Undo) {
 		return;
 	}
 	if (_request) {
@@ -264,6 +269,19 @@ void ArchiveChats::cancel() {
 	_preview = -1;
 	_busy = false;
 	startAutomatic();
+}
+
+void ArchiveChats::undo() {
+	if (_mode != Mode::Idle || _lastArchived.empty()) {
+		return;
+	}
+	_work.assign(_lastArchived.begin(), _lastArchived.end());
+	_mode = Mode::Undo;
+	_busy = true;
+	_preview = -1;
+	_position = 0;
+	_archived = 0;
+	nextBatch();
 }
 
 void ArchiveChats::incoming(not_null<HistoryItem*> item) {
@@ -312,15 +330,18 @@ void ArchiveChats::nextBatch() {
 		finish();
 		return;
 	}
-	_status = tr::lng_archive_cleanup_progress(tr::now, lt_count, _archived);
 	const auto automatic = (_mode == Mode::Automatic);
+	const auto undo = (_mode == Mode::Undo);
+	_status = undo
+		? tr::lng_archive_cleanup_undoing(tr::now)
+		: tr::lng_archive_cleanup_progress(tr::now, lt_count, _archived);
 	const auto end = std::min(_position + size_t(kBatchSize), _work.size());
 	auto peers = std::vector<PeerId>();
 	peers.reserve(end - _position);
 	for (auto i = _position; i != end; ++i) {
 		const auto peer = _work[i];
-		if (eligible(_session->data().peer(peer))
-			&& (!automatic || _automatic.current())) {
+		if (undo || (eligible(_session->data().peer(peer))
+			&& (!automatic || _automatic.current()))) {
 			peers.push_back(peer);
 		}
 	}
@@ -334,9 +355,12 @@ void ArchiveChats::sendBatch(std::vector<PeerId> peers) {
 		return;
 	}
 	auto batch = QVector<MTPInputFolderPeer>();
+	const auto undo = (_mode == Mode::Undo);
+	const auto manual = (_mode == Mode::Manual);
 	for (const auto peer : peers) {
 		batch.push_back(MTP_inputFolderPeer(
-			_session->data().peer(peer)->input(), MTP_int(Data::Folder::kId)));
+			_session->data().peer(peer)->input(),
+			MTP_int(undo ? 0 : Data::Folder::kId)));
 	}
 	_request = _api.request(MTPfolders_EditPeerFolders(
 		MTP_vector(std::move(batch))
@@ -344,8 +368,20 @@ void ArchiveChats::sendBatch(std::vector<PeerId> peers) {
 		_request = 0;
 		_session->api().applyUpdates(updates);
 		for (const auto peer : peers) {
-			_session->data().history(peer)->setFolder(
-				_session->data().folder(Data::Folder::kId));
+			if (undo) {
+				_session->data().history(peer)->clearFolder();
+				_lastArchived.erase(peer);
+			} else {
+				_session->data().history(peer)->setFolder(
+					_session->data().folder(Data::Folder::kId));
+				if (manual) {
+					_lastArchived.emplace(peer);
+				}
+			}
+		}
+		if (undo || manual) {
+			_undoAvailable = !_lastArchived.empty();
+			saveSettings();
 		}
 		_archived += int(peers.size());
 		_next.callOnce(kBatchDelay);
@@ -353,15 +389,23 @@ void ArchiveChats::sendBatch(std::vector<PeerId> peers) {
 }
 
 void ArchiveChats::finish() {
+	const auto undo = (_mode == Mode::Undo);
 	if (_mode == Mode::Automatic) {
 		for (const auto peer : _work) {
 			_pending.remove(peer);
 		}
 		saveSettings();
 	}
+	if (undo) {
+		_lastArchived.clear();
+		_undoAvailable = false;
+		saveSettings();
+	}
 	_mode = Mode::Idle;
 	_work.clear();
-	_status = tr::lng_archive_cleanup_done(tr::now, lt_count, _archived);
+	_status = undo
+		? tr::lng_archive_cleanup_undone(tr::now, lt_count, _archived)
+		: tr::lng_archive_cleanup_done(tr::now, lt_count, _archived);
 	_busy = false;
 	startAutomatic();
 }
@@ -374,7 +418,9 @@ void ArchiveChats::fail() {
 	}
 	_status = (_mode == Mode::Manual || _mode == Mode::Automatic)
 		? tr::lng_archive_cleanup_failed(tr::now, lt_count, _archived)
-		: tr::lng_archive_cleanup_scan_failed(tr::now);
+		: (_mode == Mode::Undo
+			? tr::lng_archive_cleanup_undo_failed(tr::now, lt_count, _archived)
+			: tr::lng_archive_cleanup_scan_failed(tr::now));
 	_mode = Mode::Idle;
 	_work.clear();
 	_scan.clear();
@@ -384,7 +430,7 @@ void ArchiveChats::fail() {
 
 void ArchiveChats::readSettings() {
 	const auto bytes = _session->settings().archiveChatsSettings();
-	if (bytes.isEmpty() || bytes.size() > 2 * kMaxPeers * 8 + 32) {
+	if (bytes.isEmpty() || bytes.size() > 3 * kMaxPeers * 8 + 32) {
 		return;
 	}
 	auto stream = QDataStream(bytes);
@@ -393,8 +439,9 @@ void ArchiveChats::readSettings() {
 	auto enabled = false;
 	auto known = base::flat_set<PeerId>();
 	auto pending = base::flat_set<PeerId>();
+	auto lastArchived = base::flat_set<PeerId>();
 	stream >> version >> enabled;
-	if (version != kSettingsVersion) {
+	if (version != 1 && version != kSettingsVersion) {
 		return;
 	}
 	for (const auto set : { &known, &pending }) {
@@ -412,9 +459,26 @@ void ArchiveChats::readSettings() {
 			set->emplace(DeserializePeerId(peer));
 		}
 	}
+	if (version >= 2) {
+		auto count = quint32();
+		stream >> count;
+		if (count > kMaxPeers) {
+			return;
+		}
+		for (auto i = quint32(); i != count; ++i) {
+			auto peer = quint64();
+			stream >> peer;
+			if (!peer) {
+				return;
+			}
+			lastArchived.emplace(DeserializePeerId(peer));
+		}
+	}
 	if (stream.status() == QDataStream::Ok && stream.atEnd()) {
 		_known = std::move(known);
 		_pending = std::move(pending);
+		_lastArchived = std::move(lastArchived);
+		_undoAvailable = !_lastArchived.empty();
 		_automatic = enabled;
 	}
 }
@@ -424,7 +488,7 @@ void ArchiveChats::saveSettings() {
 	auto stream = QDataStream(&bytes, QIODevice::WriteOnly);
 	stream.setVersion(QDataStream::Qt_5_1);
 	stream << kSettingsVersion << _automatic.current();
-	for (const auto set : { &_known, &_pending }) {
+	for (const auto set : { &_known, &_pending, &_lastArchived }) {
 		stream << quint32(set->size());
 		for (const auto peer : *set) {
 			stream << SerializePeerId(peer);
@@ -452,6 +516,14 @@ rpl::producer<int> ArchiveChats::previewValue() const {
 
 rpl::producer<QString> ArchiveChats::statusValue() const {
 	return _status.value();
+}
+
+rpl::producer<bool> ArchiveChats::undoAvailableValue() const {
+	return _undoAvailable.value();
+}
+
+bool ArchiveChats::undoAvailable() const {
+	return _undoAvailable.current();
 }
 
 } // namespace Api

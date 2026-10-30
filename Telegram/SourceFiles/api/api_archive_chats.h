@@ -28,6 +28,7 @@ public:
 	void prepare();
 	void confirm();
 	void cancel();
+	void undo();
 	void setAutomatic(bool enabled);
 	void retryAutomatic();
 
@@ -36,9 +37,11 @@ public:
 	[[nodiscard]] bool automatic() const;
 	[[nodiscard]] rpl::producer<int> previewValue() const;
 	[[nodiscard]] rpl::producer<QString> statusValue() const;
+	[[nodiscard]] rpl::producer<bool> undoAvailableValue() const;
+	[[nodiscard]] bool undoAvailable() const;
 
 private:
-	enum class Mode { Idle, PreviewScan, BaselineScan, Preview, Manual, Automatic };
+	enum class Mode { Idle, PreviewScan, BaselineScan, Preview, Manual, Automatic, Undo };
 
 	void scanPinned();
 	void scanPage();
@@ -67,12 +70,14 @@ private:
 	base::flat_set<PeerId> _scan;
 	base::flat_set<PeerId> _known;
 	base::flat_set<PeerId> _pending;
+	base::flat_set<PeerId> _lastArchived;
 	std::vector<PeerId> _work;
 	size_t _position = 0;
 	int _archived = 0;
 	bool _automaticFailed = false;
 	rpl::variable<bool> _busy = false;
 	rpl::variable<bool> _automatic = false;
+	rpl::variable<bool> _undoAvailable = false;
 	rpl::variable<int> _preview = -1;
 	rpl::variable<QString> _status;
 	base::Timer _next;
