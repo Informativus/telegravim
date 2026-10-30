@@ -99,6 +99,13 @@ public:
 		return _autoDownload;
 	}
 
+	void setArchiveChatsSettings(QByteArray settings) {
+		_archiveChatsSettings = std::move(settings);
+	}
+	[[nodiscard]] const QByteArray &archiveChatsSettings() const {
+		return _archiveChatsSettings;
+	}
+
 	void setArchiveCollapsed(bool collapsed);
 	[[nodiscard]] bool archiveCollapsed() const;
 	[[nodiscard]] rpl::producer<bool> archiveCollapsedChanges() const;
@@ -250,6 +257,7 @@ private:
 	rpl::variable<bool> _phoneNumberHidden = false;
 
 	std::vector<Data::ReactionId> _extraFavoriteReactions;
+	QByteArray _archiveChatsSettings;
 
 };
 

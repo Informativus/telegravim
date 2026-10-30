@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings/settings_common_session.h"
 
 #include "api/api_global_privacy.h"
+#include "api/api_archive_chats.h"
 #include "apiwrap.h"
 #include "base/call_delayed.h"
 #include "base/platform/base_platform_custom_app_icon.h"
@@ -1975,6 +1976,43 @@ void SetupAnimations(
 	});
 }
 
+void ArchiveCleanupBox(
+		not_null<Ui::GenericBox*> box,
+		not_null<Window::SessionController*> controller) {
+	const auto archive = &controller->session().archiveChats();
+	box->setTitle(tr::lng_archive_cleanup_title());
+	box->setWidth(st::boxWideWidth);
+	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
+	const auto container = box->verticalLayout();
+	AddSkip(container);
+	AddDividerText(container, tr::lng_archive_cleanup_about());
+	const auto prepare = container->add(object_ptr<Button>(
+		container,
+		tr::lng_archive_cleanup_prepare(),
+		st::settingsButtonNoIcon));
+	prepare->setClickedCallback([=] { archive->prepare(); });
+	archive->busyValue() | rpl::on_next([=](bool busy) {
+		prepare->setDisabled(busy);
+	}, prepare->lifetime());
+	AddDividerText(container, archive->statusValue());
+	archive->previewValue() | rpl::filter([](int count) {
+		return count > 0;
+	}) | rpl::on_next([=](int count) {
+		controller->show(Ui::MakeConfirmBox({
+			.text = tr::lng_archive_cleanup_confirm(tr::now, lt_count, count),
+			.confirmed = crl::guard(box, [=](Fn<void()> close) {
+				archive->confirm();
+				close();
+			}),
+			.cancelled = crl::guard(box, [=] { archive->cancel(); }),
+			.confirmText = tr::lng_archived_add(),
+		}), Ui::LayerOption::KeepOther);
+	}, box->lifetime());
+	box->boxClosing() | rpl::on_next([=] {
+		archive->cancel();
+	}, box->lifetime());
+}
+
 void ArchiveSettingsBox(
 		not_null<Ui::GenericBox*> box,
 		not_null<Window::SessionController*> controller) {
@@ -1993,6 +2031,41 @@ void ArchiveSettingsBox(
 	const auto privacy = &controller->session().api().globalPrivacy();
 
 	const auto container = box->verticalLayout();
+	const auto archive = &controller->session().archiveChats();
+	AddSkip(container);
+	const auto cleanup = container->add(object_ptr<Button>(
+		container,
+		tr::lng_archive_cleanup_title(),
+		st::settingsButtonNoIcon));
+	cleanup->setClickedCallback([=] {
+		controller->show(
+			Box(ArchiveCleanupBox, controller), Ui::LayerOption::KeepOther);
+	});
+	const auto automatic = container->add(object_ptr<Button>(
+		container,
+		tr::lng_archive_cleanup_automatic(),
+		st::settingsButtonNoIcon));
+	automatic->toggleOn(rpl::merge(
+		archive->automaticValue(),
+		archive->busyValue() | rpl::filter([](bool busy) {
+			return !busy;
+		}) | rpl::map([=] { return archive->automatic(); })));
+	automatic->toggledChanges() | rpl::on_next([=](bool enabled) {
+		archive->setAutomatic(enabled);
+	}, automatic->lifetime());
+	archive->busyValue() | rpl::on_next([=](bool busy) {
+		automatic->setDisabled(busy);
+	}, automatic->lifetime());
+	AddDividerText(container, tr::lng_archive_cleanup_automatic_about());
+	AddDividerText(container, archive->statusValue());
+	const auto retry = container->add(object_ptr<Button>(
+		container,
+		tr::lng_archive_cleanup_retry(),
+		st::settingsButtonNoIcon));
+	retry->setClickedCallback([=] { archive->retryAutomatic(); });
+	archive->busyValue() | rpl::on_next([=](bool busy) {
+		retry->setDisabled(busy);
+	}, retry->lifetime());
 	AddSkip(container);
 	AddSubsectionTitle(container, tr::lng_settings_unmuted_chats());
 
