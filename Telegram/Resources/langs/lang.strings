@@ -887,9 +887,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_sessions_title" = "Active sessions";
 "lng_settings_sessions_about" = "Manage your sessions on all your devices.";
 "lng_settings_archive_title" = "Archive Settings";
+"lng_archive_cleanup_section" = "Groups and bots";
 "lng_archive_cleanup_title" = "Archive groups and bots now";
+"lng_archive_cleanup_preview_title#one" = "Archive {count} chat";
+"lng_archive_cleanup_preview_title#other" = "Archive {count} chats";
 "lng_archive_cleanup_about" = "Archive unpinned groups and bots from All Chats. Private chats from people stay visible.";
-"lng_archive_cleanup_prepare" = "Scan All Chats";
 "lng_archive_cleanup_confirm#one" = "Move {count} chat to the Archive? This affects this account on all devices. Private chats from people stay in All Chats. You can move chats back from the Archive.";
 "lng_archive_cleanup_confirm#other" = "Move {count} chats to the Archive? This affects this account on all devices. Private chats from people stay in All Chats. You can move chats back from the Archive.";
 "lng_archive_cleanup_scanning" = "Finding chats in All Chats…";

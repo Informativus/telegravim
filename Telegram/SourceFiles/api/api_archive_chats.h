@@ -42,7 +42,16 @@ public:
 	[[nodiscard]] bool undoAvailable() const;
 
 private:
-	enum class Mode { Idle, PreviewScan, BaselineScan, Preview, Manual, Automatic, Undo };
+	enum class Mode {
+		Idle,
+		PreviewScan,
+		BaselineScan,
+		UndoScan,
+		Preview,
+		Manual,
+		Automatic,
+		Undo,
+	};
 
 	void scanPinned();
 	void scanPage();

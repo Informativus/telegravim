@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "apiwrap.h"
 #include "data/data_channel.h"
+#include "data/data_chat_filters.h"
 #include "data/data_folder.h"
 #include "data/data_session.h"
 #include "data/data_types.h"
@@ -64,11 +65,18 @@ bool ArchiveChats::eligible(not_null<PeerData*> peer) const {
 		&& !(peer->isUser() && peer->isBot())) {
 		return false;
 	}
-	if (_session->data().localPinnedDialogs().isPinned(0, peer->id)) {
+	const auto history = _session->data().historyLoaded(peer->id);
+	const auto pinned = [&](FilterId filterId) {
+		return _session->data().localPinnedDialogs().isPinned(
+			filterId,
+			peer->id)
+			|| (history && history->isPinnedDialog(filterId));
+	};
+	if (pinned(0)) {
 		return false;
 	}
-	if (const auto history = _session->data().historyLoaded(peer->id)) {
-		if (history->isPinnedDialog(0)) {
+	for (const auto &filter : _session->data().chatsFilters().list()) {
+		if (pinned(filter.id())) {
 			return false;
 		}
 	}
@@ -144,7 +152,11 @@ void ArchiveChats::collect(const QVector<MTPDialog> &dialogs) {
 	for (const auto &dialog : dialogs) {
 		dialog.match([&](const MTPDdialog &data) {
 			const auto peer = peerFromMTP(data.vpeer());
-			if (peer && (_mode == Mode::BaselineScan || eligible(data))) {
+			const auto wanted = (_mode == Mode::BaselineScan)
+				|| (_mode == Mode::UndoScan
+					? _lastArchived.contains(peer)
+					: eligible(data));
+			if (peer && wanted) {
 				_scan.emplace(peer);
 			}
 		}, [](const auto &) {});
@@ -228,6 +240,13 @@ void ArchiveChats::scanFinished() {
 		_mode = Mode::Idle;
 		_status = tr::lng_archive_cleanup_enabled(tr::now);
 		_busy = false;
+	} else if (_mode == Mode::UndoScan) {
+		_work.assign(_scan.begin(), _scan.end());
+		_scan.clear();
+		_mode = Mode::Undo;
+		_position = 0;
+		_archived = 0;
+		nextBatch();
 	} else {
 		_work.assign(_scan.begin(), _scan.end());
 		_mode = _work.empty() ? Mode::Idle : Mode::Preview;
@@ -257,6 +276,7 @@ void ArchiveChats::confirm() {
 void ArchiveChats::cancel() {
 	if (_mode == Mode::Manual
 		|| _mode == Mode::Automatic
+		|| _mode == Mode::UndoScan
 		|| _mode == Mode::Undo) {
 		return;
 	}
@@ -275,13 +295,13 @@ void ArchiveChats::undo() {
 	if (_mode != Mode::Idle || _lastArchived.empty()) {
 		return;
 	}
-	_work.assign(_lastArchived.begin(), _lastArchived.end());
-	_mode = Mode::Undo;
+	_mode = Mode::UndoScan;
 	_busy = true;
 	_preview = -1;
-	_position = 0;
-	_archived = 0;
-	nextBatch();
+	_status = tr::lng_archive_cleanup_undoing(tr::now);
+	_scan.clear();
+	_folder = Data::Folder::kId;
+	scanPinned();
 }
 
 void ArchiveChats::incoming(not_null<HistoryItem*> item) {
@@ -418,7 +438,7 @@ void ArchiveChats::fail() {
 	}
 	_status = (_mode == Mode::Manual || _mode == Mode::Automatic)
 		? tr::lng_archive_cleanup_failed(tr::now, lt_count, _archived)
-		: (_mode == Mode::Undo
+		: ((_mode == Mode::Undo || _mode == Mode::UndoScan)
 			? tr::lng_archive_cleanup_undo_failed(tr::now, lt_count, _archived)
 			: tr::lng_archive_cleanup_scan_failed(tr::now));
 	_mode = Mode::Idle;

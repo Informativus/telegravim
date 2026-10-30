@@ -1991,14 +1991,28 @@ public:
 	}
 
 	void prepare() override {
-		delegate()->peerListSetTitle(tr::lng_archive_cleanup_title());
+		const auto count = int(_peers.size());
+		delegate()->peerListSetTitle(
+			tr::lng_archive_cleanup_preview_title(
+				lt_count,
+				rpl::single(float64(count))));
 		delegate()->peerListSetSearchMode(PeerListSearchMode::Disabled);
+		delegate()->peerListSetAboveWidget(object_ptr<Ui::DividerLabel>(
+			(QWidget*)nullptr,
+			object_ptr<Ui::FlatLabel>(
+				(QWidget*)nullptr,
+				tr::lng_archive_cleanup_confirm(
+					lt_count,
+					rpl::single(float64(count))),
+				st::boxDividerLabel),
+			st::defaultBoxDividerLabelPadding));
 		for (const auto peer : _peers) {
 			if (const auto loaded = _session->data().peerLoaded(peer)) {
 				delegate()->peerListAppendRow(
 					std::make_unique<PeerListRow>(loaded));
 			}
 		}
+		delegate()->peerListRefreshRows();
 	}
 
 	void rowClicked(not_null<PeerListRow*>) override {
@@ -2007,58 +2021,28 @@ public:
 private:
 	const not_null<Main::Session*> _session;
 	const std::vector<PeerId> _peers;
+
 };
 
-void ArchiveCleanupBox(
-		not_null<Ui::GenericBox*> box,
-		not_null<Window::SessionController*> controller) {
+void ShowArchivePreview(not_null<Window::SessionController*> controller) {
 	const auto archive = &controller->session().archiveChats();
-	box->setTitle(tr::lng_archive_cleanup_title());
-	box->setWidth(st::boxWideWidth);
-	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
-	const auto container = box->verticalLayout();
-	struct State {
-		bool previewShown = false;
-	};
-	const auto state = box->lifetime().make_state<State>();
-	AddSkip(container);
-	AddDividerText(container, tr::lng_archive_cleanup_about());
-	const auto prepare = container->add(object_ptr<Ui::RoundButton>(
-		container,
-		tr::lng_archive_cleanup_prepare(),
-		st::defaultActiveButton));
-	prepare->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
-	prepare->setClickedCallback([=] { archive->prepare(); });
-	archive->busyValue() | rpl::on_next([=](bool busy) {
-		prepare->setDisabled(busy);
-	}, prepare->lifetime());
-	AddDividerText(container, archive->statusValue());
-	archive->previewValue() | rpl::filter([state](int count) {
-		return count > 0 && !state->previewShown;
-	}) | rpl::on_next([=](int) {
-		state->previewShown = true;
-		auto owned = Box<PeerListBox>(
-			std::make_unique<ArchivePreviewController>(
-				&controller->session(),
-				archive->previewPeers()),
-			[=](not_null<PeerListBox*> list) {
-				list->addButton(tr::lng_cancel(), [=] {
-					archive->cancel();
-					list->closeBox();
-				});
-				list->addButton(tr::lng_archived_add(), [=] {
-					archive->confirm();
-					list->closeBox();
-				});
-				list->boxClosing() | rpl::on_next([=] {
-					archive->cancel();
-				}, list->lifetime());
+	auto owned = Box<PeerListBox>(
+		std::make_unique<ArchivePreviewController>(
+			&controller->session(),
+			archive->previewPeers()),
+		[=](not_null<PeerListBox*> list) {
+			list->addButton(tr::lng_archived_add(), [=] {
+				archive->confirm();
+				list->closeBox();
 			});
-		controller->show(std::move(owned), Ui::LayerOption::KeepOther);
-	}, box->lifetime());
-	box->boxClosing() | rpl::on_next([=] {
-		archive->cancel();
-	}, box->lifetime());
+			list->addButton(tr::lng_cancel(), [=] {
+				list->closeBox();
+			});
+			list->boxClosing() | rpl::on_next([=] {
+				archive->cancel();
+			}, list->lifetime());
+		});
+	controller->show(std::move(owned), Ui::LayerOption::KeepOther);
 }
 
 void ArchiveSettingsBox(
@@ -2081,27 +2065,21 @@ void ArchiveSettingsBox(
 	const auto container = box->verticalLayout();
 	const auto archive = &controller->session().archiveChats();
 	AddSkip(container);
-	const auto cleanup = container->add(object_ptr<Ui::RoundButton>(
+	AddSubsectionTitle(container, tr::lng_archive_cleanup_section());
+	const auto cleanup = container->add(object_ptr<Button>(
 		container,
 		tr::lng_archive_cleanup_title(),
-		st::defaultActiveButton));
-	cleanup->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
-	cleanup->setClickedCallback([=] {
-		controller->show(
-			Box(ArchiveCleanupBox, controller), Ui::LayerOption::KeepOther);
-	});
-	const auto undo = container->add(object_ptr<Ui::RoundButton>(
-		container,
-		tr::lng_archive_cleanup_undo(),
-		st::defaultBoxButton));
-	undo->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
-	undo->setClickedCallback([=] { archive->undo(); });
-	archive->undoAvailableValue() | rpl::on_next([=](bool available) {
-		undo->setDisabled(!available);
-	}, undo->lifetime());
-	archive->busyValue() | rpl::on_next([=](bool busy) {
-		undo->setDisabled(busy || !archive->undoAvailable());
-	}, undo->lifetime());
+		st::settingsButtonNoIcon));
+	cleanup->setClickedCallback([=] { archive->prepare(); });
+	const auto undo = container->add(
+		object_ptr<Ui::SlideWrap<Button>>(
+			container,
+			object_ptr<Button>(
+				container,
+				tr::lng_archive_cleanup_undo(),
+				st::settingsButtonNoIcon)));
+	undo->toggleOn(archive->undoAvailableValue());
+	undo->entity()->setClickedCallback([=] { archive->undo(); });
 	const auto automatic = container->add(object_ptr<Button>(
 		container,
 		tr::lng_archive_cleanup_automatic(),
@@ -2115,10 +2093,34 @@ void ArchiveSettingsBox(
 		archive->setAutomatic(enabled);
 	}, automatic->lifetime());
 	archive->busyValue() | rpl::on_next([=](bool busy) {
+		cleanup->setDisabled(busy);
+		undo->entity()->setDisabled(busy);
 		automatic->setDisabled(busy);
-	}, automatic->lifetime());
-	AddDividerText(container, tr::lng_archive_cleanup_automatic_about());
-	AddDividerText(container, archive->statusValue());
+	}, container->lifetime());
+	AddSkip(container);
+	AddDividerText(
+		container,
+		rpl::combine(
+			tr::lng_archive_cleanup_about(),
+			tr::lng_archive_cleanup_automatic_about(),
+			archive->statusValue()
+		) | rpl::map([](
+				const QString &about,
+				const QString &automatic,
+				const QString &status) {
+			return about
+				+ u"\n\n"_q
+				+ automatic
+				+ (status.isEmpty() ? QString() : (u"\n\n"_q + status));
+		}));
+	archive->previewValue() | rpl::filter([](int count) {
+		return count > 0;
+	}) | rpl::on_next([=] {
+		ShowArchivePreview(controller);
+	}, box->lifetime());
+	box->boxClosing() | rpl::on_next([=] {
+		archive->cancel();
+	}, box->lifetime());
 	AddSkip(container);
 	AddSubsectionTitle(container, tr::lng_settings_unmuted_chats());
 
