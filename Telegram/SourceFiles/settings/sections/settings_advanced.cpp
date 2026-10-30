@@ -21,6 +21,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/connection_box.h"
 #include "boxes/download_path_box.h"
 #include "boxes/local_transfer_box.h"
+#include "boxes/peer_list_box.h"
 #include "core/application.h"
 #include "core/core_settings.h"
 #include "core/file_utilities.h"
@@ -1976,6 +1977,38 @@ void SetupAnimations(
 	});
 }
 
+class ArchivePreviewController final : public PeerListController {
+public:
+	ArchivePreviewController(
+		not_null<Main::Session*> session,
+		std::vector<PeerId> peers)
+	: _session(session)
+	, _peers(std::move(peers)) {
+	}
+
+	[[nodiscard]] Main::Session &session() const override {
+		return *_session;
+	}
+
+	void prepare() override {
+		delegate()->peerListSetTitle(tr::lng_archive_cleanup_title());
+		delegate()->peerListSetSearchMode(PeerListSearchMode::Disabled);
+		for (const auto peer : _peers) {
+			if (const auto loaded = _session->data().peerLoaded(peer)) {
+				delegate()->peerListAppendRow(
+					std::make_unique<PeerListRow>(loaded));
+			}
+		}
+	}
+
+	void rowClicked(not_null<PeerListRow*>) override {
+	}
+
+private:
+	const not_null<Main::Session*> _session;
+	const std::vector<PeerId> _peers;
+};
+
 void ArchiveCleanupBox(
 		not_null<Ui::GenericBox*> box,
 		not_null<Window::SessionController*> controller) {
@@ -1984,6 +2017,10 @@ void ArchiveCleanupBox(
 	box->setWidth(st::boxWideWidth);
 	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 	const auto container = box->verticalLayout();
+	struct State {
+		bool previewShown = false;
+	};
+	const auto state = box->lifetime().make_state<State>();
 	AddSkip(container);
 	AddDividerText(container, tr::lng_archive_cleanup_about());
 	const auto prepare = container->add(object_ptr<Ui::RoundButton>(
@@ -1996,18 +2033,28 @@ void ArchiveCleanupBox(
 		prepare->setDisabled(busy);
 	}, prepare->lifetime());
 	AddDividerText(container, archive->statusValue());
-	archive->previewValue() | rpl::filter([](int count) {
-		return count > 0;
-	}) | rpl::on_next([=](int count) {
-		controller->show(Ui::MakeConfirmBox({
-			.text = tr::lng_archive_cleanup_confirm(tr::now, lt_count, count),
-			.confirmed = crl::guard(box, [=](Fn<void()> close) {
-				archive->confirm();
-				close();
-			}),
-			.cancelled = crl::guard(box, [=] { archive->cancel(); }),
-			.confirmText = tr::lng_archived_add(),
-		}), Ui::LayerOption::KeepOther);
+	archive->previewValue() | rpl::filter([state](int count) {
+		return count > 0 && !state->previewShown;
+	}) | rpl::on_next([=](int) {
+		state->previewShown = true;
+		auto owned = Box<PeerListBox>(
+			std::make_unique<ArchivePreviewController>(
+				&controller->session(),
+				archive->previewPeers()),
+			[=](not_null<PeerListBox*> list) {
+				list->addButton(tr::lng_cancel(), [=] {
+					archive->cancel();
+					list->closeBox();
+				});
+				list->addButton(tr::lng_archived_add(), [=] {
+					archive->confirm();
+					list->closeBox();
+				});
+				list->boxClosing() | rpl::on_next([=] {
+					archive->cancel();
+				}, list->lifetime());
+			});
+		controller->show(std::move(owned), Ui::LayerOption::KeepOther);
 	}, box->lifetime());
 	box->boxClosing() | rpl::on_next([=] {
 		archive->cancel();

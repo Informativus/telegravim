@@ -36,6 +36,7 @@ public:
 	[[nodiscard]] rpl::producer<bool> automaticValue() const;
 	[[nodiscard]] bool automatic() const;
 	[[nodiscard]] rpl::producer<int> previewValue() const;
+	[[nodiscard]] std::vector<PeerId> previewPeers() const;
 	[[nodiscard]] rpl::producer<QString> statusValue() const;
 	[[nodiscard]] rpl::producer<bool> undoAvailableValue() const;
 	[[nodiscard]] bool undoAvailable() const;

@@ -514,6 +514,10 @@ rpl::producer<int> ArchiveChats::previewValue() const {
 	return _preview.value();
 }
 
+std::vector<PeerId> ArchiveChats::previewPeers() const {
+	return _work;
+}
+
 rpl::producer<QString> ArchiveChats::statusValue() const {
 	return _status.value();
 }
