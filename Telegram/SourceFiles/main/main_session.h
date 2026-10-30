@@ -16,6 +16,7 @@ class ApiWrap;
 namespace Api {
 class Updates;
 class SendProgressManager;
+class ArchiveChats;
 } // namespace Api
 
 namespace MTP {
@@ -218,6 +219,9 @@ public:
 	[[nodiscard]] Data::Session &data() const {
 		return *_data;
 	}
+	[[nodiscard]] Api::ArchiveChats &archiveChats() const {
+		return *_archiveChats;
+	}
 	[[nodiscard]] SessionSettings &settings() const {
 		return *_settings;
 	}
@@ -326,6 +330,7 @@ private:
 	// _data depends on _downloader / _uploader.
 	const std::unique_ptr<Data::Session> _data;
 	const not_null<UserData*> _user;
+	std::unique_ptr<Api::ArchiveChats> _archiveChats;
 
 	// _emojiStickersPack depends on _data.
 	const std::unique_ptr<Stickers::EmojiPack> _emojiStickersPack;

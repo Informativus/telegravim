@@ -193,6 +193,8 @@ PRIVATE
     api/api_editing.cpp
     api/api_editing.h
     api/api_filter_updates.h
+    api/api_archive_chats.cpp
+    api/api_archive_chats.h
     api/api_global_privacy.cpp
     api/api_global_privacy.h
     api/api_hash.cpp

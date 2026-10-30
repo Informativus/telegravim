@@ -465,6 +465,15 @@ const auto kTelegravimMeta = BuildHelper({
 		},
 		.keywords = { u"export"_q, u"settings"_q, u"android"_q, u"qr"_q },
 	});
+	builder.addButton({
+		.id = u"telegravim/archive-settings"_q,
+		.title = tr::lng_settings_archive_title(),
+		.icon = { &st::menuIconManage },
+		.onClick = [=] {
+			controller->show(Box(ArchiveSettingsBox, controller));
+		},
+		.keywords = { u"archive"_q, u"chats"_q, u"groups"_q, u"bots"_q },
+	});
 	builder.addSectionButton({
 		.title = tr::lng_telegravim_vim(),
 		.targetSection = VimKeymap::Id(),

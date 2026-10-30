@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings/settings_common_session.h"
 
 #include "api/api_global_privacy.h"
+#include "api/api_archive_chats.h"
 #include "apiwrap.h"
 #include "base/call_delayed.h"
 #include "base/platform/base_platform_custom_app_icon.h"
@@ -20,12 +21,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/connection_box.h"
 #include "boxes/download_path_box.h"
 #include "boxes/local_transfer_box.h"
+#include "boxes/peer_list_box.h"
 #include "core/application.h"
 #include "core/core_settings.h"
 #include "core/file_utilities.h"
 #include "core/launcher.h"
 #include "core/update_checker.h"
 #include "data/data_auto_download.h"
+#include "data/data_peer.h"
 #include "data/data_session.h"
 #include "export/export_manager.h"
 #include "info/downloads/info_downloads_widget.h"
@@ -1975,6 +1978,97 @@ void SetupAnimations(
 	});
 }
 
+class ArchivePreviewController final : public PeerListController {
+public:
+	ArchivePreviewController(
+		not_null<Main::Session*> session,
+		std::vector<PeerId> peers)
+	: _session(session)
+	, _peers(std::move(peers)) {
+	}
+
+	[[nodiscard]] Main::Session &session() const override {
+		return *_session;
+	}
+
+	void prepare() override {
+		delegate()->peerListSetTitle(
+			tr::lng_archive_cleanup_preview_title(
+				lt_count,
+				_count.value() | tr::to_count()));
+		delegate()->peerListSetSearchMode(PeerListSearchMode::Enabled);
+		delegate()->peerListSetAboveWidget(object_ptr<Ui::DividerLabel>(
+			(QWidget*)nullptr,
+			object_ptr<Ui::FlatLabel>(
+				(QWidget*)nullptr,
+				tr::lng_archive_cleanup_confirm(
+					lt_count,
+					_count.value() | tr::to_count()),
+				st::boxDividerLabel),
+			st::defaultBoxDividerLabelPadding));
+		for (const auto peer : _peers) {
+			if (const auto loaded = _session->data().peerLoaded(peer)) {
+				auto row = std::make_unique<PeerListRow>(loaded);
+				const auto raw = row.get();
+				delegate()->peerListAppendRow(std::move(row));
+				delegate()->peerListSetRowChecked(raw, true);
+				_selected.emplace(peer);
+			}
+		}
+		_count = int(_selected.size());
+		delegate()->peerListRefreshRows();
+	}
+
+	void rowClicked(not_null<PeerListRow*> row) override {
+		const auto checked = !row->checked();
+		delegate()->peerListSetRowChecked(row, checked);
+		if (checked) {
+			_selected.emplace(row->peer()->id);
+		} else {
+			_selected.remove(row->peer()->id);
+		}
+		_count = int(_selected.size());
+	}
+
+	bool trackSelectedList() override {
+		return false;
+	}
+
+	[[nodiscard]] std::vector<PeerId> selected() const {
+		return { _selected.begin(), _selected.end() };
+	}
+
+private:
+	const not_null<Main::Session*> _session;
+	const std::vector<PeerId> _peers;
+	base::flat_set<PeerId> _selected;
+	rpl::variable<int> _count = 0;
+
+};
+
+void ShowArchivePreview(not_null<Window::SessionController*> controller) {
+	const auto archive = &controller->session().archiveChats();
+	auto preview = std::make_unique<ArchivePreviewController>(
+		&controller->session(),
+		archive->previewPeers());
+	const auto raw = preview.get();
+	auto owned = Box<PeerListBox>(
+		std::move(preview),
+		[=](not_null<PeerListBox*> list) {
+			list->addButton(tr::lng_archived_add(), [=] {
+				archive->confirm(raw->selected());
+				list->closeBox();
+			});
+			list->addButton(tr::lng_cancel(), [=] {
+				list->closeBox();
+			});
+			list->boxClosing() | rpl::on_next([=] {
+				archive->cancel();
+			}, list->lifetime());
+		});
+	controller->show(std::move(owned), Ui::LayerOption::KeepOther);
+}
+
 void ArchiveSettingsBox(
 		not_null<Ui::GenericBox*> box,
 		not_null<Window::SessionController*> controller) {
@@ -1993,6 +2087,64 @@ void ArchiveSettingsBox(
 	const auto privacy = &controller->session().api().globalPrivacy();
 
 	const auto container = box->verticalLayout();
+	const auto archive = &controller->session().archiveChats();
+	AddSkip(container);
+	AddSubsectionTitle(container, tr::lng_archive_cleanup_section());
+	const auto cleanup = container->add(object_ptr<Button>(
+		container,
+		tr::lng_archive_cleanup_title(),
+		st::settingsButtonNoIcon));
+	cleanup->setClickedCallback([=] { archive->prepare(); });
+	const auto undo = container->add(
+		object_ptr<Ui::SlideWrap<Button>>(
+			container,
+			object_ptr<Button>(
+				container,
+				tr::lng_archive_cleanup_undo(),
+				st::settingsButtonNoIcon)));
+	undo->toggleOn(archive->undoAvailableValue());
+	undo->entity()->setClickedCallback([=] { archive->undo(); });
+	const auto automatic = container->add(object_ptr<Button>(
+		container,
+		tr::lng_archive_cleanup_automatic(),
+		st::settingsButtonNoIcon));
+	automatic->toggleOn(rpl::merge(
+		archive->automaticValue(),
+		archive->busyValue() | rpl::filter([](bool busy) {
+			return !busy;
+		}) | rpl::map([=] { return archive->automatic(); })));
+	automatic->toggledChanges() | rpl::on_next([=](bool enabled) {
+		archive->setAutomatic(enabled);
+	}, automatic->lifetime());
+	archive->busyValue() | rpl::on_next([=](bool busy) {
+		cleanup->setDisabled(busy);
+		undo->entity()->setDisabled(busy);
+		automatic->setDisabled(busy);
+	}, container->lifetime());
+	AddSkip(container);
+	AddDividerText(
+		container,
+		rpl::combine(
+			tr::lng_archive_cleanup_about(),
+			tr::lng_archive_cleanup_automatic_about(),
+			archive->statusValue()
+		) | rpl::map([](
+				const QString &about,
+				const QString &automatic,
+				const QString &status) {
+			return about
+				+ u"\n\n"_q
+				+ automatic
+				+ (status.isEmpty() ? QString() : (u"\n\n"_q + status));
+		}));
+	archive->previewValue() | rpl::filter([](int count) {
+		return count > 0;
+	}) | rpl::on_next([=] {
+		ShowArchivePreview(controller);
+	}, box->lifetime());
+	box->boxClosing() | rpl::on_next([=] {
+		archive->cancel();
+	}, box->lifetime());
 	AddSkip(container);
 	AddSubsectionTitle(container, tr::lng_settings_unmuted_chats());
 

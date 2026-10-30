@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "e2e/e2e_chat.h"
 
 #include "apiwrap.h"
+#include "api/api_archive_chats.h"
 #include "api/api_peer_colors.h"
 #include "api/api_updates.h"
 #include "api/api_user_privacy.h"
@@ -262,6 +263,8 @@ Session::Session(
 	_api->requestNotifySettings(MTP_inputNotifyChats());
 	_api->requestNotifySettings(MTP_inputNotifyBroadcasts());
 
+	_archiveChats = std::make_unique<Api::ArchiveChats>(this);
+
 	Core::App().downloadManager().trackSession(this);
 
 	appConfig().value(
@@ -306,12 +309,14 @@ QByteArray Session::validTmpPassword() const {
 
 // Can be called only right before ~Session.
 void Session::finishLogout() {
+	_archiveChats.reset();
 	unlockTerms();
 	data().clear();
 	data().clearLocalStorage();
 }
 
 Session::~Session() {
+	_archiveChats.reset();
 	unlockTerms();
 	data().clear();
 	ClickHandler::clearActive();
