@@ -3,7 +3,8 @@ using "ui/widgets/widgets.style";
 
 localTransferWidth: 520px;
 localTransferMaxHeight: 620px;
-localTransferQrSize: 420px;
+localTransferQrSize: 320px;
+localTransferQrRadius: 12px;
 localTransferQrMaxHeight: 760px;
 localTransferRowSkip: 12px;
 localTransferSectionSkip: 20px;

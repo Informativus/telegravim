@@ -297,7 +297,7 @@ public final class OfflineSettingsQrView extends FrameLayout implements SurfaceH
             Camera.Parameters parameters = camera.getParameters();
             Camera.Size selectedSize = null;
             for (Camera.Size size : parameters.getSupportedPreviewSizes()) {
-                if (size.width * size.height <= 1280 * 720
+                if (size.width * size.height <= 1920 * 1080
                         && (selectedSize == null || size.width * size.height > selectedSize.width * selectedSize.height)) {
                     selectedSize = size;
                 }

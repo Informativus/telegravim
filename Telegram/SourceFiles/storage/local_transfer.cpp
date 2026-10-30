@@ -36,6 +36,7 @@ constexpr auto kChunk = 256 * 1024;
 constexpr auto kIterations = 600000;
 constexpr auto kHeaderSize = 40;
 constexpr auto kTagSize = 16;
+constexpr auto kSettingsLimit = 64 * 1024;
 
 using Cipher = std::unique_ptr<EVP_CIPHER_CTX, decltype(&EVP_CIPHER_CTX_free)>;
 
@@ -778,6 +779,40 @@ LocalData::Result Export(
 	if (!FinishWrite(cipher.get(), file) || !file.commit()) {
 		return IoError();
 	}
+	return {};
+}
+
+LocalData::Result ExportSettings(
+		const QByteArray &module,
+		QByteArray password,
+		QByteArray &result) {
+	const auto wiper = PasswordWiper{ password };
+	if (password.isEmpty() || password.size() > 1024) {
+		return Fail(Error::Invalid, u"The export password is empty or too long."_q);
+	} else if (module.isEmpty() || module.size() > kSettingsLimit) {
+		return Invalid();
+	}
+	auto header = QByteArray("TGVSET01") + NumberBytes(kIterations)
+		+ QByteArray(28, Qt::Uninitialized);
+	auto key = Key();
+	if (RAND_bytes(reinterpret_cast<unsigned char*>(header.data() + 12), 28) != 1
+		|| !Derive(password, QByteArrayView(header).sliced(12, 16), key)) {
+		return IoError();
+	}
+	auto cipher = NewCipher();
+	auto encrypted = QByteArray();
+	auto tail = std::array<unsigned char, EVP_MAX_BLOCK_LENGTH>();
+	auto size = 0;
+	auto tag = QByteArray(kTagSize, Qt::Uninitialized);
+	if (!Initialize(cipher.get(), key, QByteArrayView(header).last(12), header, true)
+		|| !Crypt(cipher.get(), module, encrypted)
+		|| EVP_CipherFinal_ex(cipher.get(), tail.data(), &size) != 1
+		|| size != 0
+		|| EVP_CIPHER_CTX_ctrl(cipher.get(), EVP_CTRL_GCM_GET_TAG,
+			kTagSize, tag.data()) != 1) {
+		return IoError();
+	}
+	result = header + encrypted + tag;
 	return {};
 }
 

@@ -92,7 +92,15 @@ derivation retains the process-wide worker slot until it actually finishes.
 Existing messaging services can continue independently; source isolation does
 not replace traffic observations on a device.
 
-The link contains the complete encrypted package:
+Desktop creates a compact link that contains only the encrypted settings
+module:
+
+```text
+televim://settings/v2#<unpadded-base64url-of-the-TGVSET01-envelope>
+```
+
+Android also accepts the earlier link that contains a complete encrypted
+package:
 
 ```text
 televim://settings/v1#<unpadded-base64url-of-the-entire-tgv-envelope>
@@ -103,7 +111,9 @@ password or decryption key. Base64url is only an encoding. The user enters the
 export password separately on the receiving device. It is not their Telegram
 password. Passwords, payloads and complete import links must not enter logs.
 
-The wire encryption is the existing
+The `TGVSET01` envelope is described in
+[portable preferences](../local-features/portable-preferences.md). The `v1`
+wire encryption is the existing
 [`.tgv` version 1 format](../local-features/file-transfer-format.md):
 PBKDF2-HMAC-SHA256 with the fixed versioned parameters, AES-256-GCM, and an
 authenticated manifest and package stream. Password encoding is exact UTF-8
@@ -116,7 +126,8 @@ actual encoder result. No stage may truncate an oversized link. Larger exports
 use an encrypted local file. The QR screen explains the separate password and
 offers the file route before attempting an oversized QR.
 
-The Android QR decoder is bundled with the app and uses camera frames locally.
+The Android QR decoder is bundled with the app and uses camera frames locally,
+choosing the largest back-camera preview up to 1920 × 1080.
 It must not download a recognition model or pass frames to another service.
 
 ## Local files

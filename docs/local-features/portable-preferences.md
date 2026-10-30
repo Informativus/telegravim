@@ -40,43 +40,40 @@ global values in multiple imported profiles must not be resolved by traversal
 order. Import previews must distinguish settings that will actually be applied
 from opaque local-feature modules that the receiver can only preserve.
 
-## Encrypted file, link and QR
+## Encrypted link, QR and file
 
-The module is placed in one profile of the existing [version 1 `.tgv`
-container](file-transfer-format.md). The profile identifies the selected Desktop
-account by Telegram environment and stable decimal user ID. Its existing local
-profile UUID is reused when present. The source device UUID is retained; the
-export receives a fresh generation and package ID. The export contains no other
-profiles, module data, resources, opaque metadata, credentials, Telegram sessions,
-device activation or E2E private keys.
-
-The entire existing `TGVXFR01` envelope is encoded into this URI:
+Desktop encrypts only the selected module above. It contains no account
+profile, device identifiers, credentials, Telegram sessions or E2E keys. The
+compact `TGVSET01` envelope has the same 40-byte header layout as the `.tgv`
+container: eight magic bytes, the big-endian iteration count, a 16-byte salt and
+a 12-byte nonce. The ciphertext is the compact JSON module, followed by the
+16-byte GCM tag. Encryption uses AES-256-GCM with the full header as AAD and
+PBKDF2-HMAC-SHA256 with exactly 600000 iterations over the exact UTF-8 password
+bytes, without normalization. The decrypted module is limited to 64 KiB.
 
 ```text
-televim://settings/v1#<base64url-of-the-complete-encrypted-tgv-file>
+televim://settings/v2#<base64url-of-the-TGVSET01-envelope>
 ```
 
-Base64url uses the URL-safe alphabet without padding. The payload includes the
-magic, iteration count, salt, nonce, ciphertext and authentication tag. It is not
-a file URL, server address or pairing token. No part of the link is fetched from
-the network and unsupported input must not fall back to Telegram URL resolution.
+Base64url uses the URL-safe alphabet without padding. The link for both
+settings is about 300 characters, so its QR stays small enough for a phone
+camera to read from a screen. No part of the link is fetched from the network
+and unsupported input must not fall back to Telegram URL resolution. Android
+still accepts `televim://settings/v1#` links containing a complete `.tgv`
+envelope.
 
-The encryption format is unchanged: AES-256-GCM with the full header as
-AAD; PBKDF2-HMAC-SHA256 with exactly 600000 iterations; exact UTF-8 password bytes
-without normalization. Settings export accepts any nonempty password, up to 1024 UTF-8 bytes,
-and requires matching confirmation. Full local-data export retains its minimum
-password length. The export password is entered separately on
-Android and is never included in the link, QR or clipboard. Clipboard copying
-occurs only when the user selects **Copy link**.
+Settings export accepts any nonempty password, up to 1024 UTF-8 bytes, and
+requires matching confirmation. Full local-data export retains its minimum
+password length. The export password is entered separately on Android and is
+never included in the link, QR or clipboard. Clipboard copying occurs only when
+the user selects **Copy link**. **Save encrypted file** writes the same
+`TGVSET01` envelope for Android's local file route.
 
 The complete ASCII URI is limited to 8192 bytes. One QR is limited to 2900 bytes
 of that complete URI and uses Low error correction with a four-module quiet
-zone. Rendering fits the actual row width, keeps integer device pixels per module,
-and retains all four quiet-zone margins, with no logo or center cutout. The
-complete link is also visible in a read-only field.
-An oversized QR or link is rejected without truncation; the encrypted `.tgv`
-file remains available. Format capacity is not proof of camera readability:
-the dense QR must also be checked on a physical screen and phone.
+zone. Rendering keeps integer device pixels per module and all four quiet-zone
+margins, with no logo or center cutout. An oversized QR or link is rejected
+without truncation.
 
 The Android receiver has its own smaller documented resource limits, including
 an 8 MiB encrypted file cap. This small settings export fits within that cap;

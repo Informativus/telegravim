@@ -40,6 +40,11 @@ struct Inspection {
 	ProgressCallback progress = nullptr,
 	PasswordRequirement passwordRequirement = PasswordRequirement::MinimumLength);
 
+[[nodiscard]] LocalData::Result ExportSettings(
+	const QByteArray &module,
+	QByteArray password,
+	QByteArray &result);
+
 [[nodiscard]] LocalData::Result Inspect(
 	const QString &path,
 	QByteArray password,
