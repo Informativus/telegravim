@@ -48,7 +48,7 @@ ArchiveChats::ArchiveChats(not_null<Main::Session*> session)
 
 ArchiveChats::~ArchiveChats() = default;
 
-bool ArchiveChats::eligible(not_null<PeerData*> peer, bool automatic) const {
+bool ArchiveChats::eligible(not_null<PeerData*> peer) const {
 	if (peer->isSelf()
 		|| peer->isServiceUser()
 		|| peer->isRepliesChat()
@@ -61,7 +61,7 @@ bool ArchiveChats::eligible(not_null<PeerData*> peer, bool automatic) const {
 			return false;
 		}
 	} else if (!peer->isChat()
-		&& !(peer->isUser() && (!automatic || peer->isBot()))) {
+		&& !(peer->isUser() && peer->isBot())) {
 		return false;
 	}
 	if (_session->data().localPinnedDialogs().isPinned(0, peer->id)) {
@@ -75,14 +75,14 @@ bool ArchiveChats::eligible(not_null<PeerData*> peer, bool automatic) const {
 	return true;
 }
 
-bool ArchiveChats::eligible(const MTPDdialog &dialog, bool automatic) const {
+bool ArchiveChats::eligible(const MTPDdialog &dialog) const {
 	const auto folder = dialog.vfolder_id();
 	if (dialog.is_pinned() || (folder && folder->v)) {
 		return false;
 	}
 	const auto peerId = peerFromMTP(dialog.vpeer());
 	const auto peer = _session->data().peerLoaded(peerId);
-	return peer && eligible(peer, automatic);
+	return peer && eligible(peer);
 }
 
 void ArchiveChats::prepare() {
@@ -144,7 +144,7 @@ void ArchiveChats::collect(const QVector<MTPDialog> &dialogs) {
 	for (const auto &dialog : dialogs) {
 		dialog.match([&](const MTPDdialog &data) {
 			const auto peer = peerFromMTP(data.vpeer());
-			if (peer && (_mode == Mode::BaselineScan || eligible(data, false))) {
+			if (peer && (_mode == Mode::BaselineScan || eligible(data))) {
 				_scan.emplace(peer);
 			}
 		}, [](const auto &) {});
@@ -271,7 +271,7 @@ void ArchiveChats::incoming(not_null<HistoryItem*> item) {
 		return;
 	}
 	const auto peer = item->history()->peer;
-	if (!eligible(peer, true) || _known.contains(peer->id)) {
+	if (!eligible(peer) || _known.contains(peer->id)) {
 		return;
 	}
 	_known.emplace(peer->id);
@@ -319,7 +319,7 @@ void ArchiveChats::nextBatch() {
 	peers.reserve(end - _position);
 	for (auto i = _position; i != end; ++i) {
 		const auto peer = _work[i];
-		if (eligible(_session->data().peer(peer), automatic)
+		if (eligible(_session->data().peer(peer))
 			&& (!automatic || _automatic.current())) {
 			peers.push_back(peer);
 		}

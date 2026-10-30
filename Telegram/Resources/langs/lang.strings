@@ -888,10 +888,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_sessions_about" = "Manage your sessions on all your devices.";
 "lng_settings_archive_title" = "Archive Settings";
 "lng_archive_cleanup_title" = "Archive chats from All Chats";
-"lng_archive_cleanup_about" = "Move existing groups, bots and private chats to the Archive. Pinned chats, channels, Saved Messages and service chats stay in All Chats. Messages are not deleted and notification settings stay unchanged. Chats may disappear from folders that exclude archived chats.";
+"lng_archive_cleanup_about" = "Move existing groups and bots to the Archive. Private chats from people, pinned chats, channels, Saved Messages and service chats stay in All Chats. Messages are not deleted and notification settings stay unchanged. Chats may disappear from folders that exclude archived chats.";
 "lng_archive_cleanup_prepare" = "Find chats to archive";
-"lng_archive_cleanup_confirm#one" = "Move {count} chat to the Archive? This affects this account on all devices. Private chats are included. You can move chats back from the Archive.";
-"lng_archive_cleanup_confirm#other" = "Move {count} chats to the Archive? This affects this account on all devices. Private chats are included. You can move chats back from the Archive.";
+"lng_archive_cleanup_confirm#one" = "Move {count} chat to the Archive? This affects this account on all devices. Private chats from people stay in All Chats. You can move chats back from the Archive.";
+"lng_archive_cleanup_confirm#other" = "Move {count} chats to the Archive? This affects this account on all devices. Private chats from people stay in All Chats. You can move chats back from the Archive.";
 "lng_archive_cleanup_scanning" = "Finding chats in All Chats…";
 "lng_archive_cleanup_preparing" = "Preparing automatic archiving. Existing chats will stay where they are…";
 "lng_archive_cleanup_enabled" = "Automatic archiving is enabled for new groups and bots.";

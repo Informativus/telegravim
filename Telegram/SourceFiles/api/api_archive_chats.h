@@ -50,8 +50,8 @@ private:
 	void sendBatch(std::vector<PeerId> peers);
 	void finish();
 	void fail();
-	[[nodiscard]] bool eligible(not_null<PeerData*> peer, bool automatic) const;
-	[[nodiscard]] bool eligible(const MTPDdialog &dialog, bool automatic) const;
+	[[nodiscard]] bool eligible(not_null<PeerData*> peer) const;
+	[[nodiscard]] bool eligible(const MTPDdialog &dialog) const;
 	void readSettings();
 	void saveSettings();
 
