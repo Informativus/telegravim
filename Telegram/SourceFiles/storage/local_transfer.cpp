@@ -685,10 +685,14 @@ LocalData::Result Export(
 		const QString &path,
 		QByteArray password,
 		const std::atomic<bool> *cancel,
-		ProgressCallback progress) {
+		ProgressCallback progress,
+		PasswordRequirement passwordRequirement) {
 	const auto wiper = PasswordWiper{ password };
-	if (password.size() < 12 || password.size() > 1024) {
-		return Fail(Error::Invalid, u"Use a password of 12–1024 UTF-8 bytes."_q);
+	const auto minimum = (passwordRequirement == PasswordRequirement::NonEmpty)
+		? 1
+		: 12;
+	if (password.size() < minimum || password.size() > 1024) {
+		return Fail(Error::Invalid, u"The export password is empty, too short or too long."_q);
 	}
 	if (const auto checked = ValidateSnapshot(snapshot, Limits(), cancel)
 		; !checked) {

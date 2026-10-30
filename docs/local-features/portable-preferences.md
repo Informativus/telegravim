@@ -1,7 +1,6 @@
 # Portable application preferences, version 1
 
-The Desktop action **Settings → Advanced → Transfer local data → Transfer
-settings to Android** exports an explicit selection of two application settings.
+The Desktop action **Settings → Televim Settings → Export settings to Android** exports an explicit selection of two application settings.
 It does not export the binary Desktop settings stream or the generic preference
 registry. Existing full `.tgv` file transfer remains available separately.
 
@@ -62,16 +61,19 @@ magic, iteration count, salt, nonce, ciphertext and authentication tag. It is no
 a file URL, server address or pairing token. No part of the link is fetched from
 the network and unsupported input must not fall back to Telegram URL resolution.
 
-The cipher and password rules are unchanged: AES-256-GCM with the full header as
+The encryption format is unchanged: AES-256-GCM with the full header as
 AAD; PBKDF2-HMAC-SHA256 with exactly 600000 iterations; exact UTF-8 password bytes
-without normalization. Desktop requires at least 12 characters in its password
-fields and at most 1024 UTF-8 bytes. The export password is entered separately on
+without normalization. Settings export accepts any nonempty password, up to 1024 UTF-8 bytes,
+and requires matching confirmation. Full local-data export retains its minimum
+password length. The export password is entered separately on
 Android and is never included in the link, QR or clipboard. Clipboard copying
-occurs only when the user selects **Copy encrypted settings link**.
+occurs only when the user selects **Copy link**.
 
 The complete ASCII URI is limited to 8192 bytes. One QR is limited to 2900 bytes
 of that complete URI and uses Low error correction with a four-module quiet
-zone. Rendering retains every encoded module, with no logo or center cutout.
+zone. Rendering fits the actual row width, keeps integer device pixels per module,
+and retains all four quiet-zone margins, with no logo or center cutout. The
+complete link is also visible in a read-only field.
 An oversized QR or link is rejected without truncation; the encrypted `.tgv`
 file remains available. Format capacity is not proof of camera readability:
 the dense QR must also be checked on a physical screen and phone.
@@ -83,7 +85,7 @@ than partially imported.
 
 ## Plain JSON option
 
-**Save settings JSON** writes exactly the selected module above, without the
+**Save JSON without password** writes exactly the selected module above, without the
 account profile or device identifiers. The UI explicitly says that this file is
 not encrypted and requires no password. Its allowlist prevents private keys,
 tokens, proxy credentials, message data or arbitrary executable settings from

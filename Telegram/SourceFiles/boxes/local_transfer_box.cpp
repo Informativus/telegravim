@@ -38,6 +38,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtGui/QClipboard>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QPainter>
+#include <QtWidgets/QTextEdit>
 #include <crl/crl_async.h>
 #include <crl/crl_on_main.h>
 #include <openssl/crypto.h>
@@ -318,11 +319,11 @@ void SavePortableFile(
 		crl::guard(state->box, [=] { state->busy = false; }));
 }
 
-[[nodiscard]] QImage PortableQr(const QString &link) {
-	const auto data = Qr::Encode(link, Qr::Redundancy::Low);
+[[nodiscard]] QImage PortableQr(const Qr::Data &data, int width) {
 	const auto modules = data.size + 2 * kQrQuietModules;
 	const auto ratio = style::DevicePixelRatio();
-	const auto pixel = std::max(1, st::localTransferQrSize * ratio / modules);
+	const auto available = std::min(width, st::localTransferQrSize) * ratio;
+	const auto pixel = std::max(1, available / modules);
 	const auto side = modules * pixel;
 	auto image = QImage(side, side, QImage::Format_ARGB32_Premultiplied);
 	image.fill(Qt::white);
@@ -348,28 +349,49 @@ void SavePortableFile(
 void PortableResult(const SharedState &state, QByteArray bytes) {
 	state->busy = false;
 	Reset(state);
-	state->box->setWidth(st::localTransferQrWidth);
+	state->box->setWidth(st::localTransferWidth);
 	state->box->setMaxHeight(st::localTransferQrMaxHeight);
 	Label(state, tr::lng_local_transfer_settings_ready(tr::now));
 	const auto link = u"televim://settings/v1#"_q + QString::fromLatin1(
 		bytes.toBase64(QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals));
 	if (link.size() <= kPortableQrLimit) {
-		const auto image = PortableQr(link);
-		const auto size = image.width() / style::DevicePixelRatio();
+		state->box->addSkip(st::localTransferRowSkip);
 		auto row = object_ptr<Ui::RpWidget>(state->box.data());
 		const auto widget = row.data();
-		widget->setFixedHeight(size);
+		const auto image = widget->lifetime().make_state<QImage>();
+		widget->widthValue(
+		) | rpl::on_next([
+			widget,
+			image,
+			data = Qr::Encode(link, Qr::Redundancy::Low)
+		](int width) {
+			if (width <= 0) {
+				return;
+			}
+			*image = PortableQr(data, width);
+			widget->setFixedHeight(image->height() / style::DevicePixelRatio());
+			widget->update();
+		}, widget->lifetime());
 		widget->paintRequest(
 		) | rpl::on_next([=] {
+			const auto size = image->width() / style::DevicePixelRatio();
 			QPainter(widget).drawImage(
 				QPoint((widget->width() - size) / 2, 0),
-				image);
+				*image);
 		}, widget->lifetime());
 		state->box->addRow(std::move(row));
 	} else {
 		Label(state, tr::lng_local_transfer_settings_qr_large(tr::now));
 	}
+	state->box->addSkip(st::localTransferRowSkip);
 	if (link.size() <= kPortableLinkLimit) {
+		const auto field = state->box->addRow(object_ptr<Ui::InputField>(
+			state->box.data(),
+			st::defaultInputField,
+			tr::lng_local_transfer_settings_link(),
+			link));
+		field->rawTextEdit()->setReadOnly(true);
+		state->box->addSkip(st::localTransferRowSkip);
 		const auto copy = state->box->addRow(object_ptr<Ui::LinkButton>(
 			state->box.data(), tr::lng_local_transfer_settings_copy(tr::now)));
 		copy->setClickedCallback([=] {
@@ -381,6 +403,7 @@ void PortableResult(const SharedState &state, QByteArray bytes) {
 	} else {
 		Label(state, tr::lng_local_transfer_settings_link_large(tr::now));
 	}
+	state->box->addSkip(st::localTransferRowSkip);
 	const auto save = state->box->addRow(object_ptr<Ui::LinkButton>(
 		state->box.data(), tr::lng_local_transfer_export(tr::now)));
 	save->setClickedCallback([=] { SavePortableFile(state, bytes, false); });
@@ -435,7 +458,8 @@ void ExportPortable(
 					path,
 					std::move(password),
 					&state->cancel,
-					Progress(state));
+					Progress(state),
+					Storage::LocalTransfer::PasswordRequirement::NonEmpty);
 				if (result) {
 					auto file = QFile(path);
 					if (!file.open(QIODevice::ReadOnly) || file.size() > kPortableFileLimit) {
@@ -472,6 +496,7 @@ void PortableSettings(const SharedState &state) {
 	state->box->setWidth(st::localTransferWidth);
 	state->box->setMaxHeight(st::localTransferMaxHeight);
 	Label(state, tr::lng_local_transfer_settings_about(tr::now));
+	state->box->addSkip(st::localTransferSectionSkip);
 	const auto &settings = Core::App().settings();
 	const auto submit = settings.sendSubmitWay();
 	const auto byEnter = submit == Ui::InputSubmitSettings::Enter
@@ -486,11 +511,14 @@ void PortableSettings(const SharedState &state) {
 		state->box.data(),
 		tr::lng_local_transfer_settings_enter(tr::now, lt_state, valueText(byEnter)),
 		true));
+	state->box->addSkip(st::localTransferRowSkip);
 	const auto emoji = state->box->addRow(object_ptr<Ui::Checkbox>(
 		state->box.data(),
 		tr::lng_local_transfer_settings_emoji(tr::now, lt_state, valueText(large)),
 		true));
+	state->box->addSkip(st::localTransferSectionSkip);
 	const auto password = PasswordField(state, tr::lng_local_transfer_password());
+	state->box->addSkip(st::localTransferRowSkip);
 	const auto repeated = PasswordField(state, tr::lng_local_transfer_password_again());
 	password->setMaxLength(1024);
 	repeated->setMaxLength(1024);
@@ -506,9 +534,7 @@ void PortableSettings(const SharedState &state) {
 		}
 		return values;
 	};
-	const auto prepare = state->box->addRow(object_ptr<Ui::LinkButton>(
-		state->box.data(), tr::lng_local_transfer_settings_create(tr::now)));
-	prepare->setClickedCallback([=] {
+	state->box->addButton(tr::lng_local_transfer_settings_create(), [=] {
 		if (state->busy) {
 			return;
 		}
@@ -516,10 +542,10 @@ void PortableSettings(const SharedState &state) {
 		if (values.isEmpty()) {
 			state->progress->setText(tr::lng_local_transfer_settings_select(tr::now));
 			return;
-		} else if (password->text().size() < 12
+		} else if (password->text().isEmpty()
 			|| password->text() != repeated->text()
 			|| password->text().toUtf8().size() > 1024) {
-			state->progress->setText(tr::lng_local_transfer_password_invalid(tr::now));
+			state->progress->setText(tr::lng_local_transfer_settings_password_invalid(tr::now));
 			password->showError();
 			return;
 		}
@@ -528,7 +554,7 @@ void PortableSettings(const SharedState &state) {
 		repeated->setText(QString());
 		ExportPortable(state, PortableModule(values), std::move(secret));
 	});
-	Label(state, tr::lng_local_transfer_settings_json_about(tr::now));
+	state->box->addSkip(st::localTransferSectionSkip);
 	const auto json = state->box->addRow(object_ptr<Ui::LinkButton>(
 		state->box.data(), tr::lng_local_transfer_settings_json(tr::now)));
 	json->setClickedCallback([=] {
