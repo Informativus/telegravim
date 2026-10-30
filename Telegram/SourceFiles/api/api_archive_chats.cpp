@@ -258,8 +258,16 @@ void ArchiveChats::scanFinished() {
 	}
 }
 
-void ArchiveChats::confirm() {
+void ArchiveChats::confirm(const std::vector<PeerId> &peers) {
 	if (_mode != Mode::Preview) {
+		return;
+	}
+	const auto selected = base::flat_set<PeerId>(peers.begin(), peers.end());
+	_work.erase(ranges::remove_if(_work, [&](PeerId peer) {
+		return !selected.contains(peer);
+	}), end(_work));
+	if (_work.empty()) {
+		cancel();
 		return;
 	}
 	_mode = Mode::Manual;

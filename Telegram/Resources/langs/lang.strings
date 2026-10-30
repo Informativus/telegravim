@@ -892,8 +892,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_archive_cleanup_preview_title#one" = "Archive {count} chat";
 "lng_archive_cleanup_preview_title#other" = "Archive {count} chats";
 "lng_archive_cleanup_about" = "Archive unpinned groups and bots from All Chats. Private chats from people stay visible.";
-"lng_archive_cleanup_confirm#one" = "Move {count} chat to the Archive? This affects this account on all devices. Private chats from people stay in All Chats. You can move chats back from the Archive.";
-"lng_archive_cleanup_confirm#other" = "Move {count} chats to the Archive? This affects this account on all devices. Private chats from people stay in All Chats. You can move chats back from the Archive.";
+"lng_archive_cleanup_confirm#one" = "Move {count} chat to the Archive? This affects this account on all devices. Private chats from people stay in All Chats. Uncheck chats you want to keep in All Chats.";
+"lng_archive_cleanup_confirm#other" = "Move {count} chats to the Archive? This affects this account on all devices. Private chats from people stay in All Chats. Uncheck chats you want to keep in All Chats.";
 "lng_archive_cleanup_scanning" = "Finding chats in All Chats…";
 "lng_archive_cleanup_preparing" = "Preparing automatic archiving. Existing chats will stay where they are…";
 "lng_archive_cleanup_enabled" = "Automatic archiving is enabled for new groups and bots.";

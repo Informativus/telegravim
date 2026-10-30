@@ -26,7 +26,7 @@ public:
 	~ArchiveChats();
 
 	void prepare();
-	void confirm();
+	void confirm(const std::vector<PeerId> &peers);
 	void cancel();
 	void undo();
 	void setAutomatic(bool enabled);

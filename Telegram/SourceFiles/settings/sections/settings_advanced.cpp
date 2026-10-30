@@ -28,6 +28,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/launcher.h"
 #include "core/update_checker.h"
 #include "data/data_auto_download.h"
+#include "data/data_peer.h"
 #include "data/data_session.h"
 #include "export/export_manager.h"
 #include "info/downloads/info_downloads_widget.h"
@@ -1991,48 +1992,71 @@ public:
 	}
 
 	void prepare() override {
-		const auto count = int(_peers.size());
 		delegate()->peerListSetTitle(
 			tr::lng_archive_cleanup_preview_title(
 				lt_count,
-				rpl::single(float64(count))));
-		delegate()->peerListSetSearchMode(PeerListSearchMode::Disabled);
+				_count.value() | tr::to_count()));
+		delegate()->peerListSetSearchMode(PeerListSearchMode::Enabled);
 		delegate()->peerListSetAboveWidget(object_ptr<Ui::DividerLabel>(
 			(QWidget*)nullptr,
 			object_ptr<Ui::FlatLabel>(
 				(QWidget*)nullptr,
 				tr::lng_archive_cleanup_confirm(
 					lt_count,
-					rpl::single(float64(count))),
+					_count.value() | tr::to_count()),
 				st::boxDividerLabel),
 			st::defaultBoxDividerLabelPadding));
 		for (const auto peer : _peers) {
 			if (const auto loaded = _session->data().peerLoaded(peer)) {
-				delegate()->peerListAppendRow(
-					std::make_unique<PeerListRow>(loaded));
+				auto row = std::make_unique<PeerListRow>(loaded);
+				const auto raw = row.get();
+				delegate()->peerListAppendRow(std::move(row));
+				delegate()->peerListSetRowChecked(raw, true);
+				_selected.emplace(peer);
 			}
 		}
+		_count = int(_selected.size());
 		delegate()->peerListRefreshRows();
 	}
 
-	void rowClicked(not_null<PeerListRow*>) override {
+	void rowClicked(not_null<PeerListRow*> row) override {
+		const auto checked = !row->checked();
+		delegate()->peerListSetRowChecked(row, checked);
+		if (checked) {
+			_selected.emplace(row->peer()->id);
+		} else {
+			_selected.remove(row->peer()->id);
+		}
+		_count = int(_selected.size());
+	}
+
+	bool trackSelectedList() override {
+		return false;
+	}
+
+	[[nodiscard]] std::vector<PeerId> selected() const {
+		return { _selected.begin(), _selected.end() };
 	}
 
 private:
 	const not_null<Main::Session*> _session;
 	const std::vector<PeerId> _peers;
+	base::flat_set<PeerId> _selected;
+	rpl::variable<int> _count = 0;
 
 };
 
 void ShowArchivePreview(not_null<Window::SessionController*> controller) {
 	const auto archive = &controller->session().archiveChats();
+	auto preview = std::make_unique<ArchivePreviewController>(
+		&controller->session(),
+		archive->previewPeers());
+	const auto raw = preview.get();
 	auto owned = Box<PeerListBox>(
-		std::make_unique<ArchivePreviewController>(
-			&controller->session(),
-			archive->previewPeers()),
+		std::move(preview),
 		[=](not_null<PeerListBox*> list) {
 			list->addButton(tr::lng_archived_add(), [=] {
-				archive->confirm();
+				archive->confirm(raw->selected());
 				list->closeBox();
 			});
 			list->addButton(tr::lng_cancel(), [=] {
