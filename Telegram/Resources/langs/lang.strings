@@ -8860,9 +8860,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_local_transfer_settings_password" = "Password";
 "lng_local_transfer_settings_include" = "Settings to transfer";
 "lng_local_transfer_settings_back" = "Back";
-"lng_local_transfer_settings_about" = "On this computer Send by Enter is {enter} and Large Emoji is {emoji}. Android applies them to all of its accounts. Other Desktop features are not transferred.";
+"lng_local_transfer_settings_about#one" = "On this computer Send by Enter is {enter} and Large Emoji is {emoji}. Folder colors cover {count} cloud folder and apply to the same account on Android. Android applies the other settings to all of its accounts.";
+"lng_local_transfer_settings_about#other" = "On this computer Send by Enter is {enter} and Large Emoji is {emoji}. Folder colors cover {count} cloud folders and apply to the same account on Android. Android applies the other settings to all of its accounts.";
 "lng_local_transfer_settings_enter" = "Send by Enter";
 "lng_local_transfer_settings_emoji" = "Large Emoji";
+"lng_local_transfer_settings_folder_colors" = "Folder colors";
 "lng_local_transfer_settings_enabled" = "enabled";
 "lng_local_transfer_settings_disabled" = "disabled";
 "lng_local_transfer_settings_create" = "Create QR code";
@@ -8873,7 +8875,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_local_transfer_settings_qr_large" = "These settings are too large for one QR code. Copy the link or save the encrypted file instead.";
 "lng_local_transfer_settings_json" = "Save JSON without password";
 "lng_local_transfer_settings_json_filter" = "Televim settings JSON (*.json)";
-"lng_local_transfer_settings_json_about" = "JSON contains only the selected switches, without account identifiers. It is not encrypted and does not need a password.";
+"lng_local_transfer_settings_json_about" = "JSON contains only the selected settings. With folder colors it also names this Telegram account so Android can apply them to it. It is not encrypted and does not need a password.";
 "lng_local_transfer_settings_json_done" = "Settings JSON saved without encryption.";
 "lng_local_transfer_settings_save_error" = "Could not save the settings file. The previous file was left unchanged.";
 

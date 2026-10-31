@@ -10,7 +10,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/application.h"
 #include "core/core_settings.h"
 #include "core/file_utilities.h"
+#include "data/data_chat_filters.h"
 #include "data/data_peer_id.h"
+#include "data/data_session.h"
 #include "lang/lang_keys.h"
 #include "main/main_account.h"
 #include "main/main_domain.h"
@@ -72,6 +74,7 @@ struct State {
 	QMap<QString, ConflictChoice> choices;
 	QSet<QString> signedIn;
 	Account account;
+	Main::Session *session = nullptr;
 	Snapshot archiveSnapshot;
 	std::vector<ArchivedConflict> archivePage;
 	int archiveOffset = 0;
@@ -281,6 +284,55 @@ void Apply(const SharedState &state) {
 		{ u"values"_q, std::move(values) },
 		{ u"records"_q, QJsonArray() },
 	};
+}
+
+[[nodiscard]] std::vector<Data::ChatFilter> CloudFolders(
+		not_null<Main::Session*> session) {
+	auto result = std::vector<Data::ChatFilter>();
+	for (const auto &filter : session->data().chatsFilters().list()) {
+		if (filter.id() > 0) {
+			result.push_back(filter);
+		}
+	}
+	return result;
+}
+
+[[nodiscard]] QJsonObject FolderColorsModule(
+		not_null<Main::Session*> session) {
+	auto folders = QJsonArray();
+	for (const auto &filter : CloudFolders(session)) {
+		const auto color = filter.colorIndex();
+		folders.push_back(QJsonObject{
+			{ u"filter_id"_q, int(filter.id()) },
+			{ u"title"_q, filter.titleText().text },
+			{ u"color"_q, color ? QJsonValue(int(*color)) : QJsonValue() },
+		});
+	}
+	return {
+		{ u"module_id"_q, u"folder_colors"_q },
+		{ u"schema_version"_q, 1 },
+		{ u"scope"_q, u"account"_q },
+		{ u"tags_enabled"_q, session->data().chatsFilters().tagsEnabled() },
+		{ u"folders"_q, folders },
+	};
+}
+
+[[nodiscard]] QJsonObject SettingsBundle(
+		const Account &account,
+		QJsonArray modules,
+		bool withAccount) {
+	auto result = QJsonObject{
+		{ u"format"_q, u"televim-settings"_q },
+		{ u"version"_q, 1 },
+		{ u"modules"_q, std::move(modules) },
+	};
+	if (withAccount) {
+		result.insert(u"account"_q, QJsonObject{
+			{ u"environment"_q, account.environment },
+			{ u"user_id"_q, account.userId },
+		});
+	}
+	return result;
 }
 
 void SavePortableFile(
@@ -505,10 +557,19 @@ void PortableSettings(const SharedState &state) {
 		tr::lng_local_transfer_settings_emoji(),
 		st::settingsButtonNoIcon));
 	emoji->toggleOn(rpl::single(true));
+	const auto folderCount = int(CloudFolders(state->session).size());
+	const auto folders = container->add(object_ptr<Ui::SettingsButton>(
+		container,
+		tr::lng_local_transfer_settings_folder_colors(),
+		st::settingsButtonNoIcon));
+	folders->toggleOn(rpl::single(folderCount > 0));
+	folders->setDisabled(!folderCount);
 	Ui::AddSkip(container);
 	Ui::AddDividerText(
 		container,
 		tr::lng_local_transfer_settings_about(
+			lt_count,
+			rpl::single(float64(folderCount)) | tr::to_count(),
 			lt_enter,
 			valueText(byEnter),
 			lt_emoji,
@@ -539,7 +600,17 @@ void PortableSettings(const SharedState &state) {
 		if (emoji->toggled()) {
 			values.insert(u"large_emoji"_q, large);
 		}
-		return values;
+		auto modules = QJsonArray();
+		if (!values.isEmpty()) {
+			modules.push_back(PortableModule(values));
+		}
+		const auto withFolders = folderCount && folders->toggled();
+		if (withFolders) {
+			modules.push_back(FolderColorsModule(state->session));
+		}
+		return modules.isEmpty()
+			? QJsonObject()
+			: SettingsBundle(state->account, modules, withFolders);
 	};
 	const auto create = [=] {
 		if (state->busy) {
@@ -563,7 +634,7 @@ void PortableSettings(const SharedState &state) {
 			password->showError();
 			return;
 		}
-		ExportPortable(state, PortableModule(values), std::move(secret));
+		ExportPortable(state, values, std::move(secret));
 	};
 	QObject::connect(password, &Ui::MaskedInputField::submitted, [=] {
 		repeated->setFocus();
@@ -580,7 +651,7 @@ void PortableSettings(const SharedState &state) {
 		}
 		SavePortableFile(
 			state,
-			QJsonDocument(PortableModule(values)).toJson(QJsonDocument::Compact),
+			QJsonDocument(values).toJson(QJsonDocument::Compact),
 			true);
 	});
 	state->box->addButton(tr::lng_local_transfer_settings_create(), create);
@@ -1010,6 +1081,7 @@ void PrepareTransferBox(
 	state->settingsOnly = settingsOnly;
 	state->box = box;
 	state->store = session->domainLocal().localData();
+	state->session = session;
 	state->account = {
 		session->isTestMode() ? u"test"_q : u"production"_q,
 		QString::number(session->userId().bare),
