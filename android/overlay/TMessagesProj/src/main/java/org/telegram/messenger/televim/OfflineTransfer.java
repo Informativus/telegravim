@@ -49,6 +49,13 @@ public final class OfflineTransfer {
         public int assets;
         public int records;
         public final Map<String, Boolean> preferences = new LinkedHashMap<>();
+        public String folderColorsKey;
+        public boolean folderTagsEnabled;
+        public final Map<Integer, Integer> folderColors = new LinkedHashMap<>();
+
+        public boolean hasApplicable() {
+            return !preferences.isEmpty() || folderColorsKey != null;
+        }
         public final Map<String, String> accounts = new LinkedHashMap<>();
 
         public void clear() {
@@ -102,8 +109,7 @@ public final class OfflineTransfer {
             byte[] plain = decrypt(source, password);
             try {
                 checkCancelled(cancelled);
-                JSONObject module = StrictJson.parse(plain, MAX_MODULE, cancelled);
-                readPreferences(module, result, true);
+                readSettings(StrictJson.parse(plain, MAX_MODULE, cancelled), result);
                 result.id = UUID.nameUUIDFromBytes(source).toString();
             } finally {
                 Arrays.fill(plain, (byte) 0);
@@ -118,8 +124,7 @@ public final class OfflineTransfer {
             }
         } else {
             result.rawJson = true;
-            JSONObject module = StrictJson.parse(source, MAX_MODULE, cancelled);
-            readPreferences(module, result, true);
+            readSettings(StrictJson.parse(source, MAX_MODULE, cancelled), result);
             result.id = UUID.nameUUIDFromBytes(source).toString();
         }
         return result;
@@ -283,6 +288,75 @@ public final class OfflineTransfer {
             }
             require(input.available() == 0 && result.accounts.size() == profiles.length());
         }
+    }
+
+    private static void readSettings(JSONObject object, Package result) throws Exception {
+        if (!object.has("format")) {
+            readPreferences(object, result, true);
+            return;
+        }
+        require("televim-settings".equals(StrictJson.string(object, "format"))
+                && StrictJson.integer(object, "version") == 1);
+        require(object.length() == (object.has("account") ? 4 : 3));
+        String account = null;
+        if (object.has("account")) {
+            JSONObject identity = object.getJSONObject("account");
+            String environment = StrictJson.string(identity, "environment");
+            String user = StrictJson.string(identity, "user_id");
+            require(identity.length() == 2
+                    && (environment.equals("production") || environment.equals("test"))
+                    && user.matches("[1-9][0-9]{0,19}"));
+            account = TelevimFolderColors.key(environment, user);
+        }
+        JSONArray modules = object.getJSONArray("modules");
+        require(modules.length() > 0 && modules.length() <= 16);
+        Set<String> seen = new HashSet<>();
+        for (int i = 0; i < modules.length(); ++i) {
+            JSONObject module = modules.getJSONObject(i);
+            String id = StrictJson.string(module, "module_id");
+            require(seen.add(id));
+            if (id.equals("portable_preferences")) {
+                readPreferences(module, result, true);
+            } else if (id.equals("folder_colors")) {
+                require(account != null);
+                readFolderColors(module, account, result);
+            } else {
+                result.unsupportedModules++;
+            }
+        }
+    }
+
+    private static void readFolderColors(JSONObject module, String account, Package result) throws Exception {
+        require(StrictJson.integer(module, "schema_version") == 1
+                && "account".equals(StrictJson.string(module, "scope"))
+                && module.length() == 5);
+        Object tags = module.get("tags_enabled");
+        require(tags instanceof Boolean);
+        JSONArray folders = module.getJSONArray("folders");
+        require(folders.length() <= 4096);
+        for (int i = 0; i < folders.length(); ++i) {
+            JSONObject folder = folders.getJSONObject(i);
+            require(folder.length() == 3);
+            long id = StrictJson.integer(folder, "filter_id");
+            String title = StrictJson.string(folder, "title");
+            require(id > 0 && id <= Integer.MAX_VALUE && title.length() <= 256
+                    && !result.folderColors.containsKey((int) id));
+            Object color = folder.get("color");
+            int value;
+            if (color == JSONObject.NULL) {
+                value = TelevimFolderColors.NO_COLOR;
+            } else {
+                long index = StrictJson.integer(folder, "color");
+                require(index >= 0 && index <= 255);
+                if (index > 6) {
+                    continue;
+                }
+                value = (int) index;
+            }
+            result.folderColors.put((int) id, value);
+        }
+        result.folderColorsKey = account;
+        result.folderTagsEnabled = (Boolean) tags;
     }
 
     private static void readPreferences(JSONObject module, Package result, boolean strict) throws Exception {

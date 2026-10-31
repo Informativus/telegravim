@@ -9,6 +9,7 @@ import android.system.Os;
 import android.system.OsConstants;
 
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.File;
@@ -225,7 +226,8 @@ public final class OfflineSettingsStore {
             }
             SharedPreferences preferences = preferences(context);
             Map<String, ?> now = preferences.getAll();
-            for (String name : new String[]{POINTER, "send_by_enter", "allowBigEmoji"}) {
+            String[] names = tracked(plan);
+            for (String name : names) {
                 if (now.containsKey(name) != plan.before.values.containsKey(name)
                         || (now.containsKey(name) && !now.get(name).equals(plan.before.values.get(name)))) {
                     return Applied.STALE;
@@ -239,6 +241,9 @@ public final class OfflineSettingsStore {
                 String name = preference.getKey().equals("large_emoji") ? "allowBigEmoji" : "send_by_enter";
                 editor.putBoolean(name, preference.getValue());
             }
+            if (plan.transfer.folderColorsKey != null) {
+                editor.putString(plan.transfer.folderColorsKey, folderColors(plan.transfer));
+            }
             plan.publicationAttempted = true;
             try {
                 if (editor.commit()) {
@@ -249,7 +254,7 @@ public final class OfflineSettingsStore {
             uncertain = true;
             try {
                 SharedPreferences.Editor rollback = preferences.edit();
-                for (String name : new String[]{POINTER, "send_by_enter", "allowBigEmoji"}) {
+                for (String name : names) {
                     Object previous = plan.before.values.get(name);
                     if (!plan.before.values.containsKey(name)) {
                         rollback.remove(name);
@@ -280,6 +285,27 @@ public final class OfflineSettingsStore {
                 return Applied.UNCERTAIN;
             }
             return Applied.UNCERTAIN;
+        }
+    }
+
+    private static String[] tracked(Plan plan) {
+        return plan.transfer.folderColorsKey == null
+                ? new String[]{POINTER, "send_by_enter", "allowBigEmoji"}
+                : new String[]{POINTER, "send_by_enter", "allowBigEmoji", plan.transfer.folderColorsKey};
+    }
+
+    private static String folderColors(OfflineTransfer.Package transfer) {
+        try {
+            JSONObject colors = new JSONObject();
+            for (Map.Entry<Integer, Integer> color : transfer.folderColors.entrySet()) {
+                colors.put(String.valueOf(color.getKey()), color.getValue());
+            }
+            return new JSONObject()
+                    .put("tags_enabled", transfer.folderTagsEnabled)
+                    .put("colors", colors)
+                    .toString();
+        } catch (JSONException error) {
+            throw new IllegalStateException(error);
         }
     }
 

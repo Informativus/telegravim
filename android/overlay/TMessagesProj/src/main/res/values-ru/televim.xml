@@ -29,6 +29,7 @@
     <string name="TelevimImportQrRead">QR прочитан на устройстве. Введите отдельный пароль экспорта, затем посмотрите изменения.</string>
     <string name="TelevimImportGlobal">Поддерживаемые настройки действуют для всего приложения и всех аккаунтов. При применении показанные ниже значения заменятся.</string>
     <string name="TelevimImportLargeEmoji">Крупные эмодзи</string>
+    <string name="TelevimImportFolderColors">Цвета папок этого аккаунта: %1$d, метки %2$s</string>
     <string name="TelevimImportOn">Включено</string>
     <string name="TelevimImportOff">Выключено</string>
     <string name="TelevimImportRetained">Сохранится без активации: %1$d неподдерживаемых модулей, %2$d ресурсов, %3$d профилей аккаунтов. Размер пакета: %4$d байт.</string>

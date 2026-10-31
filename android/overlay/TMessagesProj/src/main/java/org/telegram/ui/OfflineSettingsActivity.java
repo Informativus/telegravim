@@ -696,7 +696,12 @@ public final class OfflineSettingsActivity extends Activity {
                     .append(": ").append(text(previous ? R.string.TelevimImportOn : R.string.TelevimImportOff))
                     .append(" → ").append(text(preference.getValue() ? R.string.TelevimImportOn : R.string.TelevimImportOff));
         }
-        if (plan.transfer.preferences.isEmpty()) {
+        if (plan.transfer.folderColorsKey != null) {
+            preview.append("\n\n").append(getString(R.string.TelevimImportFolderColors,
+                    plan.transfer.folderColors.size(),
+                    text(plan.transfer.folderTagsEnabled ? R.string.TelevimImportOn : R.string.TelevimImportOff)));
+        }
+        if (!plan.transfer.hasApplicable()) {
             preview.append("\n\n").append(text(R.string.TelevimImportNoSupported));
         }
         if (plan.transfer.unsupportedModules != 0 || plan.transfer.assets != 0 || !plan.transfer.accounts.isEmpty()) {
@@ -711,7 +716,7 @@ public final class OfflineSettingsActivity extends Activity {
             preview.append("\n\n").append(text(R.string.TelevimImportPlaintext));
         }
         status.setText(preview.toString());
-        apply.setText(text(plan.transfer.preferences.isEmpty() ? R.string.TelevimImportRetainOnly : R.string.TelevimImportApply));
+        apply.setText(text(!plan.transfer.hasApplicable() ? R.string.TelevimImportRetainOnly : R.string.TelevimImportApply));
         apply.setVisibility(View.VISIBLE);
     }
 
@@ -729,7 +734,7 @@ public final class OfflineSettingsActivity extends Activity {
         }
         switch (result) {
             case SUCCESS:
-                status.setText(text(plan.transfer.preferences.isEmpty()
+                status.setText(text(!plan.transfer.hasApplicable()
                         ? R.string.TelevimImportRetainedOnly : R.string.TelevimImportDone));
                 break;
             case DUPLICATE:

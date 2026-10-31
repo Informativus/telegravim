@@ -1,0 +1,23 @@
+--- a/TMessagesProj/src/main/java/org/telegram/ui/Components/DialogCellTags.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/Components/DialogCellTags.java
+@@ -72 +72,2 @@
+-            tag.colorId = filter.color;
++            final int color = org.telegram.messenger.televim.TelevimFolderColors.color(currentAccount, filter);
++            tag.colorId = color;
+@@ -83 +84 @@
+-            tag.color = Theme.getColor(Theme.keys_avatar_nameInMessage[filter.color % Theme.keys_avatar_nameInMessage.length]);
++            tag.color = Theme.getColor(Theme.keys_avatar_nameInMessage[color % Theme.keys_avatar_nameInMessage.length]);
+@@ -101 +102 @@
+-        if (!(controller.folderTags && account.getUserConfig().isPremium())) {
++        if (!(org.telegram.messenger.televim.TelevimFolderColors.tagsEnabled(currentAccount) || controller.folderTags && account.getUserConfig().isPremium())) {
+@@ -122 +123 @@
+-                if (filter == null || filter == currentFilter || filter.color < 0)
++                if (filter == null || filter == currentFilter || org.telegram.messenger.televim.TelevimFolderColors.color(currentAccount, filter) < 0)
+@@ -147 +148 @@
+-            } else if (filter.color != tag.colorId || filter.name != null && tag.text != null && filter.name.length() != tag.text.getText().length()) {
++            } else if (org.telegram.messenger.televim.TelevimFolderColors.color(currentAccount, filter) != tag.colorId || filter.name != null && tag.text != null && filter.name.length() != tag.text.getText().length()) {
+--- a/TMessagesProj/src/main/java/org/telegram/ui/MainTabsActivity.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/MainTabsActivity.java
+@@ -501 +501 @@
+-            final int color = getMessagesController().folderTags ? folder.color : -1;
++            final int color = org.telegram.messenger.televim.TelevimFolderColors.tagsEnabled(currentAccount) || getMessagesController().folderTags ? org.telegram.messenger.televim.TelevimFolderColors.color(currentAccount, folder) : -1;

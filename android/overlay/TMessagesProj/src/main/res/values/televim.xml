@@ -32,6 +32,7 @@
     <string name="TelevimImportQrRead">QR read locally. Enter the separate export password, then preview the settings.</string>
     <string name="TelevimImportGlobal">These supported preferences apply to the whole app, across all accounts. Applying replaces the values shown below.</string>
     <string name="TelevimImportLargeEmoji">Large emoji</string>
+    <string name="TelevimImportFolderColors">Folder colors for this account: %1$d folders, tags %2$s</string>
     <string name="TelevimImportOn">On</string>
     <string name="TelevimImportOff">Off</string>
     <string name="TelevimImportRetained">Retained inactive: %1$d unsupported modules, %2$d resources, %3$d account profiles. Package size: %4$d bytes.</string>
