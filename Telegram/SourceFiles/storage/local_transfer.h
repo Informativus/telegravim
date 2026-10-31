@@ -20,6 +20,11 @@ struct Progress {
 
 using ProgressCallback = std::function<void(Progress)>;
 
+enum class PasswordRequirement {
+	MinimumLength,
+	NonEmpty,
+};
+
 struct Inspection {
 	LocalData::Snapshot snapshot;
 	QString packageId;
@@ -32,7 +37,13 @@ struct Inspection {
 	const QString &path,
 	QByteArray password,
 	const std::atomic<bool> *cancel = nullptr,
-	ProgressCallback progress = nullptr);
+	ProgressCallback progress = nullptr,
+	PasswordRequirement passwordRequirement = PasswordRequirement::MinimumLength);
+
+[[nodiscard]] LocalData::Result ExportSettings(
+	const QByteArray &module,
+	QByteArray password,
+	QByteArray &result);
 
 [[nodiscard]] LocalData::Result Inspect(
 	const QString &path,

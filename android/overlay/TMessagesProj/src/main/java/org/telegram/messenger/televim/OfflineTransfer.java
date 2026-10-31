@@ -36,7 +36,9 @@ public final class OfflineTransfer {
     public static final int MAX_MODULE = 2 * 1024 * 1024;
     public static final int MAX_LINK = 8192;
     public static final int MAX_QR = 2900;
+    private static final int MAX_SETTINGS = 64 * 1024;
     private static final String LINK_PREFIX = "televim://settings/v1#";
+    private static final String SETTINGS_LINK_PREFIX = "televim://settings/v2#";
 
     public static final class Package {
         public String id;
@@ -59,16 +61,17 @@ public final class OfflineTransfer {
 
     public static byte[] decodeLink(String link, boolean qr) throws Exception {
         int limit = qr ? MAX_QR : MAX_LINK;
-        if (link == null || link.length() > limit || !link.startsWith(LINK_PREFIX)) {
+        boolean compact = link != null && link.startsWith(SETTINGS_LINK_PREFIX);
+        if (link == null || link.length() > limit || !(compact || link.startsWith(LINK_PREFIX))) {
             throw new IOException("Unsupported settings link");
         }
-        String encoded = link.substring(LINK_PREFIX.length());
+        String encoded = link.substring(compact ? SETTINGS_LINK_PREFIX.length() : LINK_PREFIX.length());
         if (encoded.isEmpty() || !encoded.matches("[A-Za-z0-9_-]+")) {
             throw new IOException("Invalid settings link");
         }
         byte[] bytes = Base64.decode(encoded, Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
         if (!Base64.encodeToString(bytes, Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING).equals(encoded)
-                || !isEncrypted(bytes)) {
+                || (compact ? !isEncryptedSettings(bytes) : !isEncryptedArchive(bytes))) {
             Arrays.fill(bytes, (byte) 0);
             throw new IOException("Invalid settings link");
         }
@@ -76,7 +79,15 @@ public final class OfflineTransfer {
     }
 
     public static boolean isEncrypted(byte[] bytes) {
+        return isEncryptedArchive(bytes) || isEncryptedSettings(bytes);
+    }
+
+    private static boolean isEncryptedArchive(byte[] bytes) {
         return bytes.length >= 56 && startsWith(bytes, "TGVXFR01");
+    }
+
+    private static boolean isEncryptedSettings(byte[] bytes) {
+        return bytes.length > 56 && bytes.length <= MAX_SETTINGS && startsWith(bytes, "TGVSET01");
     }
 
     public static Package inspect(byte[] source, char[] password, AtomicBoolean cancelled) throws Exception {
@@ -87,7 +98,17 @@ public final class OfflineTransfer {
         Package result = new Package();
         result.original = source;
         result.digest = digest(source);
-        if (isEncrypted(source)) {
+        if (isEncryptedSettings(source)) {
+            byte[] plain = decrypt(source, password);
+            try {
+                checkCancelled(cancelled);
+                JSONObject module = StrictJson.parse(plain, MAX_MODULE, cancelled);
+                readPreferences(module, result, true);
+                result.id = UUID.nameUUIDFromBytes(source).toString();
+            } finally {
+                Arrays.fill(plain, (byte) 0);
+            }
+        } else if (isEncryptedArchive(source)) {
             byte[] plain = decrypt(source, password);
             try {
                 checkCancelled(cancelled);
